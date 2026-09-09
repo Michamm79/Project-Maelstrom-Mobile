@@ -1,0 +1,25 @@
+{
+  "name": "project-maelstrom-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Touch-first mobile build of Project Maelstrom's orb / transmutation / alchemy systems.",
+  "scripts": {
+    "build:content": "node tools/build-content.mjs",
+    "dev": "npm run build:content && vite",
+    "build": "npm run build:content && npm run build:icons && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "npm run build:content && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build:icons": "node tools/make-icons.mjs",
+    "smoke": "npm run build && node tools/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "playwright": "^1.63.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
+  }
+}

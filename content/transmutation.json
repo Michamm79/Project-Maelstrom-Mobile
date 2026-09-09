@@ -1,0 +1,61 @@
+{
+  "$comment": "Transmutation: exactly two input materials produce one output. Order-independent, exactly as TransmutationSystem.FindRecipe does it. a === b is legal (two of the same material in both orbs).",
+  "recipes": [
+    { "id": "tr_cord",           "a": "fiber",          "b": "fiber",         "result": "cord",           "requiredLevel": 1,  "xp": 25 },
+    { "id": "tr_stone_axe",      "a": "stick",          "b": "stone",         "result": "stone_axe",      "requiredLevel": 1,  "xp": 25 },
+    { "id": "tr_flint_knife",    "a": "stick",          "b": "flint",         "result": "flint_knife",    "requiredLevel": 1,  "xp": 25 },
+    { "id": "tr_ember",          "a": "flint",          "b": "flint",         "result": "ember",          "requiredLevel": 1,  "xp": 25 },
+    { "id": "tr_torch",          "a": "ember",          "b": "stick",         "result": "torch",          "requiredLevel": 1,  "xp": 30 },
+    { "id": "tr_whetstone",      "a": "stone",          "b": "stone",         "result": "whetstone",      "requiredLevel": 1,  "xp": 25 },
+
+    { "id": "tr_rope",           "a": "cord",           "b": "cord",          "result": "rope",           "requiredLevel": 2,  "xp": 35 },
+    { "id": "tr_snare",          "a": "rope",           "b": "stick",         "result": "snare",          "requiredLevel": 2,  "xp": 35 },
+
+    { "id": "tr_kiln",           "a": "clay",           "b": "ember",         "result": "kiln",           "requiredLevel": 3,  "xp": 60 },
+    { "id": "tr_bow",            "a": "cord",           "b": "stick",         "result": "bow",            "requiredLevel": 3,  "xp": 45 },
+    { "id": "tr_bone_charm",     "a": "bone",           "b": "cord",          "result": "bone_charm",     "requiredLevel": 3,  "xp": 45 },
+    { "id": "tr_glow_tonic",     "a": "glowcap",        "b": "spring_water",  "result": "glow_tonic",     "requiredLevel": 3,  "xp": 45 },
+    { "id": "tr_bandage",        "a": "fiber",          "b": "resin",         "result": "bandage",        "requiredLevel": 3,  "xp": 40 },
+    { "id": "tr_pitch",          "a": "resin",          "b": "ember",         "result": "pitch",          "requiredLevel": 3,  "xp": 45 },
+
+    { "id": "tr_wind_sash",      "a": "gale_moss",      "b": "cord",          "result": "wind_sash",      "requiredLevel": 4,  "xp": 55 },
+
+    { "id": "tr_glass",          "a": "sand",           "b": "kiln",          "result": "glass",          "requiredLevel": 6,  "xp": 70 },
+    { "id": "tr_brick",          "a": "clay",           "b": "kiln",          "result": "brick",          "requiredLevel": 5,  "xp": 70 },
+
+    { "id": "tr_flask",          "a": "glass",          "b": "cord",          "result": "flask",          "requiredLevel": 6,  "xp": 80 },
+    { "id": "tr_obsidian_shard", "a": "obsidian",       "b": "whetstone",     "result": "obsidian_shard", "requiredLevel": 6,  "xp": 80 },
+
+    { "id": "tr_obsidian_spear", "a": "obsidian_shard", "b": "stick",         "result": "obsidian_spear", "requiredLevel": 7,  "xp": 95 },
+    { "id": "tr_ember_vial",     "a": "ember_bloom",    "b": "flask",         "result": "ember_vial",     "requiredLevel": 7,  "xp": 95 },
+
+    { "id": "tr_forge",          "a": "brick",          "b": "brick",         "result": "forge",          "requiredLevel": 8,  "xp": 130 },
+    { "id": "tr_fire_flask",     "a": "flask",          "b": "pitch",         "result": "fire_flask",     "requiredLevel": 8,  "xp": 110 },
+
+    { "id": "tr_iron_ingot",     "a": "iron_ore",       "b": "forge",         "result": "iron_ingot",     "requiredLevel": 10, "xp": 150 },
+    { "id": "tr_silver_ingot",   "a": "silver_ore",     "b": "forge",         "result": "silver_ingot",   "requiredLevel": 10, "xp": 150 },
+    { "id": "tr_iron_hammer",    "a": "iron_ingot",     "b": "stick",         "result": "iron_hammer",    "requiredLevel": 10, "xp": 140 },
+
+    { "id": "tr_iron_blade",     "a": "iron_ingot",     "b": "whetstone",     "result": "iron_blade",     "requiredLevel": 11, "xp": 160 },
+    { "id": "tr_chain",          "a": "iron_ingot",     "b": "rope",          "result": "chain",          "requiredLevel": 11, "xp": 155 },
+
+    { "id": "tr_iron_sword",     "a": "iron_blade",     "b": "cord",          "result": "iron_sword",     "requiredLevel": 12, "xp": 190 },
+    { "id": "tr_silver_mirror",  "a": "silver_ingot",   "b": "glass",         "result": "silver_mirror",  "requiredLevel": 12, "xp": 190 },
+    { "id": "tr_lens",           "a": "glass",          "b": "crystal_shard", "result": "lens",           "requiredLevel": 12, "xp": 190 },
+    { "id": "tr_lantern",        "a": "lens",           "b": "torch",         "result": "lantern",        "requiredLevel": 12, "xp": 200 },
+
+    { "id": "tr_resonator",      "a": "silver_ingot",   "b": "crystal_shard", "result": "resonator",      "requiredLevel": 13, "xp": 220 },
+
+    { "id": "tr_rune_stone",     "a": "stone",          "b": "aetherdust",    "result": "rune_stone",     "requiredLevel": 15, "xp": 280 },
+    { "id": "tr_void_shard",     "a": "voidglass",      "b": "iron_hammer",   "result": "void_shard",     "requiredLevel": 15, "xp": 280 },
+
+    { "id": "tr_sigil",          "a": "rune_stone",     "b": "resonator",     "result": "sigil",          "requiredLevel": 16, "xp": 340 },
+    { "id": "tr_aether_lens",    "a": "lens",           "b": "aetherdust",    "result": "aether_lens",    "requiredLevel": 16, "xp": 340 },
+
+    { "id": "tr_void_blade",     "a": "void_shard",     "b": "iron_sword",    "result": "void_blade",     "requiredLevel": 17, "xp": 420 },
+
+    { "id": "tr_orb_focus",      "a": "sigil",          "b": "aether_lens",   "result": "orb_focus",      "requiredLevel": 18, "xp": 600 },
+
+    { "id": "tr_maelstrom_key",  "a": "orb_focus",      "b": "maelstrom_seed","result": "maelstrom_key",  "requiredLevel": 20, "xp": 1000 }
+  ]
+}

@@ -1,0 +1,570 @@
+/**
+ * Procedural icon rendering.
+ *
+ * MaterialSO.icon is a Sprite in Unity; there are no sprites here, so every
+ * material declares a `shape` key and gets drawn from paths instead. That keeps
+ * the repo free of binary art while still giving ~40 visually distinct items,
+ * and it means new content is playable the moment it is added to the JSON.
+ *
+ * Every shape draws centred on the origin, inside a box of roughly `size`.
+ */
+
+export type Ctx = CanvasRenderingContext2D;
+
+// ---------------------------------------------------------------- colour utils
+
+function parseHex(hex: string): [number, number, number] {
+  const value = hex.replace('#', '');
+  const full = value.length === 3 ? value.split('').map((c) => c + c).join('') : value;
+  const int = Number.parseInt(full, 16);
+  return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
+}
+
+/** amount > 0 lightens, < 0 darkens. */
+export function shade(hex: string, amount: number): string {
+  const [r, g, b] = parseHex(hex);
+  const mix = (c: number) =>
+    Math.round(amount >= 0 ? c + (255 - c) * amount : c * (1 + amount))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${mix(r)}${mix(g)}${mix(b)}`;
+}
+
+export function withAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = parseHex(hex);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ---------------------------------------------------------------- path helpers
+
+function poly(ctx: Ctx, points: readonly [number, number][], s: number): void {
+  ctx.beginPath();
+  points.forEach(([x, y], i) => {
+    const px = x * s;
+    const py = y * s;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.closePath();
+}
+
+function circle(ctx: Ctx, x: number, y: number, r: number, s: number): void {
+  ctx.beginPath();
+  ctx.arc(x * s, y * s, r * s, 0, Math.PI * 2);
+}
+
+function bar(ctx: Ctx, x: number, y: number, w: number, h: number, s: number, radius = 0.05): void {
+  const rx = radius * s;
+  ctx.beginPath();
+  ctx.roundRect((x - w / 2) * s, (y - h / 2) * s, w * s, h * s, rx);
+}
+
+function fillStroke(ctx: Ctx, fill: string, s: number, lineScale = 0.055): void {
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, lineScale * s);
+  ctx.strokeStyle = shade(fill, -0.45);
+  ctx.stroke();
+}
+
+// ---------------------------------------------------------------- shapes
+
+type ShapeFn = (ctx: Ctx, color: string, s: number) => void;
+
+const shapes: Record<string, ShapeFn> = {
+  rock: (ctx, c, s) => {
+    poly(ctx, [[-0.42, 0.1], [-0.3, -0.28], [0.06, -0.42], [0.38, -0.16], [0.4, 0.18], [0.1, 0.42], [-0.26, 0.36]], s);
+    fillStroke(ctx, c, s);
+    poly(ctx, [[-0.18, -0.1], [0.02, -0.24], [0.16, -0.04], [-0.02, 0.08]], s);
+    ctx.fillStyle = withAlpha(shade(c, 0.28), 0.7);
+    ctx.fill();
+  },
+
+  ore: (ctx, c, s) => {
+    shapes.rock?.(ctx, shade(c, -0.25), s);
+    ctx.fillStyle = shade(c, 0.42);
+    for (const [x, y, r] of [[-0.14, -0.06, 0.08], [0.12, 0.1, 0.06], [0.06, -0.22, 0.05], [-0.2, 0.18, 0.045]] as const) {
+      circle(ctx, x, y, r, s);
+      ctx.fill();
+    }
+  },
+
+  lump: (ctx, c, s) => {
+    poly(ctx, [[-0.38, 0.16], [-0.24, -0.2], [0.1, -0.34], [0.36, -0.06], [0.3, 0.26], [-0.06, 0.38]], s);
+    fillStroke(ctx, c, s);
+  },
+
+  stick: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(-0.68);
+    bar(ctx, 0, 0, 0.16, 0.86, s, 0.08);
+    fillStroke(ctx, c, s);
+    ctx.strokeStyle = withAlpha(shade(c, -0.3), 0.8);
+    ctx.lineWidth = Math.max(1, 0.03 * s);
+    ctx.beginPath();
+    ctx.moveTo(-0.02 * s, -0.3 * s);
+    ctx.lineTo(-0.02 * s, 0.28 * s);
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  leaf: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.moveTo(0, -0.46 * s);
+    ctx.quadraticCurveTo(0.4 * s, -0.06 * s, 0, 0.46 * s);
+    ctx.quadraticCurveTo(-0.4 * s, -0.06 * s, 0, -0.46 * s);
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+    ctx.strokeStyle = withAlpha(shade(c, -0.35), 0.9);
+    ctx.lineWidth = Math.max(1, 0.035 * s);
+    ctx.beginPath();
+    ctx.moveTo(0, -0.4 * s);
+    ctx.lineTo(0, 0.4 * s);
+    ctx.stroke();
+  },
+
+  moss: (ctx, c, s) => {
+    for (const [x, y, r] of [[-0.2, 0.08, 0.22], [0.16, 0.02, 0.2], [-0.02, -0.16, 0.24], [0.22, 0.2, 0.15], [-0.24, -0.14, 0.14]] as const) {
+      circle(ctx, x, y, r, s);
+      fillStroke(ctx, shade(c, x * 0.4), s, 0.035);
+    }
+  },
+
+  shard: (ctx, c, s) => {
+    poly(ctx, [[0, -0.48], [0.28, 0.06], [0.1, 0.46], [-0.18, 0.34], [-0.26, -0.08]], s);
+    fillStroke(ctx, c, s);
+    poly(ctx, [[0, -0.44], [0.2, 0.04], [0.02, 0.2]], s);
+    ctx.fillStyle = withAlpha(shade(c, 0.35), 0.55);
+    ctx.fill();
+  },
+
+  gem: (ctx, c, s) => {
+    poly(ctx, [[0, -0.46], [0.34, -0.1], [0.2, 0.42], [-0.2, 0.42], [-0.34, -0.1]], s);
+    fillStroke(ctx, c, s);
+    poly(ctx, [[0, -0.46], [0.34, -0.1], [0, 0.06], [-0.34, -0.1]], s);
+    ctx.fillStyle = withAlpha(shade(c, 0.45), 0.6);
+    ctx.fill();
+    poly(ctx, [[0, 0.06], [0.2, 0.42], [-0.2, 0.42]], s);
+    ctx.fillStyle = withAlpha(shade(c, -0.2), 0.4);
+    ctx.fill();
+  },
+
+  drop: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.moveTo(0, -0.46 * s);
+    ctx.bezierCurveTo(0.36 * s, -0.02 * s, 0.34 * s, 0.44 * s, 0, 0.44 * s);
+    ctx.bezierCurveTo(-0.34 * s, 0.44 * s, -0.36 * s, -0.02 * s, 0, -0.46 * s);
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+    circle(ctx, -0.1, 0.14, 0.09, s);
+    ctx.fillStyle = withAlpha('#ffffff', 0.5);
+    ctx.fill();
+  },
+
+  dust: (ctx, c, s) => {
+    const dots: readonly [number, number, number][] = [
+      [-0.26, 0.12, 0.08], [0.0, -0.06, 0.1], [0.24, 0.16, 0.075], [0.1, 0.32, 0.06],
+      [-0.12, -0.3, 0.065], [0.28, -0.2, 0.055], [-0.32, -0.1, 0.05], [0.02, 0.14, 0.05],
+    ];
+    for (const [x, y, r] of dots) {
+      circle(ctx, x, y, r, s);
+      ctx.fillStyle = withAlpha(shade(c, r * 3), 0.9);
+      ctx.fill();
+    }
+  },
+
+  blob: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.ellipse(0, 0.05 * s, 0.38 * s, 0.34 * s, 0.3, 0, Math.PI * 2);
+    fillStroke(ctx, c, s);
+    circle(ctx, -0.12, -0.08, 0.1, s);
+    ctx.fillStyle = withAlpha('#ffffff', 0.35);
+    ctx.fill();
+  },
+
+  cap: (ctx, c, s) => {
+    bar(ctx, 0, 0.24, 0.16, 0.4, s, 0.06);
+    fillStroke(ctx, shade(c, 0.35), s);
+    ctx.beginPath();
+    ctx.arc(0, 0.04 * s, 0.42 * s, Math.PI, 0);
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+    ctx.fillStyle = withAlpha(shade(c, 0.5), 0.8);
+    for (const [x, y, r] of [[-0.18, -0.1, 0.06], [0.1, -0.16, 0.05], [0.2, -0.02, 0.045]] as const) {
+      circle(ctx, x, y, r, s);
+      ctx.fill();
+    }
+  },
+
+  bloom: (ctx, c, s) => {
+    for (let i = 0; i < 6; i++) {
+      ctx.save();
+      ctx.rotate((i / 6) * Math.PI * 2);
+      ctx.beginPath();
+      ctx.ellipse(0, -0.26 * s, 0.13 * s, 0.22 * s, 0, 0, Math.PI * 2);
+      fillStroke(ctx, c, s, 0.035);
+      ctx.restore();
+    }
+    circle(ctx, 0, 0, 0.15, s);
+    fillStroke(ctx, shade(c, 0.45), s, 0.035);
+  },
+
+  bone: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(-0.5);
+    bar(ctx, 0, 0, 0.16, 0.6, s, 0.08);
+    fillStroke(ctx, c, s);
+    for (const y of [-0.32, 0.32]) {
+      for (const x of [-0.11, 0.11]) {
+        circle(ctx, x, y, 0.13, s);
+        fillStroke(ctx, c, s, 0.045);
+      }
+    }
+    ctx.restore();
+  },
+
+  coil: (ctx, c, s) => {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 0.13 * s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= 60; i++) {
+      const t = i / 60;
+      const angle = t * Math.PI * 5;
+      const radius = (0.1 + t * 0.3) * s;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius * 0.75;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = withAlpha(shade(c, 0.4), 0.55);
+    ctx.lineWidth = 0.045 * s;
+    ctx.stroke();
+  },
+
+  chain: (ctx, c, s) => {
+    for (const [x, y] of [[-0.22, -0.2], [0, 0], [0.22, 0.2]] as const) {
+      ctx.beginPath();
+      ctx.ellipse(x * s, y * s, 0.17 * s, 0.12 * s, 0.7, 0, Math.PI * 2);
+      ctx.lineWidth = 0.09 * s;
+      ctx.strokeStyle = c;
+      ctx.stroke();
+      ctx.lineWidth = 0.03 * s;
+      ctx.strokeStyle = shade(c, -0.4);
+      ctx.stroke();
+    }
+  },
+
+  plate: (ctx, c, s) => {
+    bar(ctx, 0, 0, 0.74, 0.34, s, 0.06);
+    fillStroke(ctx, c, s);
+    bar(ctx, 0, -0.06, 0.6, 0.1, s, 0.04);
+    ctx.fillStyle = withAlpha(shade(c, 0.4), 0.55);
+    ctx.fill();
+  },
+
+  brick: (ctx, c, s) => {
+    bar(ctx, 0, 0, 0.8, 0.44, s, 0.04);
+    fillStroke(ctx, c, s);
+    ctx.strokeStyle = withAlpha(shade(c, -0.35), 0.8);
+    ctx.lineWidth = 0.03 * s;
+    ctx.beginPath();
+    ctx.moveTo(-0.4 * s, 0);
+    ctx.lineTo(0.4 * s, 0);
+    ctx.moveTo(-0.1 * s, -0.22 * s);
+    ctx.lineTo(-0.1 * s, 0);
+    ctx.moveTo(0.14 * s, 0);
+    ctx.lineTo(0.14 * s, 0.22 * s);
+    ctx.stroke();
+  },
+
+  ingot: (ctx, c, s) => {
+    poly(ctx, [[-0.42, 0.2], [-0.3, -0.16], [0.3, -0.16], [0.42, 0.2]], s);
+    fillStroke(ctx, c, s);
+    bar(ctx, 0, -0.2, 0.6, 0.1, s, 0.03);
+    ctx.fillStyle = shade(c, 0.35);
+    ctx.fill();
+  },
+
+  ring: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.34 * s, 0, Math.PI * 2);
+    ctx.lineWidth = 0.12 * s;
+    ctx.strokeStyle = c;
+    ctx.stroke();
+    ctx.lineWidth = 0.035 * s;
+    ctx.strokeStyle = shade(c, -0.4);
+    ctx.stroke();
+  },
+
+  wrap: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.moveTo(-0.44 * s, -0.2 * s);
+    ctx.quadraticCurveTo(0, 0.1 * s, 0.44 * s, -0.2 * s);
+    ctx.lineTo(0.44 * s, 0.06 * s);
+    ctx.quadraticCurveTo(0, 0.36 * s, -0.44 * s, 0.06 * s);
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+  },
+
+  flame: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.moveTo(0, -0.48 * s);
+    ctx.bezierCurveTo(0.3 * s, -0.16 * s, 0.32 * s, 0.24 * s, 0, 0.44 * s);
+    ctx.bezierCurveTo(-0.32 * s, 0.24 * s, -0.3 * s, -0.16 * s, 0, -0.48 * s);
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+    ctx.beginPath();
+    ctx.moveTo(0, -0.16 * s);
+    ctx.bezierCurveTo(0.16 * s, 0.02 * s, 0.16 * s, 0.24 * s, 0, 0.34 * s);
+    ctx.bezierCurveTo(-0.16 * s, 0.24 * s, -0.16 * s, 0.02 * s, 0, -0.16 * s);
+    ctx.closePath();
+    ctx.fillStyle = withAlpha('#ffe9a8', 0.85);
+    ctx.fill();
+  },
+
+  torch: (ctx, c, s) => {
+    ctx.save();
+    ctx.translate(0, 0.14 * s);
+    bar(ctx, 0, 0.14, 0.14, 0.56, s, 0.05);
+    fillStroke(ctx, '#8a5f34', s);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(0, -0.2 * s);
+    ctx.scale(0.72, 0.72);
+    shapes.flame?.(ctx, c, s);
+    ctx.restore();
+  },
+
+  lantern: (ctx, c, s) => {
+    bar(ctx, 0, 0.02, 0.5, 0.6, s, 0.08);
+    fillStroke(ctx, shade(c, -0.55), s);
+    bar(ctx, 0, 0.02, 0.32, 0.42, s, 0.04);
+    ctx.fillStyle = c;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -0.3 * s, 0.16 * s, Math.PI, 0);
+    ctx.lineWidth = 0.06 * s;
+    ctx.strokeStyle = shade(c, -0.5);
+    ctx.stroke();
+  },
+
+  kiln: (ctx, c, s) => {
+    poly(ctx, [[-0.42, 0.4], [-0.32, -0.24], [0, -0.42], [0.32, -0.24], [0.42, 0.4]], s);
+    fillStroke(ctx, c, s);
+    ctx.beginPath();
+    ctx.arc(0, 0.22 * s, 0.16 * s, Math.PI, 0);
+    ctx.lineTo(0.16 * s, 0.4 * s);
+    ctx.lineTo(-0.16 * s, 0.4 * s);
+    ctx.closePath();
+    ctx.fillStyle = '#ff9d3c';
+    ctx.fill();
+    ctx.strokeStyle = withAlpha(shade(c, -0.4), 0.7);
+    ctx.lineWidth = 0.03 * s;
+    ctx.beginPath();
+    ctx.moveTo(-0.36 * s, -0.04 * s);
+    ctx.lineTo(0.36 * s, -0.04 * s);
+    ctx.stroke();
+  },
+
+  flask: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.moveTo(-0.1 * s, -0.42 * s);
+    ctx.lineTo(-0.1 * s, -0.14 * s);
+    ctx.lineTo(-0.34 * s, 0.3 * s);
+    ctx.quadraticCurveTo(-0.34 * s, 0.44 * s, -0.18 * s, 0.44 * s);
+    ctx.lineTo(0.18 * s, 0.44 * s);
+    ctx.quadraticCurveTo(0.34 * s, 0.44 * s, 0.34 * s, 0.3 * s);
+    ctx.lineTo(0.1 * s, -0.14 * s);
+    ctx.lineTo(0.1 * s, -0.42 * s);
+    ctx.closePath();
+    ctx.fillStyle = withAlpha('#dff2fb', 0.35);
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, 0.05 * s);
+    ctx.strokeStyle = '#cfe8f2';
+    ctx.stroke();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = c;
+    ctx.fillRect(-0.4 * s, 0.06 * s, 0.8 * s, 0.4 * s);
+    ctx.restore();
+    bar(ctx, 0, -0.44, 0.28, 0.1, s, 0.03);
+    fillStroke(ctx, '#b08a5c', s, 0.03);
+  },
+
+  axe: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(0.42);
+    bar(ctx, 0, 0.1, 0.13, 0.78, s, 0.05);
+    fillStroke(ctx, '#8a5f34', s);
+    ctx.beginPath();
+    ctx.moveTo(-0.04 * s, -0.42 * s);
+    ctx.quadraticCurveTo(0.42 * s, -0.34 * s, 0.36 * s, 0.02 * s);
+    ctx.quadraticCurveTo(0.2 * s, -0.06 * s, -0.04 * s, -0.06 * s);
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+    ctx.restore();
+  },
+
+  hammer: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(0.42);
+    bar(ctx, 0, 0.14, 0.13, 0.72, s, 0.05);
+    fillStroke(ctx, '#8a5f34', s);
+    bar(ctx, 0, -0.3, 0.62, 0.3, s, 0.05);
+    fillStroke(ctx, c, s);
+    ctx.restore();
+  },
+
+  blade: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(0.6);
+    poly(ctx, [[-0.06, -0.46], [0.12, -0.34], [0.1, 0.08], [-0.06, 0.14]], s);
+    fillStroke(ctx, c, s);
+    bar(ctx, 0.02, 0.28, 0.14, 0.34, s, 0.05);
+    fillStroke(ctx, '#7a5330', s);
+    ctx.restore();
+  },
+
+  sword: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(0.72);
+    poly(ctx, [[0, -0.5], [0.11, -0.34], [0.11, 0.16], [-0.11, 0.16], [-0.11, -0.34]], s);
+    fillStroke(ctx, c, s);
+    bar(ctx, 0, 0.2, 0.46, 0.1, s, 0.03);
+    fillStroke(ctx, shade(c, -0.35), s, 0.035);
+    bar(ctx, 0, 0.36, 0.13, 0.26, s, 0.05);
+    fillStroke(ctx, '#6b4a2c', s, 0.035);
+    ctx.restore();
+  },
+
+  spear: (ctx, c, s) => {
+    ctx.save();
+    ctx.rotate(0.72);
+    bar(ctx, 0, 0.16, 0.1, 0.68, s, 0.04);
+    fillStroke(ctx, '#8a5f34', s, 0.04);
+    poly(ctx, [[0, -0.5], [0.16, -0.26], [0, -0.14], [-0.16, -0.26]], s);
+    fillStroke(ctx, c, s);
+    ctx.restore();
+  },
+
+  bow: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.arc(-0.1 * s, 0, 0.42 * s, -1.05, 1.05);
+    ctx.lineWidth = 0.1 * s;
+    ctx.strokeStyle = c;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0.26 * s, -0.36 * s);
+    ctx.lineTo(0.26 * s, 0.36 * s);
+    ctx.lineWidth = 0.035 * s;
+    ctx.strokeStyle = '#e8dcc0';
+    ctx.stroke();
+  },
+
+  lens: (ctx, c, s) => {
+    circle(ctx, 0, 0, 0.4, s);
+    ctx.fillStyle = withAlpha(c, 0.55);
+    ctx.fill();
+    ctx.lineWidth = 0.08 * s;
+    ctx.strokeStyle = shade(c, -0.3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-0.1 * s, -0.1 * s, 0.16 * s, Math.PI * 0.9, Math.PI * 1.9);
+    ctx.lineWidth = 0.05 * s;
+    ctx.strokeStyle = withAlpha('#ffffff', 0.75);
+    ctx.stroke();
+  },
+
+  mirror: (ctx, c, s) => {
+    ctx.beginPath();
+    ctx.ellipse(0, -0.06 * s, 0.32 * s, 0.36 * s, 0, 0, Math.PI * 2);
+    fillStroke(ctx, c, s);
+    ctx.beginPath();
+    ctx.moveTo(-0.16 * s, 0.12 * s);
+    ctx.lineTo(0.1 * s, -0.26 * s);
+    ctx.lineWidth = 0.06 * s;
+    ctx.strokeStyle = withAlpha('#ffffff', 0.7);
+    ctx.stroke();
+    bar(ctx, 0, 0.36, 0.12, 0.24, s, 0.04);
+    fillStroke(ctx, shade(c, -0.5), s, 0.035);
+  },
+
+  core: (ctx, c, s) => {
+    circle(ctx, 0, 0, 0.42, s);
+    ctx.fillStyle = withAlpha(c, 0.28);
+    ctx.fill();
+    circle(ctx, 0, 0, 0.3, s);
+    ctx.lineWidth = 0.05 * s;
+    ctx.strokeStyle = shade(c, 0.2);
+    ctx.stroke();
+    circle(ctx, 0, 0, 0.16, s);
+    fillStroke(ctx, c, s, 0.04);
+  },
+
+  rune: (ctx, c, s) => {
+    poly(ctx, [[-0.34, -0.38], [0.34, -0.38], [0.4, 0.28], [0, 0.44], [-0.4, 0.28]], s);
+    fillStroke(ctx, shade(c, -0.5), s);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 0.07 * s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-0.14 * s, -0.22 * s);
+    ctx.lineTo(0.14 * s, -0.22 * s);
+    ctx.moveTo(0, -0.22 * s);
+    ctx.lineTo(0, 0.24 * s);
+    ctx.moveTo(-0.16 * s, 0.06 * s);
+    ctx.lineTo(0, -0.06 * s);
+    ctx.moveTo(0.16 * s, 0.06 * s);
+    ctx.lineTo(0, -0.06 * s);
+    ctx.stroke();
+  },
+
+  orb: (ctx, c, s) => {
+    circle(ctx, 0, 0, 0.44, s);
+    ctx.fillStyle = withAlpha(c, 0.22);
+    ctx.fill();
+    circle(ctx, 0, 0, 0.32, s);
+    const gradient = ctx.createRadialGradient(-0.1 * s, -0.12 * s, 0.02 * s, 0, 0, 0.34 * s);
+    gradient.addColorStop(0, shade(c, 0.6));
+    gradient.addColorStop(1, shade(c, -0.35));
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.lineWidth = 0.04 * s;
+    ctx.strokeStyle = withAlpha('#ffffff', 0.5);
+    ctx.stroke();
+  },
+
+  star: (ctx, c, s) => {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+      const radius = (i % 2 === 0 ? 0.48 : 0.16) * s;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    fillStroke(ctx, c, s);
+    circle(ctx, 0, 0, 0.1, s);
+    ctx.fillStyle = withAlpha('#ffffff', 0.8);
+    ctx.fill();
+  },
+};
+
+/**
+ * Draw a material icon centred on the current origin.
+ * An unknown shape key falls back to a plain rock rather than drawing nothing,
+ * so new content is always visible even before it has art direction.
+ */
+export function drawIcon(ctx: Ctx, shape: string, color: string, size: number): void {
+  ctx.save();
+  ctx.lineJoin = 'round';
+  (shapes[shape] ?? shapes.rock)?.(ctx, color, size);
+  ctx.restore();
+}
+
+export const knownShapes = Object.keys(shapes);

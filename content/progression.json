@@ -1,0 +1,26 @@
+{
+  "$comment": "Tuning constants. Kept out of code so balance can be changed without touching either runtime.",
+  "alchemyUnlockLevel": 5,
+  "orbCount": 2,
+  "maxLevel": 25,
+
+  "$comment_yield": "Decomposition is lossy on purpose: breaking a crafted thing returns only this fraction of its inputs' essence (min 1 per element). Without it, composition doubles every craft tier and a late-game item would decompose into hundreds of elements.",
+  "decompositionYield": 0.6,
+  "xp": {
+    "gather": 4,
+    "gatherNewMaterial": 30,
+    "repeatTransmuteFactor": 0.2,
+    "repeatAlchemyFactor": 0.25,
+    "decompose": 6
+  },
+  "levelCurve": {
+    "$comment": "XP required to advance FROM level n TO n+1 is base * n^exponent, rounded to the nearest 5.",
+    "base": 60,
+    "exponent": 1.45
+  },
+  "player": {
+    "moveSpeed": 168,
+    "gatherRadius": 34,
+    "radius": 13
+  }
+}

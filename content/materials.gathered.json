@@ -1,0 +1,176 @@
+{
+  "$comment": "Tier-0 materials found in the world. These are the ONLY materials with a hand-authored elementComposition; everything craftable derives its composition from its recipe inputs at build time (see tools/build-content.mjs).",
+  "materials": [
+    {
+      "id": "stick",
+      "name": "Stick",
+      "description": "A length of fallen branch. The humblest possible input, and the base of half of everything.",
+      "tags": ["Wood", "Organic"],
+      "shape": "stick",
+      "color": "#a1703c",
+      "composition": { "verdant": 2, "terran": 1 }
+    },
+    {
+      "id": "stone",
+      "name": "Stone",
+      "description": "Grey river rock, cold and dense. Holds an edge badly and a grudge well.",
+      "tags": ["Stone", "Mineral"],
+      "shape": "rock",
+      "color": "#8d949e",
+      "composition": { "terran": 3 }
+    },
+    {
+      "id": "fiber",
+      "name": "Plant Fiber",
+      "description": "Stringy inner bark, stripped and dried. Weak alone, stubborn in numbers.",
+      "tags": ["Organic", "Plant"],
+      "shape": "leaf",
+      "color": "#6ba644",
+      "composition": { "verdant": 3 }
+    },
+    {
+      "id": "flint",
+      "name": "Flint",
+      "description": "Dark, glassy nodule that fractures into edges. Strikes sparks against its own kind.",
+      "tags": ["Stone", "Mineral"],
+      "shape": "shard",
+      "color": "#5b6068",
+      "composition": { "terran": 2, "pyron": 1 }
+    },
+    {
+      "id": "clay",
+      "name": "Clay",
+      "description": "Wet grey earth that remembers whatever shape you last gave it.",
+      "tags": ["Earth", "Mineral"],
+      "shape": "lump",
+      "color": "#b98963",
+      "composition": { "terran": 2, "aqualis": 1 }
+    },
+    {
+      "id": "spring_water",
+      "name": "Spring Water",
+      "description": "Cold and startlingly clear. Alchemists insist the source matters. It does.",
+      "tags": ["Liquid"],
+      "shape": "drop",
+      "color": "#4cb8e8",
+      "composition": { "aqualis": 3 }
+    },
+    {
+      "id": "glowcap",
+      "name": "Glowcap",
+      "description": "A pale fungus that keeps a soft light for hours after picking. Nobody is sure why.",
+      "tags": ["Organic", "Fungus"],
+      "shape": "cap",
+      "color": "#cbe86b",
+      "composition": { "verdant": 2, "lumis": 2 }
+    },
+    {
+      "id": "resin",
+      "name": "Pine Resin",
+      "description": "Amber sap, tacky and sharp-smelling. Catches fire with enthusiasm.",
+      "tags": ["Organic", "Sticky"],
+      "shape": "blob",
+      "color": "#e0a13c",
+      "composition": { "verdant": 2, "pyron": 1 }
+    },
+    {
+      "id": "bone",
+      "name": "Bleached Bone",
+      "description": "Sun-whitened and hollow. Something walked here once, and stopped.",
+      "tags": ["Organic", "Remains"],
+      "shape": "bone",
+      "color": "#e2ddcf",
+      "composition": { "terran": 1, "umbral": 2 }
+    },
+    {
+      "id": "gale_moss",
+      "name": "Gale Moss",
+      "description": "Grows only on the windward face of things. Twitches when the air is still.",
+      "tags": ["Organic", "Air"],
+      "shape": "moss",
+      "color": "#8fd6c4",
+      "composition": { "zephyr": 3, "verdant": 1 }
+    },
+    {
+      "id": "coal",
+      "name": "Coal",
+      "description": "Compressed ancient forest. Burns long, dirty, and hot.",
+      "tags": ["Mineral", "Fuel"],
+      "shape": "rock",
+      "color": "#3a3a42",
+      "composition": { "pyron": 3, "terran": 1 }
+    },
+    {
+      "id": "sand",
+      "name": "Cinder Sand",
+      "description": "Fine black grit off the flats. Gets into absolutely everything.",
+      "tags": ["Earth", "Mineral"],
+      "shape": "dust",
+      "color": "#a89a86",
+      "composition": { "terran": 2, "zephyr": 1 }
+    },
+    {
+      "id": "obsidian",
+      "name": "Obsidian",
+      "description": "Cooled too fast to become a proper rock. Edges sharper than any metal, and just as brittle.",
+      "tags": ["Stone", "Volcanic"],
+      "shape": "shard",
+      "color": "#2b2836",
+      "composition": { "pyron": 2, "terran": 2, "umbral": 1 }
+    },
+    {
+      "id": "ember_bloom",
+      "name": "Ember Bloom",
+      "description": "A flower that grows in ash and runs hot to the touch. Wilts if it cools.",
+      "tags": ["Organic", "Fire"],
+      "shape": "bloom",
+      "color": "#ff8347",
+      "composition": { "pyron": 3, "verdant": 1 }
+    },
+    {
+      "id": "iron_ore",
+      "name": "Iron Ore",
+      "description": "Rust-streaked rock, far heavier than it looks. Useless until something melts it.",
+      "tags": ["Metal", "Mineral"],
+      "shape": "ore",
+      "color": "#9c6a4f",
+      "composition": { "ferric": 3, "terran": 2 }
+    },
+    {
+      "id": "silver_ore",
+      "name": "Silver Ore",
+      "description": "Bright threads running through dull stone. Takes light well and holds a charge better.",
+      "tags": ["Metal", "Precious"],
+      "shape": "ore",
+      "color": "#c8cdd6",
+      "composition": { "ferric": 2, "lumis": 2 }
+    },
+    {
+      "id": "crystal_shard",
+      "name": "Crystal Shard",
+      "description": "Grown, not formed. Hums faintly when another shard comes near.",
+      "tags": ["Mineral", "Arcane"],
+      "shape": "gem",
+      "color": "#7dd3fc",
+      "composition": { "lumis": 2, "aether": 2 }
+    },
+    {
+      "id": "voidglass",
+      "name": "Voidglass",
+      "description": "Black glass that does not reflect you. Cold in any weather.",
+      "tags": ["Arcane", "Volcanic"],
+      "shape": "gem",
+      "color": "#4c3f6b",
+      "composition": { "umbral": 3, "aether": 2 }
+    },
+    {
+      "id": "aetherdust",
+      "name": "Aetherdust",
+      "description": "Scraped from the rim where the maelstrom grinds the world thin. Drifts upward if you let go.",
+      "tags": ["Arcane"],
+      "shape": "dust",
+      "color": "#e9a5f5",
+      "composition": { "aether": 4, "zephyr": 1 }
+    }
+  ]
+}

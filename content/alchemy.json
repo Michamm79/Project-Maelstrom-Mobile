@@ -1,0 +1,15 @@
+{
+  "$comment": "Alchemy: N elements with quantities produce one object. Mirrors AlchemyRecipe.cs. Gated behind alchemyUnlockLevel (5).",
+  "recipes": [
+    { "id": "alc_fireball",      "requires": { "pyron": 2, "zephyr": 1 },                 "result": "fireball",           "requiredLevel": 5,  "xp": 40 },
+    { "id": "alc_healing",       "requires": { "verdant": 2, "aqualis": 2 },              "result": "healing_draught",    "requiredLevel": 5,  "xp": 40 },
+    { "id": "alc_stone_ward",    "requires": { "terran": 4, "ferric": 2 },                "result": "stone_ward",         "requiredLevel": 6,  "xp": 50 },
+    { "id": "alc_light_lure",    "requires": { "lumis": 3, "aether": 1 },                 "result": "light_lure",         "requiredLevel": 8,  "xp": 60 },
+    { "id": "alc_shadow_veil",   "requires": { "umbral": 3, "zephyr": 1 },                "result": "shadow_veil",        "requiredLevel": 8,  "xp": 60 },
+    { "id": "alc_storm_core",    "requires": { "zephyr": 3, "pyron": 2, "aether": 1 },    "result": "storm_core",         "requiredLevel": 10, "xp": 80 },
+    { "id": "alc_golem_core",    "requires": { "terran": 5, "ferric": 3 },                "result": "golem_core",         "requiredLevel": 12, "xp": 90 },
+    { "id": "alc_quicksilver",   "requires": { "ferric": 3, "aqualis": 2, "lumis": 1 },   "result": "quicksilver",        "requiredLevel": 12, "xp": 90 },
+    { "id": "alc_phil_ember",    "requires": { "pyron": 3, "lumis": 3, "aether": 2 },     "result": "philosophers_ember", "requiredLevel": 15, "xp": 140 },
+    { "id": "alc_maelstrom",     "requires": { "aether": 4, "umbral": 2, "lumis": 2 },    "result": "maelstrom_seed",     "requiredLevel": 18, "xp": 200 }
+  ]
+}

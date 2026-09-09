@@ -1,0 +1,15 @@
+{
+  "$comment": "Materials produced by alchemy (elements in, object out). Composition is derived from the alchemy recipe's required elements.",
+  "materials": [
+    { "id": "fireball",           "name": "Bound Fireball",      "description": "Pyron wrapped in a skin of moving air. Stable right up until it isn't.",              "tags": ["Weapon", "Alchemical"],     "shape": "flame", "color": "#ff5e2e" },
+    { "id": "healing_draught",    "name": "Healing Draught",     "description": "Life-essence held in solution. Tastes like cut grass and copper.",                    "tags": ["Consumable", "Alchemical"], "shape": "flask", "color": "#5fe08c" },
+    { "id": "stone_ward",         "name": "Stone Ward",          "description": "Terran bound with Ferric until it forgets how to be moved.",                          "tags": ["Trinket", "Alchemical"],    "shape": "plate", "color": "#a08663" },
+    { "id": "light_lure",         "name": "Light Lure",          "description": "A knot of Lumis that things follow. Not always the things you wanted.",               "tags": ["Tool", "Alchemical"],       "shape": "star",  "color": "#ffe066" },
+    { "id": "shadow_veil",        "name": "Shadow Veil",         "description": "Umbral spun thin enough to wear. You are still here; you are simply not worth noticing.", "tags": ["Apparel", "Alchemical"], "shape": "wrap",  "color": "#7a6bb8" },
+    { "id": "storm_core",         "name": "Storm Core",          "description": "Zephyr and Pyron forced to share a vessel. They have never once agreed.",             "tags": ["Component", "Alchemical"],  "shape": "core",  "color": "#8fd0ff" },
+    { "id": "golem_core",         "name": "Golem Core",          "description": "Enough Terran to matter, enough Ferric to obey. Put it in something heavy.",          "tags": ["Component", "Alchemical"],  "shape": "core",  "color": "#b08d5e" },
+    { "id": "quicksilver",        "name": "Quicksilver",         "description": "Metal that refuses to hold still. Alchemists adore it; their hands do not.",           "tags": ["Component", "Alchemical"],  "shape": "drop",  "color": "#dfe6ef" },
+    { "id": "philosophers_ember", "name": "Philosopher's Ember", "description": "The small famous one. Burns without fuel, and has not gone out in four hundred years.", "tags": ["Arcane", "Alchemical"],     "shape": "flame", "color": "#ffd27a" },
+    { "id": "maelstrom_seed",     "name": "Maelstrom Seed",      "description": "A fragment of the storm, folded small. It is patient, and it is counting.",            "tags": ["Arcane", "Key", "Alchemical"], "shape": "orb", "color": "#f2a6ff" }
+  ]
+}
