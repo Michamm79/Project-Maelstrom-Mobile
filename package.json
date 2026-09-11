@@ -8,6 +8,7 @@
     "build:content": "node tools/build-content.mjs",
     "dev": "npm run build:content && vite",
     "build": "npm run build:content && npm run build:icons && tsc --noEmit && vite build",
+    "build:single": "npm run build && node tools/build-artifact.mjs",
     "preview": "vite preview",
     "test": "npm run build:content && vitest run",
     "test:watch": "vitest",
