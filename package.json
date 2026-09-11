@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build:icons": "node tools/make-icons.mjs",
+    "build:sprites": "node tools/make-sprites.mjs",
     "smoke": "npm run build && node tools/smoke.mjs"
   },
   "devDependencies": {
