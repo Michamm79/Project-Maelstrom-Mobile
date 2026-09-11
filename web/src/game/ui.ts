@@ -7,11 +7,11 @@
  * feels far better on a phone than anything hand-rolled into a canvas.
  */
 import { drawIcon } from './icons';
-import { shortfall } from '../core/alchemy';
+import { findRecipeForSelection, selectionSize, shortfall } from '../core/alchemy';
 import { levelProgress, xpAtLevelStart, xpAtNextLevel } from '../core/progression';
 import type { Content } from '../core/content';
 import type { OrbContainer } from '../core/orbContainer';
-import type { AlchemyRecipe, Hand, MaterialId, ZoneId } from '../core/types';
+import type { AlchemyRecipe, ElementId, Hand, MaterialId, ZoneId } from '../core/types';
 
 export interface UiCallbacks {
   onGather: () => void;
@@ -19,7 +19,11 @@ export interface UiCallbacks {
   onUnloadOrb: (hand: Hand) => void;
   onDecomposeOrb: (hand: Hand) => void;
   onLoadFromPack: (material: MaterialId) => void;
+  /** Bench: put a material into a specific slot, replacing what's there. */
+  onPlaceInSlot: (hand: Hand, material: MaterialId) => void;
   onAlchemize: (recipe: AlchemyRecipe) => void;
+  /** Table: mix a hand-picked set of elements. */
+  onMixSelection: (selection: Record<ElementId, number>) => void;
   onTravel: (zone: ZoneId) => void;
   onReset: () => void;
 }
@@ -62,6 +66,11 @@ export class Ui {
   private openBuilder: SheetBuilder | null = null;
   private gatherTarget: MaterialId | null = null;
   private codexTab: 'materials' | 'transmutation' | 'alchemy' = 'materials';
+
+  /** Which bench slot the next tapped material goes into. */
+  private benchSlot: Hand = 'left';
+  /** Elements the player has dialled up on the alchemy table, not yet spent. */
+  private mix: Record<ElementId, number> = {};
 
   constructor(
     root: HTMLElement,
@@ -121,7 +130,7 @@ export class Ui {
     // -------------------------------------------------------------- nav
     const nav = el('div', 'nav');
     nav.dataset.ui = '';
-    const navPack = this.buildNav('Pack', '▤', () => this.openPack());
+    const navPack = this.buildNav('Bench', '▤', () => this.openBench());
     this.navAlchemy = this.buildNav('Alchemy', '⚗', () => this.openAlchemy());
     const navCodex = this.buildNav('Codex', '☷', () => this.openCodex());
     const navMenu = this.buildNav('Menu', '≡', () => this.openMenu());
@@ -242,11 +251,8 @@ export class Ui {
     this.navAlchemy.querySelector('.dot')?.remove();
     if (brewable) this.navAlchemy.append(el('span', 'dot'));
 
-    // A sheet left open (the pack, say) must follow the state that changed under it.
-    if (this.openBuilder && this.sheet.classList.contains('on')) {
-      this.sheetBody.replaceChildren();
-      this.openBuilder(this.sheetBody);
-    }
+    // A sheet left open (the bench, say) must follow the state that changed under it.
+    if (this.openBuilder && this.sheet.classList.contains('on')) this.rebuildSheet();
   }
 
   private refreshCraftButton(orb: OrbContainer): void {
@@ -283,6 +289,12 @@ export class Ui {
     );
   }
 
+  /** Empty the alchemy tray, after a successful mix consumes it. */
+  clearMix(): void {
+    this.mix = {};
+    if (this.sheetOpen) this.rebuildSheet();
+  }
+
   setGatherTarget(material: MaterialId | null): void {
     if (material === this.gatherTarget) return;
     this.gatherTarget = material;
@@ -312,6 +324,19 @@ export class Ui {
     this.openBuilder = null;
   }
 
+  /**
+   * Re-run the open sheet's builder in place, preserving scroll position.
+   * The bench and the alchemy table both hold selection state that changes on
+   * every tap, and rebuilding is simpler to keep correct than patching nodes.
+   */
+  private rebuildSheet(): void {
+    if (!this.openBuilder) return;
+    const scroll = this.sheetBody.scrollTop;
+    this.sheetBody.replaceChildren();
+    this.openBuilder(this.sheetBody);
+    this.sheetBody.scrollTop = scroll;
+  }
+
   get sheetOpen(): boolean {
     return this.sheet.classList.contains('on');
   }
@@ -328,85 +353,236 @@ export class Ui {
     return this.orbRef;
   }
 
-  openPack(): void {
-    this.openSheet('Pack', (body) => {
+  /**
+   * The transmutation bench: both orb slots and everything you are carrying, in
+   * one view. Tap a slot to target it, tap a material to place it there -
+   * replacing whatever was in it, which goes back to the pack.
+   */
+  openBench(): void {
+    this.openSheet('Transmutation Bench', (body) => {
       const orb = this.requireOrb();
+
+      // ---- the two slots, plus what they would make
+      const slots = el('div', 'bench');
+      for (const hand of ['left', 'right'] as Hand[]) {
+        const material = orb.orb(hand);
+        const slot = el('button', 'bslot');
+        slot.classList.toggle('sel', this.benchSlot === hand);
+        slot.classList.toggle('filled', material !== null);
+        slot.setAttribute('aria-pressed', String(this.benchSlot === hand));
+
+        const iconBox = el('span', 'bicon');
+        this.setIcon(iconBox, material, 46);
+        slot.append(
+          el('span', 'blabel', hand === 'left' ? 'Left orb' : 'Right orb'),
+          iconBox,
+          el('span', 'bname', material ? this.content.material(material).name : 'empty'),
+        );
+        slot.addEventListener('click', () => {
+          this.benchSlot = hand;
+          this.rebuildSheet();
+        });
+        slots.append(slot);
+      }
+      body.append(slots);
+
+      // ---- result preview
+      const recipe = orb.peekTransmutation();
+      const locked =
+        !recipe && orb.leftOrb && orb.rightOrb
+          ? this.content.recipeByPair(orb.leftOrb, orb.rightOrb)
+          : undefined;
+
+      const out = el('div', 'boutcome');
+      if (recipe) {
+        out.classList.add('ok');
+        const icon = el('span');
+        this.setIcon(icon, recipe.result, 34);
+        out.append(icon);
+        const meta = el('div', 'meta');
+        meta.append(el('b', undefined, this.content.material(recipe.result).name));
+        meta.append(el('span', undefined, `+${recipe.xp} XP on discovery`));
+        out.append(meta);
+        const go = el('button', 'go', 'Transmute');
+        go.addEventListener('click', () => this.callbacks.onTransmute());
+        out.append(go);
+      } else if (locked) {
+        out.classList.add('locked');
+        out.append(el('b', undefined, `Locked — needs level ${locked.requiredLevel}`));
+      } else if (orb.leftOrb && orb.rightOrb) {
+        out.append(el('b', undefined, 'No reaction between these two.'));
+      } else {
+        out.append(el('b', undefined, 'Fill both orbs to see what they make.'));
+      }
+      body.append(out);
+
+      // ---- carried materials
       const items = orb.packContents();
+      body.append(
+        el(
+          'p',
+          'note',
+          items.length === 0
+            ? 'You are carrying nothing yet.'
+            : `Carrying ${items.length} kind${items.length === 1 ? '' : 's'} — tap one to place it in the ${this.benchSlot} orb.`,
+        ),
+      );
 
       if (items.length === 0) {
-        body.append(el('div', 'empty', 'Nothing stowed yet. Gather materials, then transmute them - results land here.'));
+        body.append(
+          el('div', 'empty', 'Gather materials in the world. Anything you craft lands here too.'),
+        );
         return;
       }
 
-      body.append(el('p', 'note', 'Tap an item to load it into a free orb.'));
       const grid = el('div', 'grid');
-
       for (const { material, count } of items) {
         const def = this.content.material(material);
         const cell = el('button', 'cell');
-        cell.append(this.icon(material, 38), el('span', 'nm', def.name), el('span', 'ct', String(count)));
-        const full = orb.leftOrb !== null && orb.rightOrb !== null;
-        if (full) cell.classList.add('dim');
-        cell.addEventListener('click', () => this.callbacks.onLoadFromPack(material));
+        cell.append(this.icon(material, 38), el('span', 'nm', def.name));
+        // Only badge a stack: a lone item needs no "1" cluttering the grid.
+        if (count > 1) cell.append(el('span', 'ct', String(count)));
+        if (orb.orb(this.benchSlot) === material) cell.classList.add('here');
+        cell.addEventListener('click', () => this.callbacks.onPlaceInSlot(this.benchSlot, material));
         grid.append(cell);
       }
       body.append(grid);
     });
   }
 
+  /**
+   * The alchemy table: every element laid out like a periodic table, those you
+   * actually hold lit up. Dial quantities to mix a combination by hand, or pick
+   * a known recipe from the list below to fill the selection in one tap.
+   */
   openAlchemy(): void {
-    this.openSheet('Alchemy', (body) => {
+    this.openSheet('Alchemy Table', (body) => {
       const orb = this.requireOrb();
 
       if (!orb.alchemyUnlocked) {
         body.append(
-          el('div', 'empty', `Alchemy unlocks at level ${this.content.progression.alchemyUnlockLevel}.`),
+          el('div', 'empty', `Alchemy unlocks at level ${this.content.progression.alchemyUnlockLevel}. Break a material down with ⚗ once it does.`),
         );
         return;
       }
 
       const pool = orb.state.elementPool;
-      const held = Object.entries(pool).filter(([, count]) => count > 0);
 
-      const poolBox = el('div', 'chips');
-      if (held.length === 0) {
-        body.append(
-          el('div', 'empty', 'Your element pool is empty. Put a material in an orb and press ⚗ to break it down.'),
+      // ---- the table
+      const cols = Math.max(...this.content.elements.map((e) => e.col));
+      const rows = Math.max(...this.content.elements.map((e) => e.row));
+      const table = el('div', 'ptable');
+      table.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+      for (const element of this.content.elements) {
+        const held = pool[element.id] ?? 0;
+        const picked = this.mix[element.id] ?? 0;
+
+        const cell = el('button', 'pcell');
+        cell.style.gridRow = String(element.row);
+        cell.style.gridColumn = String(element.col);
+        cell.classList.toggle('has', held > 0);
+        cell.classList.toggle('picked', picked > 0);
+        cell.style.setProperty('--el', element.color);
+
+        cell.append(
+          el('span', 'pnum', String(element.number)),
+          el('span', 'psym', element.symbol),
+          el('span', 'pname', element.name),
+          el('span', 'pheld', held > 0 ? `${picked}/${held}` : '—'),
         );
+
+        cell.disabled = held === 0;
+        cell.title = held > 0 ? `${element.name} — ${held} held` : `${element.name} — none held`;
+        cell.addEventListener('click', () => {
+          const have = pool[element.id] ?? 0;
+          const next = ((this.mix[element.id] ?? 0) + 1) % (have + 1);
+          if (next === 0) delete this.mix[element.id];
+          else this.mix[element.id] = next;
+          this.rebuildSheet();
+        });
+        table.append(cell);
+      }
+      // Fill the grid's empty cells so the stepped shape reads as deliberate.
+      for (let r = 1; r <= rows; r++) {
+        for (let c = 1; c <= cols; c++) {
+          if (this.content.elements.some((e) => e.row === r && e.col === c)) continue;
+          const gap = el('span', 'pgap');
+          gap.style.gridRow = String(r);
+          gap.style.gridColumn = String(c);
+          table.append(gap);
+        }
+      }
+      body.append(table);
+
+      // ---- the mixing tray
+      const size = selectionSize(this.mix);
+      const match = findRecipeForSelection(this.content, this.mix, orb.playerLevel);
+      const tray = el('div', 'tray');
+      tray.classList.toggle('ok', match !== null);
+
+      const chips = el('div', 'chips');
+      const entries = Object.entries(this.mix).filter(([, q]) => q > 0);
+      if (entries.length === 0) {
+        chips.append(el('span', 'trayhint', 'Tap elements above to add them. Tap again to add more, or past your total to clear.'));
       } else {
-        for (const [element, count] of held) poolBox.append(this.elementChip(element, count));
-        body.append(el('p', 'note', 'Element pool'), poolBox);
+        for (const [element, qty] of entries) chips.append(this.elementChip(element, qty));
       }
+      tray.append(chips);
 
-      const recipes = this.content.alchemy.filter((r) => r.requiredLevel <= orb.playerLevel);
-      if (recipes.length === 0) {
-        body.append(el('div', 'empty', 'No alchemy recipes are within your level yet.'));
-        return;
-      }
+      const trayBar = el('div', 'traybar');
+      const status = el('span', 'traystatus');
+      if (size === 0) status.textContent = 'Nothing selected';
+      else if (match) status.textContent = `Forms ${this.content.material(match.result).name}`;
+      else status.textContent = `${size} element${size === 1 ? '' : 's'} — unknown combination`;
+      trayBar.append(status);
 
-      body.append(el('p', 'note', 'Recipes'));
-      for (const recipe of recipes) {
+      const clear = el('button', 'ghost', 'Clear');
+      clear.disabled = size === 0;
+      clear.addEventListener('click', () => {
+        this.mix = {};
+        this.rebuildSheet();
+      });
+
+      const mixBtn = el('button', 'go', 'Combine');
+      mixBtn.disabled = size === 0;
+      mixBtn.addEventListener('click', () => {
+        this.callbacks.onMixSelection({ ...this.mix });
+      });
+      trayBar.append(clear, mixBtn);
+      tray.append(trayBar);
+      body.append(tray);
+
+      // ---- known recipes
+      const known = this.content.alchemy.filter(
+        (r) => r.requiredLevel <= orb.playerLevel && orb.state.discovered.has(r.id),
+      );
+      body.append(
+        el('p', 'note', known.length === 0 ? 'No recipes discovered yet — mix and find out.' : 'Discovered recipes'),
+      );
+
+      for (const recipe of known) {
         const affordable = orb.canAfford(recipe);
-        const def = this.content.material(recipe.result);
-
         const row = el('div', affordable ? 'row-item' : 'row-item dim');
         row.append(this.icon(recipe.result, 36));
 
         const meta = el('div', 'meta');
-        meta.append(el('b', undefined, def.name));
-        const chips = el('div', 'chips');
+        meta.append(el('b', undefined, this.content.material(recipe.result).name));
+        const rchips = el('div', 'chips');
         const missing = shortfall(recipe, pool);
         for (const [element, count] of Object.entries(recipe.requires)) {
-          chips.append(this.elementChip(element, count, (missing[element] ?? 0) > 0));
+          rchips.append(this.elementChip(element, count, (missing[element] ?? 0) > 0));
         }
-        meta.append(chips);
+        meta.append(rchips);
         row.append(meta);
 
-        const go = el('button', 'go', 'Brew');
-        go.disabled = !affordable;
-        go.addEventListener('click', () => this.callbacks.onAlchemize(recipe));
-        row.append(go);
-
+        const load = el('button', 'go', 'Load');
+        load.title = 'Put this recipe into the tray';
+        load.addEventListener('click', () => {
+          this.mix = { ...recipe.requires };
+          this.rebuildSheet();
+        });
+        row.append(load);
         body.append(row);
       }
     });

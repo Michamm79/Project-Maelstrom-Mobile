@@ -41,7 +41,9 @@ export class Game {
       onUnloadOrb: (hand) => this.unloadOrb(hand),
       onDecomposeOrb: (hand) => this.decompose(hand),
       onLoadFromPack: (material) => this.loadFromPack(material),
+      onPlaceInSlot: (hand, material) => this.placeInSlot(hand, material),
       onAlchemize: (recipe) => this.alchemize(recipe),
+      onMixSelection: (selection) => this.mixSelection(selection),
       onTravel: (zone) => this.travel(zone),
       onReset: () => this.reset(),
     });
@@ -168,8 +170,31 @@ export class Game {
     this.ui.refresh(this.orb);
   }
 
+  private placeInSlot(hand: Hand, material: MaterialId): void {
+    if (this.orb.replaceOrb(hand, material)) return;
+    // The only ordinary failure is tapping what is already in that slot.
+    if (this.orb.orb(hand) !== material) this.ui.toast('Could not place that', 'bad');
+  }
+
   private alchemize(recipe: AlchemyRecipe): void {
     if (this.orb.tryAlchemize(recipe) === null) this.ui.toast('Not enough elements', 'bad');
+  }
+
+  private mixSelection(selection: Record<string, number>): void {
+    const { result, reason } = this.orb.tryAlchemizeSelection(selection);
+    if (result !== null) {
+      this.ui.clearMix();
+      return;
+    }
+
+    if (reason === 'locked') {
+      this.ui.toast(`Alchemy unlocks at level ${content.progression.alchemyUnlockLevel}`, 'bad');
+    } else if (reason === 'short') {
+      this.ui.toast('Not enough of those elements', 'bad');
+    } else {
+      // Wrong guesses are free - say nothing happened, not that you failed.
+      this.ui.toast('Nothing forms from that mixture', 'info');
+    }
   }
 
   private travel(zone: ZoneId): void {

@@ -48,6 +48,40 @@ export function knownRecipes(content: Content, playerLevel: number): readonly Al
 }
 
 /**
+ * Find the recipe a hand-built selection of elements *exactly* matches.
+ *
+ * Exact rather than "contains", which `findAvailableRecipes` uses: that one asks
+ * "what could my pool afford?", this one asks "what did the player deliberately
+ * mix?". If it merely had to contain the requirements, dumping every element in
+ * would fire whichever recipe happened to be listed first, and experimenting
+ * would stop meaning anything.
+ */
+export function findRecipeForSelection(
+  content: Content,
+  selection: Readonly<Composition>,
+  playerLevel = Number.MAX_SAFE_INTEGER,
+): AlchemyRecipe | null {
+  const picked = Object.entries(selection).filter(([, qty]) => qty > 0);
+  if (picked.length === 0) return null;
+
+  for (const recipe of content.alchemy) {
+    if (recipe.requiredLevel > playerLevel) continue;
+
+    const required = Object.entries(recipe.requires);
+    if (required.length !== picked.length) continue;
+    if (required.every(([element, qty]) => (selection[element] ?? 0) === qty)) return recipe;
+  }
+  return null;
+}
+
+/** Total element count in a selection, for the UI's running tally. */
+export function selectionSize(selection: Readonly<Composition>): number {
+  let total = 0;
+  for (const qty of Object.values(selection)) total += Math.max(0, qty);
+  return total;
+}
+
+/**
  * Consume a recipe's elements from the pool. Mutates the pool in place and
  * returns false without touching it if the pool can't cover the cost.
  */

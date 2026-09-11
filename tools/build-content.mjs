@@ -38,6 +38,26 @@ const progression = read('content/progression.json');
 
 const elementIds = new Set(elements.map((e) => e.id));
 
+// The alchemy table is laid out from this data, so a duplicate symbol or an
+// overlapping cell would silently hide an element behind another one.
+const seenSymbols = new Map();
+const seenNumbers = new Map();
+const seenCells = new Map();
+for (const e of elements) {
+  for (const field of ['symbol', 'number', 'group', 'row', 'col']) {
+    if (e[field] === undefined) fail(`element "${e.id}" is missing "${field}"`);
+  }
+  if (seenSymbols.has(e.symbol)) fail(`elements "${seenSymbols.get(e.symbol)}" and "${e.id}" share the symbol "${e.symbol}"`);
+  seenSymbols.set(e.symbol, e.id);
+
+  if (seenNumbers.has(e.number)) fail(`elements "${seenNumbers.get(e.number)}" and "${e.id}" share number ${e.number}`);
+  seenNumbers.set(e.number, e.id);
+
+  const cell = `${e.row},${e.col}`;
+  if (seenCells.has(cell)) fail(`elements "${seenCells.get(cell)}" and "${e.id}" both sit at row ${e.row} col ${e.col}`);
+  seenCells.set(cell, e.id);
+}
+
 // ---------------------------------------------------------------- index materials
 
 const materials = new Map();

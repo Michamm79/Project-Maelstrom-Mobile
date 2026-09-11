@@ -118,11 +118,51 @@ check('transmuting awarded XP', afterCraft.xp > 0, `xp=${afterCraft.xp}`);
 
 // ---------------------------------------------------------------- pack
 
-await page.locator('.nav button', { hasText: 'Pack' }).click();
+await page.locator('.nav button', { hasText: 'Bench' }).click();
 await page.waitForTimeout(300);
-check('pack sheet opens', await page.locator('.sheet.on').isVisible());
-check('pack lists the crafted axe', (await page.locator('.sheet .cell .nm').allTextContents()).includes('Stone Axe'));
-await page.screenshot({ path: join(SHOTS, '03-pack.png') });
+check('bench sheet opens', await page.locator('.sheet.on').isVisible());
+check('bench shows both orb slots', (await page.locator('.sheet .bslot').count()) === 2);
+check('bench lists the crafted axe', (await page.locator('.sheet .cell .nm').allTextContents()).includes('Stone Axe'));
+
+// A stack shows a count badge; a single item shows none.
+await page.evaluate(() => {
+  const g = window.maelstrom;
+  const orb = Object.values(g).find((v) => v && typeof v.tryTransmute === 'function');
+  orb.gather('fiber'); orb.unloadOrb('left');
+  orb.gather('fiber'); orb.unloadOrb('left');
+  orb.gather('fiber'); orb.unloadOrb('left');
+});
+await page.waitForTimeout(350);
+const badges = await page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.sheet .cell')];
+  const find = (name) => cells.find((c) => c.querySelector('.nm')?.textContent === name);
+  return {
+    stacked: find('Plant Fiber')?.querySelector('.ct')?.textContent ?? null,
+    single: find('Stone Axe')?.querySelector('.ct')?.textContent ?? null,
+  };
+});
+check('a stack shows a count badge, a single item does not',
+  badges.stacked === '3' && badges.single === null, JSON.stringify(badges));
+
+// Place a carried material into the selected slot, then swap it for another.
+await page.evaluate(() => {
+  const g = window.maelstrom;
+  const orb = Object.values(g).find((v) => v && typeof v.tryTransmute === 'function');
+  orb.gather('stick');
+  orb.gather('stone');
+  orb.gather('flint');
+});
+await page.waitForTimeout(350);
+const placed = await page.evaluate(() => {
+  const g = window.maelstrom;
+  const orb = Object.values(g).find((v) => v && typeof v.tryTransmute === 'function');
+  const before = orb.leftOrb;
+  const ok = orb.replaceOrb('left', 'flint');
+  return { ok, before, after: orb.leftOrb, returned: orb.countOf(before) };
+});
+check('bench swaps a slot and returns the old material', placed.ok && placed.after === 'flint' && placed.returned >= 1, JSON.stringify(placed));
+await page.waitForTimeout(300);
+await page.screenshot({ path: join(SHOTS, '03-bench.png') });
 await page.locator('.sheet header .close').click();
 await page.waitForTimeout(250);
 
@@ -152,18 +192,54 @@ check('decomposition fills the element pool', decomposed.ok && Object.keys(decom
 await page.locator('.nav button', { hasText: 'Alchemy' }).click();
 await page.waitForTimeout(300);
 check('alchemy sheet opens', await page.locator('.sheet.on').isVisible());
-check('alchemy lists recipes', (await page.locator('.sheet .row-item').count()) > 0);
+check('element table renders every element', (await page.locator('.sheet .pcell').count()) === 9);
+check('held elements are highlighted', (await page.locator('.sheet .pcell.has').count()) > 0);
+check('unheld elements are disabled', (await page.locator('.sheet .pcell[disabled]').count()) > 0);
+
+// Fill the pool so a real mixture is possible, then dial it up on the table.
+await page.evaluate(() => {
+  const g = window.maelstrom;
+  const orb = Object.values(g).find((v) => v && typeof v.tryTransmute === 'function');
+  orb.state.elementPool = { pyron: 4, zephyr: 2 };
+  orb.events.emit('poolChanged', undefined);
+});
+await page.waitForTimeout(300);
+
+const pyron = page.locator('.sheet .pcell', { hasText: 'Pyron' });
+await pyron.click();
+await pyron.click();
+await page.locator('.sheet .pcell', { hasText: 'Zephyr' }).click();
+await page.waitForTimeout(250);
+check('tray recognises a valid mixture', (await page.locator('.sheet .tray.ok').count()) === 1,
+  (await page.locator('.sheet .traystatus').textContent()) ?? '');
 await page.screenshot({ path: join(SHOTS, '05-alchemy.png') });
+
+await page.locator('.sheet .traybar .go').click();
+await page.waitForTimeout(400);
+const mixed = await page.evaluate(() => {
+  const g = window.maelstrom;
+  const orb = Object.values(g).find((v) => v && typeof v.tryTransmute === 'function');
+  return { fireballs: orb.countOf('fireball'), pool: { ...orb.state.elementPool } };
+});
+check('mixing from the table brews the item', mixed.fireballs >= 1, JSON.stringify(mixed));
+await page.screenshot({ path: join(SHOTS, '05b-alchemy-after.png') });
 
 const brewed = await page.evaluate(() => {
   const game = window.maelstrom;
   const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
   orb.state.elementPool = { pyron: 4, zephyr: 2 };
-  const recipe = orb.getAvailableAlchemyRecipes()[0];
-  const result = recipe ? orb.tryAlchemize(recipe) : null;
+  const result = orb.tryAlchemizeSelection({ pyron: 2, zephyr: 1 });
   return { result, pool: { ...orb.state.elementPool } };
 });
-check('brewing an alchemy recipe produces an item', brewed.result !== null, JSON.stringify(brewed));
+check('a wrong mixture costs nothing', await page.evaluate(() => {
+  const game = window.maelstrom;
+  const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
+  orb.state.elementPool = { pyron: 5, terran: 5 };
+  const before = JSON.stringify(orb.state.elementPool);
+  orb.tryAlchemizeSelection({ pyron: 5, terran: 5 });
+  return before === JSON.stringify(orb.state.elementPool);
+}));
+check('brewing an alchemy recipe produces an item', brewed.result.result !== null, JSON.stringify(brewed));
 await page.locator('.sheet header .close').click();
 await page.waitForTimeout(250);
 

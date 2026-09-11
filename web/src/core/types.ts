@@ -23,6 +23,15 @@ export interface ElementDef {
   name: string;
   description: string;
   color: string;
+  /** One- or two-letter symbol, e.g. "Py". */
+  symbol: string;
+  /** Ordinal, in table reading order. */
+  number: number;
+  /** Family label shown on the table's legend. */
+  group: string;
+  /** Position in the alchemy table. Gaps in the grid are intentional. */
+  row: number;
+  col: number;
 }
 
 /** ElementQuantity in MaterialSO.cs, flattened to a record for lookup speed. */

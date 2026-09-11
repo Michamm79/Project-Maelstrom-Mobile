@@ -17,7 +17,13 @@
  */
 import { Emitter } from './events';
 import type { Content } from './content';
-import { canFulfill, consumeElements, findAvailableRecipes, type ElementPool } from './alchemy';
+import {
+  canFulfill,
+  consumeElements,
+  findAvailableRecipes,
+  findRecipeForSelection,
+  type ElementPool,
+} from './alchemy';
 import { findRecipe } from './transmutation';
 import { levelForXp } from './progression';
 import type {
@@ -168,6 +174,26 @@ export class OrbContainer {
     return null;
   }
 
+  /**
+   * Put a material into an orb whether or not it already holds something,
+   * returning whatever was there to the pack. This is what lets the bench swap
+   * one input for another without a clear-then-load dance.
+   */
+  replaceOrb(hand: Hand, material: MaterialId): boolean {
+    if (this.countOf(material) <= 0) return false;
+
+    const current = this.state.orbs[hand];
+    if (current === material) return false;
+
+    this.removeFromInventory(material, 1);
+    if (current !== null) this.addToInventory(current, 1);
+
+    this.state.orbs[hand] = material;
+    this.events.emit('orbsChanged', undefined);
+    this.events.emit('stateChanged', undefined);
+    return true;
+  }
+
   swapOrbs(): void {
     const { left, right } = this.state.orbs;
     this.state.orbs.left = right;
@@ -266,6 +292,27 @@ export class OrbContainer {
 
   canAfford(recipe: AlchemyRecipe): boolean {
     return canFulfill(recipe, this.state.elementPool);
+  }
+
+  /**
+   * Attempt a hand-mixed combination. Returns the result, or null when the
+   * selection matches no recipe.
+   *
+   * A failed mix costs nothing. With nine elements and free quantities the
+   * search space is large, and charging for wrong guesses would make
+   * experimenting - the entire point of the table - feel punishing.
+   */
+  tryAlchemizeSelection(selection: Readonly<Record<ElementId, number>>): {
+    result: MaterialId | null;
+    reason: 'ok' | 'no-recipe' | 'locked' | 'short';
+  } {
+    if (!this.alchemyUnlocked) return { result: null, reason: 'locked' };
+
+    const recipe = findRecipeForSelection(this.content, selection, this.state.level);
+    if (!recipe) return { result: null, reason: 'no-recipe' };
+    if (!canFulfill(recipe, this.state.elementPool)) return { result: null, reason: 'short' };
+
+    return { result: this.tryAlchemize(recipe), reason: 'ok' };
   }
 
   /** OrbContainer.TryAlchemize - spends the elements and produces the result. */

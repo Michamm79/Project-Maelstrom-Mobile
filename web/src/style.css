@@ -535,20 +535,28 @@ button {
   color: var(--ink-faint);
 }
 
-.row-item .go {
+.go {
   flex: none;
-  padding: 7px 12px;
+  padding: 8px 14px;
+  min-height: 36px;
   border-radius: 9px;
   background: #33294a;
   border: 1px solid var(--accent);
   font-size: 12px;
   font-weight: 650;
+  color: var(--ink);
 }
 
-.row-item .go:disabled {
+.go:disabled {
   background: var(--panel);
   border-color: var(--line);
   color: var(--ink-faint);
+}
+
+.tray.ok .go {
+  background: #2f6b45;
+  border-color: var(--good);
+  color: #eafff2;
 }
 
 .chips {
@@ -682,3 +690,208 @@ button {
     margin: 0 auto;
   }
 }
+
+/* ---------------------------------------------------------------- bench */
+
+.bench {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.bslot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 8px 10px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  min-height: 124px;
+}
+
+.bslot.filled { border-color: var(--accent-2); }
+
+.bslot.sel {
+  background: #2a2140;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.bslot .blabel {
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.bslot.sel .blabel { color: var(--accent); }
+
+.bslot .bicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+}
+
+.bslot .bname {
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: center;
+  line-height: 1.25;
+}
+
+.boutcome {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.boutcome.ok { background: linear-gradient(160deg, #33294a, #26324a); border-color: var(--accent); }
+.boutcome.locked { border-color: var(--warn); }
+
+.boutcome b { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
+.boutcome.ok b { color: var(--ink); }
+.boutcome.locked b { color: var(--warn); }
+.boutcome .meta { flex: 1; min-width: 0; }
+.boutcome .meta span { display: block; font-size: 11px; color: var(--ink-faint); }
+
+/* A material already sitting in the targeted slot. */
+.cell.here {
+  border-color: var(--accent);
+  background: #2a2140;
+}
+
+/* ---------------------------------------------------------------- alchemy table */
+
+.ptable {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.pcell {
+  --el: var(--ink-faint);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  aspect-ratio: 1 / 1.12;
+  padding: 3px 2px;
+  border-radius: 7px;
+  background: #0e1219;
+  border: 1px solid var(--line);
+  opacity: .38;
+  overflow: hidden;
+}
+
+/* Elements you actually hold light up; the rest stay legible but clearly inert. */
+.pcell.has {
+  opacity: 1;
+  background: color-mix(in srgb, var(--el) 15%, #0e1219);
+  border-color: color-mix(in srgb, var(--el) 55%, var(--line));
+}
+
+.pcell.picked {
+  background: color-mix(in srgb, var(--el) 34%, #0e1219);
+  border-color: var(--el);
+  box-shadow: 0 0 0 1px var(--el);
+}
+
+.pcell .pnum {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 8px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.pcell .psym {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.pcell.has .psym { color: var(--el); }
+
+.pcell .pname {
+  font-size: 7.5px;
+  letter-spacing: .02em;
+  color: var(--ink-faint);
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcell .pheld {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+  line-height: 1;
+}
+
+.pcell.picked .pheld { color: var(--ink); font-weight: 700; }
+
+.pgap { display: block; }
+
+/* ---------------------------------------------------------------- mixing tray */
+
+.tray {
+  padding: 10px 12px 11px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px dashed var(--line);
+  margin-bottom: 14px;
+}
+
+.tray.ok {
+  border-style: solid;
+  border-color: var(--good);
+  background: #1b2b24;
+}
+
+.tray .trayhint {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+
+.traybar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.traystatus {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.tray.ok .traystatus { color: #b7f5cd; font-weight: 600; }
+
+button.ghost {
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+button.ghost:disabled { opacity: .4; }
