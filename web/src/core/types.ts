@@ -107,7 +107,15 @@ export interface ProgressionConfig {
     decompose: number;
   };
   levelCurve: { base: number; exponent: number };
-  player: { moveSpeed: number; gatherRadius: number; radius: number };
+  player: {
+    moveSpeed: number;
+    gatherRadius: number;
+    radius: number;
+    /** How long a node stays gatherable after you walk out of range. */
+    gatherGraceSeconds: number;
+    /** How far past normal range that grace still applies, as a multiplier. */
+    gatherGraceRangeFactor: number;
+  };
   /** Cumulative XP needed to reach each level; index 0 is level 1. */
   xpTable: readonly number[];
 }

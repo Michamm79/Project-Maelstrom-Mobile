@@ -60,6 +60,10 @@ export class World {
 
   private elapsed = 0;
 
+  /** Coyote time: the node last in range, and when its grace expires. */
+  private graceNode: WorldNode | null = null;
+  private graceUntil = 0;
+
   constructor(
     private readonly content: Content,
     readonly zone: ZoneDef,
@@ -185,9 +189,22 @@ export class World {
     }
   }
 
-  /** The closest available node inside gather range, if any. */
+  /**
+   * The node the player can gather: the closest one in range, or the one they
+   * just walked past if they are still within the grace window.
+   *
+   * The grace exists because range alone is unforgiving while moving. At the
+   * default speed a node is in strict range for about half a second walking
+   * straight over it, and a fraction of that clipping its edge - less than the
+   * time it takes to notice the prompt and move a thumb to it. Letting a
+   * slightly late tap still land is the difference between the loop feeling
+   * responsive and feeling like it is ignoring you.
+   */
   nodeInRange(): WorldNode | null {
-    const range = this.content.progression.player.gatherRadius + this.content.progression.player.radius;
+    const { gatherRadius, radius, gatherGraceSeconds, gatherGraceRangeFactor } =
+      this.content.progression.player;
+    const range = gatherRadius + radius;
+
     let best: WorldNode | null = null;
     let bestDistance = Infinity;
 
@@ -199,13 +216,30 @@ export class World {
         bestDistance = distance;
       }
     }
-    return best;
+
+    if (best) {
+      this.graceNode = best;
+      this.graceUntil = this.elapsed + gatherGraceSeconds;
+      return best;
+    }
+
+    // Nothing strictly in range - fall back to the one just left behind, as long
+    // as it is still unharvested and has not been left far behind.
+    if (this.graceNode && this.graceNode.available && this.elapsed < this.graceUntil) {
+      const distance = Math.hypot(this.graceNode.x - this.player.x, this.graceNode.y - this.player.y);
+      if (distance <= range * gatherGraceRangeFactor) return this.graceNode;
+    }
+
+    this.graceNode = null;
+    return null;
   }
 
   /** Mark a node harvested and start its respawn timer. */
   harvest(node: WorldNode): void {
     node.available = false;
     node.respawnAt = this.elapsed + this.zone.respawnSeconds;
+    // Clear the grace target too, or the prompt lingers on something just taken.
+    if (this.graceNode === node) this.graceNode = null;
   }
 
   /** Seconds until a harvested node returns, for the depleted-node countdown ring. */

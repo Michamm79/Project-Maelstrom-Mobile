@@ -21,10 +21,13 @@
       "base": 60,
       "exponent": 1.45
     },
+    "$comment_gather": "gatherRadius plus the player radius is the pickup range. At 168 px/s a radius of 34 left only ~0.56s in range walking straight over a node, and under 0.3s clipping its edge - shorter than the time it takes to see the prompt and move a thumb. gatherGraceSeconds keeps the last node gatherable briefly after you pass it, so a slightly late tap still lands.",
     "player": {
       "moveSpeed": 168,
-      "gatherRadius": 34,
-      "radius": 13
+      "gatherRadius": 42,
+      "radius": 13,
+      "gatherGraceSeconds": 0.45,
+      "gatherGraceRangeFactor": 2
     },
     "xpTable": [
       0,
