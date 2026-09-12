@@ -20,6 +20,13 @@ const STICK_RADIUS = 58;
 const TAP_SLOP = 12;
 const TAP_MS = 320;
 
+/**
+ * Fraction of the screen width that drives movement. ARPG convention: the left
+ * thumb steers, the right thumb acts. Keeping the stick off the right side stops
+ * a stray drag near the action button from walking the player somewhere.
+ */
+const STICK_ZONE = 0.62;
+
 export class InputController {
   /** Movement vector, magnitude 0..1. */
   readonly vector: Vector2 = { x: 0, y: 0 };
@@ -29,6 +36,8 @@ export class InputController {
   knob: Vector2 | null = null;
 
   private pointerId: number | null = null;
+  /** A press on the action side: still eligible to be a tap, never a stick. */
+  private tapOnlyPointer: number | null = null;
   private pointerStart: { x: number; y: number; time: number } | null = null;
   private readonly keys = new Set<string>();
   private readonly disposers: (() => void)[] = [];
@@ -65,6 +74,14 @@ export class InputController {
     // Buttons and panels sit above the surface; let them have their own taps.
     if ((event.target as HTMLElement)?.closest('[data-ui]')) return;
 
+    // Right side is the action thumb's territory - a drag there should not steer.
+    const rect = this.surface.getBoundingClientRect();
+    if (event.clientX - rect.left > rect.width * STICK_ZONE) {
+      this.pointerStart = { x: event.clientX, y: event.clientY, time: performance.now() };
+      this.tapOnlyPointer = event.pointerId;
+      return;
+    }
+
     event.preventDefault();
     this.pointerId = event.pointerId;
     this.surface.setPointerCapture?.(event.pointerId);
@@ -93,13 +110,21 @@ export class InputController {
   };
 
   private onPointerUp = (event: PointerEvent): void => {
-    if (event.pointerId !== this.pointerId) return;
+    const isStick = event.pointerId === this.pointerId;
+    const isTapOnly = event.pointerId === this.tapOnlyPointer;
+    if (!isStick && !isTapOnly) return;
 
     const start = this.pointerStart;
     if (start && this.onTap) {
       const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
       const held = performance.now() - start.time;
       if (moved < TAP_SLOP && held < TAP_MS) this.onTap(event.clientX, event.clientY);
+    }
+
+    if (isTapOnly) {
+      this.tapOnlyPointer = null;
+      this.pointerStart = null;
+      return;
     }
     this.release();
   };
@@ -118,6 +143,7 @@ export class InputController {
       }
     }
     this.pointerId = null;
+    this.tapOnlyPointer = null;
     this.pointerStart = null;
     this.origin = null;
     this.knob = null;

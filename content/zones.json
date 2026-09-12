@@ -7,18 +7,48 @@
       "subtitle": "where the world still behaves",
       "description": "Scrub, cold streams and river stone. Nothing here wants to hurt you, which is how you know you have not gone far enough yet.",
       "requiredLevel": 1,
-      "size": { "w": 1400, "h": 1900 },
-      "palette": { "ground": "#20302a", "groundAlt": "#26382f", "accent": "#4c7a5a", "fog": "#0d1512" },
+      "size": {
+        "w": 1400,
+        "h": 1900
+      },
+      "palette": {
+        "ground": "#20302a",
+        "groundAlt": "#26382f",
+        "accent": "#4c7a5a",
+        "fog": "#0d1512"
+      },
       "nodeCount": 40,
       "respawnSeconds": 14,
       "spawns": [
-        { "material": "stick", "weight": 26 },
-        { "material": "stone", "weight": 24 },
-        { "material": "fiber", "weight": 22 },
-        { "material": "flint", "weight": 14 },
-        { "material": "clay", "weight": 8 },
-        { "material": "spring_water", "weight": 6 }
-      ]
+        {
+          "material": "stick",
+          "weight": 26
+        },
+        {
+          "material": "stone",
+          "weight": 24
+        },
+        {
+          "material": "fiber",
+          "weight": 22
+        },
+        {
+          "material": "flint",
+          "weight": 14
+        },
+        {
+          "material": "clay",
+          "weight": 8
+        },
+        {
+          "material": "spring_water",
+          "weight": 6
+        }
+      ],
+      "enemies": [
+        "mire_husk"
+      ],
+      "enemyCount": 4
     },
     {
       "id": "rustpine_wood",
@@ -26,18 +56,49 @@
       "subtitle": "close, and getting closer",
       "description": "Red-needled pines grown too near each other. Something has been stripping the lower branches, and it was not deer.",
       "requiredLevel": 3,
-      "size": { "w": 1600, "h": 2100 },
-      "palette": { "ground": "#2b2118", "groundAlt": "#33271b", "accent": "#8a5a32", "fog": "#150f0a" },
+      "size": {
+        "w": 1600,
+        "h": 2100
+      },
+      "palette": {
+        "ground": "#2b2118",
+        "groundAlt": "#33271b",
+        "accent": "#8a5a32",
+        "fog": "#150f0a"
+      },
       "nodeCount": 46,
       "respawnSeconds": 16,
       "spawns": [
-        { "material": "stick", "weight": 22 },
-        { "material": "fiber", "weight": 20 },
-        { "material": "resin", "weight": 18 },
-        { "material": "glowcap", "weight": 16 },
-        { "material": "bone", "weight": 12 },
-        { "material": "gale_moss", "weight": 12 }
-      ]
+        {
+          "material": "stick",
+          "weight": 22
+        },
+        {
+          "material": "fiber",
+          "weight": 20
+        },
+        {
+          "material": "resin",
+          "weight": 18
+        },
+        {
+          "material": "glowcap",
+          "weight": 16
+        },
+        {
+          "material": "bone",
+          "weight": 12
+        },
+        {
+          "material": "gale_moss",
+          "weight": 12
+        }
+      ],
+      "enemies": [
+        "mire_husk",
+        "pine_stalker"
+      ],
+      "enemyCount": 6
     },
     {
       "id": "cinder_flats",
@@ -45,18 +106,49 @@
       "subtitle": "still warm underfoot",
       "description": "A plain of black grit that has not finished cooling in living memory. Walk on the pale stripes; the dark ones give.",
       "requiredLevel": 6,
-      "size": { "w": 1800, "h": 2200 },
-      "palette": { "ground": "#2a2220", "groundAlt": "#332826", "accent": "#a3512c", "fog": "#160f0d" },
+      "size": {
+        "w": 1800,
+        "h": 2200
+      },
+      "palette": {
+        "ground": "#2a2220",
+        "groundAlt": "#332826",
+        "accent": "#a3512c",
+        "fog": "#160f0d"
+      },
       "nodeCount": 50,
       "respawnSeconds": 18,
       "spawns": [
-        { "material": "coal", "weight": 24 },
-        { "material": "sand", "weight": 22 },
-        { "material": "stone", "weight": 16 },
-        { "material": "flint", "weight": 14 },
-        { "material": "obsidian", "weight": 14 },
-        { "material": "ember_bloom", "weight": 10 }
-      ]
+        {
+          "material": "coal",
+          "weight": 24
+        },
+        {
+          "material": "sand",
+          "weight": 22
+        },
+        {
+          "material": "stone",
+          "weight": 16
+        },
+        {
+          "material": "flint",
+          "weight": 14
+        },
+        {
+          "material": "obsidian",
+          "weight": 14
+        },
+        {
+          "material": "ember_bloom",
+          "weight": 10
+        }
+      ],
+      "enemies": [
+        "ember_wisp",
+        "pine_stalker"
+      ],
+      "enemyCount": 7
     },
     {
       "id": "ferrous_deep",
@@ -64,18 +156,49 @@
       "subtitle": "the mountain, opened",
       "description": "Cut galleries running down into ore. The lamps were left burning by people who meant to come back.",
       "requiredLevel": 10,
-      "size": { "w": 1800, "h": 2400 },
-      "palette": { "ground": "#22242c", "groundAlt": "#282b34", "accent": "#5f6b86", "fog": "#0d0f14" },
+      "size": {
+        "w": 1800,
+        "h": 2400
+      },
+      "palette": {
+        "ground": "#22242c",
+        "groundAlt": "#282b34",
+        "accent": "#5f6b86",
+        "fog": "#0d0f14"
+      },
       "nodeCount": 54,
       "respawnSeconds": 20,
       "spawns": [
-        { "material": "iron_ore", "weight": 26 },
-        { "material": "stone", "weight": 18 },
-        { "material": "coal", "weight": 16 },
-        { "material": "clay", "weight": 12 },
-        { "material": "silver_ore", "weight": 16 },
-        { "material": "crystal_shard", "weight": 12 }
-      ]
+        {
+          "material": "iron_ore",
+          "weight": 26
+        },
+        {
+          "material": "stone",
+          "weight": 18
+        },
+        {
+          "material": "coal",
+          "weight": 16
+        },
+        {
+          "material": "clay",
+          "weight": 12
+        },
+        {
+          "material": "silver_ore",
+          "weight": 16
+        },
+        {
+          "material": "crystal_shard",
+          "weight": 12
+        }
+      ],
+      "enemies": [
+        "deep_crawler",
+        "ember_wisp"
+      ],
+      "enemyCount": 8
     },
     {
       "id": "maelstrom_rim",
@@ -83,17 +206,45 @@
       "subtitle": "where it grinds the world thin",
       "description": "The edge of the storm that gives the project its name. Ground here is a suggestion. Do not put down anything you want to keep.",
       "requiredLevel": 15,
-      "size": { "w": 2000, "h": 2400 },
-      "palette": { "ground": "#1d1930", "groundAlt": "#241f3b", "accent": "#7d5fb8", "fog": "#0a0814" },
+      "size": {
+        "w": 2000,
+        "h": 2400
+      },
+      "palette": {
+        "ground": "#1d1930",
+        "groundAlt": "#241f3b",
+        "accent": "#7d5fb8",
+        "fog": "#0a0814"
+      },
       "nodeCount": 56,
       "respawnSeconds": 22,
       "spawns": [
-        { "material": "aetherdust", "weight": 24 },
-        { "material": "voidglass", "weight": 22 },
-        { "material": "crystal_shard", "weight": 20 },
-        { "material": "obsidian", "weight": 18 },
-        { "material": "gale_moss", "weight": 16 }
-      ]
+        {
+          "material": "aetherdust",
+          "weight": 24
+        },
+        {
+          "material": "voidglass",
+          "weight": 22
+        },
+        {
+          "material": "crystal_shard",
+          "weight": 20
+        },
+        {
+          "material": "obsidian",
+          "weight": 18
+        },
+        {
+          "material": "gale_moss",
+          "weight": 16
+        }
+      ],
+      "enemies": [
+        "rift_shade",
+        "deep_crawler"
+      ],
+      "enemyCount": 9
     }
   ]
 }

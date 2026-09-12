@@ -23,7 +23,10 @@ interface SavedState {
   inventory: Record<string, number>;
   discovered: string[];
   seenMaterials: string[];
-  stats: { gathered: number; transmuted: number; alchemized: number; decomposed: number };
+  stats: { gathered: number; transmuted: number; alchemized: number; decomposed: number; slain: number; deaths: number };
+  vitals: { hp: number; maxHp: number };
+  started: boolean;
+  tutorialStep: number;
   playtimeMs: number;
 }
 
@@ -39,6 +42,9 @@ export function serialize(state: GameState): SavedState {
     discovered: [...state.discovered],
     seenMaterials: [...state.seenMaterials],
     stats: { ...state.stats },
+    vitals: { ...state.vitals },
+    started: state.started,
+    tutorialStep: state.tutorialStep,
     playtimeMs: Math.round(state.playtimeMs),
   };
 }
@@ -94,7 +100,19 @@ export function deserialize(content: Content, raw: unknown): GameState | null {
     transmuted: numberOr(saved.stats?.transmuted, 0),
     alchemized: numberOr(saved.stats?.alchemized, 0),
     decomposed: numberOr(saved.stats?.decomposed, 0),
+    slain: numberOr(saved.stats?.slain, 0),
+    deaths: numberOr(saved.stats?.deaths, 0),
   };
+
+  // Clamp to the current max: a rebalance that lowers maxHp must not leave a
+  // save reporting more health than the bar can show.
+  const maxHp = content.progression.combat.maxHp;
+  state.vitals = {
+    maxHp,
+    hp: Math.min(maxHp, Math.max(1, numberOr(saved.vitals?.hp, maxHp))),
+  };
+  state.started = saved.started === true;
+  state.tutorialStep = numberOr(saved.tutorialStep, -1);
   state.playtimeMs = numberOr(saved.playtimeMs, 0);
 
   return state;

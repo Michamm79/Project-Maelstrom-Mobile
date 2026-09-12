@@ -34,6 +34,7 @@ const alchemized = read('content/materials.alchemized.json').materials;
 const transmutation = read('content/transmutation.json').recipes;
 const alchemy = read('content/alchemy.json').recipes;
 const zones = read('content/zones.json').zones;
+const enemies = read('content/enemies.json').enemies;
 const progression = read('content/progression.json');
 
 const elementIds = new Set(elements.map((e) => e.id));
@@ -183,6 +184,36 @@ function resolve_(id) {
 
 for (const id of materials.keys()) resolve_(id);
 
+// ---------------------------------------------------------------- enemies
+
+const enemyIds = new Set();
+for (const e of enemies) {
+  if (enemyIds.has(e.id)) fail(`duplicate enemy id "${e.id}"`);
+  enemyIds.add(e.id);
+
+  if (!(e.hp > 0)) fail(`enemy "${e.id}" has non-positive hp`);
+  if (!(e.damage > 0)) fail(`enemy "${e.id}" has non-positive damage`);
+  if (!(e.attackRange > 0)) fail(`enemy "${e.id}" has non-positive attackRange`);
+  // An enemy that can hit from beyond the distance it will approach to would be
+  // unfightable: it attacks from outside its own chase behaviour.
+  if (e.attackRange > e.aggroRadius) fail(`enemy "${e.id}" attacks from beyond its aggro radius`);
+
+  for (const drop of e.drops ?? []) {
+    requireMaterial(drop.material, `enemy "${e.id}" drop`);
+    if (!(drop.chance > 0 && drop.chance <= 1)) fail(`enemy "${e.id}" drop "${drop.material}" has chance outside (0,1]`);
+  }
+}
+
+// Weapons need a damage value or they are decoration; anything with a damage
+// value that is not a weapon is a content mistake.
+for (const m of crafted) {
+  const isWeapon = (m.tags ?? []).includes('Weapon');
+  if (isWeapon && m.damage === undefined && !(m.tags ?? []).includes('Consumable')) {
+    warn(`weapon "${m.id}" has no damage value, so carrying it does nothing`);
+  }
+  if (m.damage !== undefined && !isWeapon) fail(`material "${m.id}" has damage but is not tagged Weapon`);
+}
+
 // ---------------------------------------------------------------- zone / gating sanity
 
 const gatherableIds = new Set();
@@ -201,6 +232,11 @@ for (const z of zones) {
     if (prev === undefined || z.requiredLevel < prev) firstZoneFor.set(s.material, z.requiredLevel);
   }
   if (weightTotal <= 0) fail(`zone "${z.id}" has zero total spawn weight`);
+
+  for (const id of z.enemies ?? []) {
+    if (!enemyIds.has(id)) fail(`zone "${z.id}" spawns unknown enemy "${id}"`);
+  }
+  if (z.enemies?.length && !(z.enemyCount > 0)) fail(`zone "${z.id}" lists enemies but spawns none`);
 }
 
 for (const m of gathered) {
@@ -287,10 +323,14 @@ const bundle = {
     tier: tier.get(m.id),
     availableAtLevel: Number.isFinite(availableAt.get(m.id)) ? availableAt.get(m.id) : null,
     composition: composition.get(m.id),
+    // Weapons only. Omitted entirely rather than defaulted, so "not a weapon"
+    // and "a weapon that does nothing" stay distinguishable.
+    ...(m.damage !== undefined ? { damage: m.damage } : {}),
   })),
   transmutation,
   alchemy,
   zones,
+  enemies,
 };
 
 /**
@@ -327,7 +367,8 @@ for (const [rel, payload] of outputs) {
 for (const w of warnings) console.warn(`   ! ${w}`);
 console.log(
   `\n  content OK - ${elements.length} elements, ${materials.size} materials, ` +
-    `${transmutation.length} transmutations, ${alchemy.length} alchemy recipes, ${zones.length} zones` +
+    `${transmutation.length} transmutations, ${alchemy.length} alchemy recipes, ` +
+    `${zones.length} zones, ${enemies.length} enemies` +
     `${warnings.length ? ` (${warnings.length} warning(s))` : ''}`,
 );
 console.log(`  wrote:\n${outputs.map(([rel]) => `    ${rel}`).join('\n')}\n`);

@@ -4,6 +4,7 @@
  * between that and the browser.
  */
 import { content } from '../core/content';
+import { playerDamage } from '../core/combat';
 import { createInitialState, OrbContainer } from '../core/orbContainer';
 import { clearSave, load, save } from '../core/save';
 import { InputController } from './input';
@@ -32,10 +33,12 @@ export class Game {
     const state = load(content) ?? createInitialState(content);
     this.orb = new OrbContainer(content, state);
     this.world = new World(content, content.zone(state.zoneId));
+    this.world.player.hp = Math.max(1, Math.min(this.world.player.maxHp, state.vitals.hp));
     this.renderer = new Renderer(canvas, content);
     this.input = new InputController(canvas, (x, y) => this.onTap(x, y));
 
     this.ui = new Ui(uiRoot, content, {
+      onAction: () => this.contextAction(),
       onGather: () => this.gatherNearest(),
       onTransmute: () => this.transmute(),
       onUnloadOrb: (hand) => this.unloadOrb(hand),
@@ -111,7 +114,10 @@ export class Game {
     });
 
     events.on('zoneChanged', ({ zoneId }) => {
+      const carriedHp = this.orb.state.vitals.hp;
       this.world = new World(content, content.zone(zoneId));
+      // Travelling is not a heal: arrive with the health you left with.
+      this.world.player.hp = Math.max(1, Math.min(this.world.player.maxHp, carriedHp));
       this.ui.closeSheet();
       this.ui.toast(content.zone(zoneId).name, 'big');
     });
@@ -119,12 +125,59 @@ export class Game {
 
   // ---------------------------------------------------------------- actions
 
+  /**
+   * The single action button. Attack takes precedence over gathering: in a
+   * fight, having the button quietly pick up a stick instead of swinging would
+   * be the worst possible moment to be helpful.
+   */
+  private contextAction(): void {
+    if (this.world.player.dead) return;
+
+    if (this.world.enemyInReach()) {
+      this.swing();
+      return;
+    }
+    this.gatherNearest();
+  }
+
+  private swing(): void {
+    const damage = playerDamage(content, this.orb.carried());
+    this.world.attack(damage, () => Math.random());
+  }
+
   private gatherNearest(): void {
     const node = this.world.nodeInRange();
     if (!node) return;
 
     this.world.harvest(node);
     this.orb.gather(node.material);
+  }
+
+  /** Turn queued world combat events into XP, drops, toasts and floaters. */
+  private drainCombat(): void {
+    for (const event of this.world.drainEvents()) {
+      const { player } = this.world;
+
+      if (event.kind === 'enemy-killed' && event.enemy) {
+        this.renderer.addFloater(event.enemy.x, event.enemy.y, event.enemy.def.name, '#ffd27a', 1.4);
+        this.orb.recordKill(event.xp ?? 0, event.drops ?? []);
+        for (const drop of event.drops ?? []) {
+          this.ui.toast(`${event.enemy.def.name} dropped ${content.material(drop).name}`, 'good');
+        }
+      } else if (event.kind === 'enemy-hit' && event.enemy) {
+        this.renderer.addFloater(event.enemy.x, event.enemy.y - 8, `-${event.amount}`, '#ffffff', 0.7);
+      } else if (event.kind === 'player-hit') {
+        this.renderer.addFloater(player.x, player.y - 30, `-${event.amount}`, '#f87171', 0.9);
+      } else if (event.kind === 'player-died') {
+        this.orb.recordDeath();
+        this.ui.toast('You fell. Recovering...', 'bad');
+      }
+    }
+
+    // The world owns health during play; the save state mirrors it so it
+    // survives a reload and a zone change.
+    this.orb.state.vitals.hp = this.world.player.hp;
+    this.orb.state.vitals.maxHp = this.world.player.maxHp;
   }
 
   /** Tapping a node in the world gathers it, as long as the player is close enough. */
@@ -233,18 +286,31 @@ export class Game {
     this.renderer.update(dt);
     this.orb.state.playtimeMs += dt * 1000;
 
-    // Space / Enter gathers, so the game is fully playable on a keyboard too.
-    if (this.input.consumeKey(' ') || this.input.consumeKey('enter')) this.gatherNearest();
+    // Space / Enter drives the same context action, so the game stays fully
+    // playable on a keyboard.
+    if (this.input.consumeKey(' ') || this.input.consumeKey('enter')) this.contextAction();
 
-    const target = this.world.nodeInRange();
-    this.ui.setGatherTarget(target ? target.material : null);
+    this.drainCombat();
+    this.ui.setVitals(this.world.player.hp, this.world.player.maxHp);
+
+    // Attack wins whenever it is available. The node is still resolved either
+    // way, because the world highlight should follow what a gather would take.
+    const enemy = this.world.enemyInReach();
+    const node = this.world.nodeInRange();
+
+    if (enemy) {
+      this.ui.setAction('attack', enemy.def.name);
+    } else {
+      this.ui.setAction(node ? 'gather' : 'idle', node ? content.material(node.material).name : null);
+    }
 
     this.renderer.draw(
       this.world,
       {
         leftOrb: this.orb.leftOrb,
         rightOrb: this.orb.rightOrb,
-        highlightNodeId: target ? target.id : null,
+        highlightNodeId: !enemy && node ? node.id : null,
+        highlightEnemyId: enemy ? enemy.id : null,
       },
       this.input,
     );

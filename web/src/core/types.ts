@@ -55,6 +55,46 @@ export interface MaterialDef {
   /** Lowest player level at which this can actually be held, or null if unreachable. */
   availableAtLevel: number | null;
   composition: Composition;
+  /** Weapons only: added to the player's base damage when carried. */
+  damage?: number;
+}
+
+export type EnemyId = string;
+
+export interface EnemyDrop {
+  material: MaterialId;
+  /** 0..1 */
+  chance: number;
+}
+
+export interface EnemyDef {
+  id: EnemyId;
+  name: string;
+  description: string;
+  shape: string;
+  color: string;
+  hp: number;
+  damage: number;
+  speed: number;
+  aggroRadius: number;
+  attackRange: number;
+  attackCooldown: number;
+  xp: number;
+  drops: readonly EnemyDrop[];
+}
+
+export interface CombatConfig {
+  maxHp: number;
+  baseDamage: number;
+  attackRange: number;
+  attackCooldown: number;
+  /** Half-angle of the swing, in radians, measured from the facing direction. */
+  attackArc: number;
+  knockback: number;
+  invulnerableSeconds: number;
+  regenPerSecond: number;
+  regenDelaySeconds: number;
+  respawnSeconds: number;
 }
 
 /** TransmutationRecipe.cs */
@@ -92,6 +132,8 @@ export interface ZoneDef {
   nodeCount: number;
   respawnSeconds: number;
   spawns: readonly ZoneSpawn[];
+  enemies: readonly EnemyId[];
+  enemyCount: number;
 }
 
 export interface ProgressionConfig {
@@ -118,11 +160,13 @@ export interface ProgressionConfig {
   };
   /** Cumulative XP needed to reach each level; index 0 is level 1. */
   xpTable: readonly number[];
+  combat: CombatConfig;
 }
 
 export interface ContentBundle {
   version: number;
   progression: ProgressionConfig;
+  enemies: readonly EnemyDef[];
   elements: readonly ElementDef[];
   materials: readonly MaterialDef[];
   transmutation: readonly TransmutationRecipe[];

@@ -13,7 +13,11 @@ import type { Content } from '../core/content';
 import type { OrbContainer } from '../core/orbContainer';
 import type { AlchemyRecipe, ElementId, Hand, MaterialId, ZoneId } from '../core/types';
 
+export type ActionMode = 'attack' | 'gather' | 'idle';
+
 export interface UiCallbacks {
+  /** The single context action button: attacks if it can, otherwise gathers. */
+  onAction: () => void;
   onGather: () => void;
   onTransmute: () => void;
   onUnloadOrb: (hand: Hand) => void;
@@ -42,10 +46,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 export class Ui {
-  private readonly gatherBtn: HTMLButtonElement;
-  private readonly gatherIcon: HTMLElement;
-  private readonly gatherName: HTMLElement;
-  private readonly gatherHint: HTMLElement;
+  private readonly actionBtn: HTMLButtonElement;
+  private readonly actionGlyph: HTMLElement;
+  private readonly actionLabel: HTMLElement;
+  private readonly hpFill: HTMLElement;
+  private readonly hpText: HTMLElement;
 
   private readonly zoneName: HTMLElement;
   private readonly zoneSub: HTMLElement;
@@ -53,7 +58,7 @@ export class Ui {
   private readonly xpText: HTMLElement;
   private readonly xpFill: HTMLElement;
 
-  private readonly orbEls: Record<Hand, { root: HTMLElement; icon: HTMLElement; name: HTMLElement; unload: HTMLButtonElement; decompose: HTMLButtonElement }>;
+  private readonly orbEls: Record<Hand, { root: HTMLElement; icon: HTMLElement; name: HTMLElement }>;
   private readonly craftBtn: HTMLButtonElement;
   private readonly navAlchemy: HTMLButtonElement;
 
@@ -64,7 +69,10 @@ export class Ui {
   private readonly toasts: HTMLElement;
 
   private openBuilder: SheetBuilder | null = null;
-  private gatherTarget: MaterialId | null = null;
+  private actionMode: ActionMode = 'idle';
+  private shownHp = -1;
+  private shownMaxHp = -1;
+  private actionSubject: string | null = null;
   private codexTab: 'materials' | 'transmutation' | 'alchemy' = 'materials';
 
   /** Which bench slot the next tapped material goes into. */
@@ -101,30 +109,35 @@ export class Ui {
 
     topbar.append(zoneBtn, level);
 
-    // -------------------------------------------------------------- gather
-    const gatherWrap = el('div', 'gather-wrap');
-    gatherWrap.dataset.ui = '';
-    this.gatherBtn = el('button', 'gather');
-    this.gatherIcon = el('span');
-    const gatherLabel = el('span', 'label');
-    this.gatherName = el('b', undefined, '');
-    this.gatherHint = el('span', undefined, 'tap to gather');
-    gatherLabel.append(this.gatherName, this.gatherHint);
-    this.gatherBtn.append(this.gatherIcon, gatherLabel);
-    this.gatherBtn.addEventListener('click', () => this.callbacks.onGather());
-    gatherWrap.append(this.gatherBtn);
+    // -------------------------------------------------------------- vitals
+    const vitals = el('div', 'vitals');
+    vitals.dataset.ui = '';
+    this.hpFill = el('i');
+    const hpBar = el('div', 'hpbar');
+    hpBar.append(this.hpFill);
+    this.hpText = el('span', 'hptext', '');
+    vitals.append(hpBar, this.hpText);
+
+    // -------------------------------------------------------------- action button
+    const actionWrap = el('div', 'action-wrap');
+    actionWrap.dataset.ui = '';
+    this.actionBtn = el('button', 'action');
+    this.actionGlyph = el('span', 'aglyph', '');
+    this.actionLabel = el('span', 'alabel', '');
+    this.actionBtn.append(this.actionGlyph, this.actionLabel);
+    this.actionBtn.addEventListener('click', () => this.callbacks.onAction());
+    actionWrap.append(this.actionBtn);
 
     // -------------------------------------------------------------- orb bar
     const orbbar = el('div', 'orbbar');
     orbbar.dataset.ui = '';
     this.orbEls = {
-      left: this.buildOrb('left'),
-      right: this.buildOrb('right'),
+      left: this.buildOrbChip('left'),
+      right: this.buildOrbChip('right'),
     };
 
     this.craftBtn = el('button', 'craft');
     this.craftBtn.addEventListener('click', () => this.callbacks.onTransmute());
-
     orbbar.append(this.orbEls.left.root, this.craftBtn, this.orbEls.right.root);
 
     // -------------------------------------------------------------- nav
@@ -154,7 +167,7 @@ export class Ui {
 
     this.toasts = el('div', 'toasts');
 
-    root.append(topbar, this.toasts, gatherWrap, orbbar, nav, this.scrim, this.sheet);
+    root.append(topbar, vitals, this.toasts, actionWrap, orbbar, nav, this.scrim, this.sheet);
   }
 
   private buildNav(label: string, icon: string, onClick: () => void): HTMLButtonElement {
@@ -164,23 +177,22 @@ export class Ui {
     return button;
   }
 
-  private buildOrb(hand: Hand) {
-    const root = el('div', 'orb');
-    const icon = el('span');
-    const name = el('span', 'nm', 'empty');
-    const acts = el('div', 'acts');
-
-    const unload = el('button', undefined, '↩');
-    unload.title = 'Return to pack';
-    unload.addEventListener('click', () => this.callbacks.onUnloadOrb(hand));
-
-    const decompose = el('button', undefined, '⚗');
-    decompose.title = 'Decompose into elements';
-    decompose.addEventListener('click', () => this.callbacks.onDecomposeOrb(hand));
-
-    acts.append(unload, decompose);
-    root.append(icon, name, acts);
-    return { root, icon, name, unload, decompose };
+  /**
+   * A compact orb chip. The unload and decompose actions moved into the bench:
+   * on a landscape phone the old card plus its two small buttons took a third of the
+   * screen, and both actions already have room in the sheet.
+   */
+  private buildOrbChip(hand: Hand) {
+    const root = el('button', 'orbchip');
+    const icon = el('span', 'oicon');
+    const name = el('span', 'onm', 'empty');
+    root.title = hand === 'left' ? 'Left orb' : 'Right orb';
+    root.append(icon, name);
+    root.addEventListener('click', () => {
+      this.benchSlot = hand;
+      this.openBench();
+    });
+    return { root, icon, name };
   }
 
   // ---------------------------------------------------------------- icons
@@ -235,14 +247,11 @@ export class Ui {
       const material = orb.orb(hand);
       const ui = this.orbEls[hand];
       ui.root.classList.toggle('filled', material !== null);
-      this.setIcon(ui.icon, material, 40);
+      this.setIcon(ui.icon, material, 30);
       ui.name.textContent = material ? this.content.material(material).name : 'empty';
-      ui.unload.disabled = material === null;
-      ui.decompose.disabled = material === null || !orb.alchemyUnlocked;
-      ui.decompose.title = orb.alchemyUnlocked
-        ? 'Decompose into elements'
-        : `Unlocks at level ${config.alchemyUnlockLevel}`;
     }
+
+    this.setVitals(orb.state.vitals.hp, orb.state.vitals.maxHp);
 
     this.refreshCraftButton(orb);
 
@@ -253,6 +262,24 @@ export class Ui {
 
     // A sheet left open (the bench, say) must follow the state that changed under it.
     if (this.openBuilder && this.sheet.classList.contains('on')) this.rebuildSheet();
+  }
+
+  /**
+   * Health, updated every frame. Kept apart from refresh() because that rebuilds
+   * icons and any open sheet: health changes far too often to pay for that, and
+   * before this split the bar only moved when some unrelated event forced a
+   * refresh, so it sat a hit behind the damage it was meant to show.
+   */
+  setVitals(hp: number, maxHp: number): void {
+    const shown = Math.ceil(Math.max(0, hp));
+    if (shown === this.shownHp && maxHp === this.shownMaxHp) return;
+    this.shownHp = shown;
+    this.shownMaxHp = maxHp;
+
+    const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
+    this.hpFill.style.width = `${ratio * 100}%`;
+    this.hpFill.classList.toggle('low', ratio <= 0.3);
+    this.hpText.textContent = `${shown}/${maxHp}`;
   }
 
   private refreshCraftButton(orb: OrbContainer): void {
@@ -295,15 +322,34 @@ export class Ui {
     if (this.sheetOpen) this.rebuildSheet();
   }
 
-  setGatherTarget(material: MaterialId | null): void {
-    if (material === this.gatherTarget) return;
-    this.gatherTarget = material;
+  /**
+   * Drive the one context button. Attack wins over gather whenever an enemy is
+   * in reach, so a fight is never lost to picking up a stick by mistake.
+   */
+  setAction(mode: ActionMode, subject: string | null): void {
+    if (mode === this.actionMode && subject === this.actionSubject) return;
+    this.actionMode = mode;
+    this.actionSubject = subject;
 
-    this.gatherBtn.classList.toggle('on', material !== null);
-    if (!material) return;
+    this.actionBtn.classList.toggle('attack', mode === 'attack');
+    this.actionBtn.classList.toggle('gather', mode === 'gather');
+    this.actionBtn.disabled = mode === 'idle';
 
-    this.setIcon(this.gatherIcon, material, 30);
-    this.gatherName.textContent = this.content.material(material).name;
+    if (mode === 'attack') {
+      this.actionGlyph.textContent = '⚔';
+      this.actionLabel.textContent = subject ?? 'Attack';
+      this.actionBtn.setAttribute('aria-label', `Attack ${subject ?? ''}`.trim());
+    } else if (mode === 'gather') {
+      this.actionGlyph.textContent = '✋';
+      this.actionLabel.textContent = subject ?? 'Gather';
+      this.actionBtn.setAttribute('aria-label', `Gather ${subject ?? ''}`.trim());
+    } else {
+      // Still show a real glyph when there is nothing in range: an empty circle
+      // reads as a broken button rather than an idle one.
+      this.actionGlyph.textContent = '◎';
+      this.actionLabel.textContent = 'nothing near';
+      this.actionBtn.setAttribute('aria-label', 'No action available');
+    }
   }
 
   // ---------------------------------------------------------------- sheets
@@ -385,6 +431,26 @@ export class Ui {
         slots.append(slot);
       }
       body.append(slots);
+
+      // ---- what you can do to the targeted slot
+      // These moved off the HUD chips: two 30px buttons per orb ate a third of a
+      // landscape screen for actions nobody takes mid-fight.
+      const selected = orb.orb(this.benchSlot);
+      const acts = el('div', 'bacts');
+      const unload = el('button', 'ghost', 'Unload to pack');
+      unload.disabled = selected === null;
+      unload.addEventListener('click', () => {
+        this.callbacks.onUnloadOrb(this.benchSlot);
+        this.rebuildSheet();
+      });
+      const decompose = el('button', 'ghost', 'Decompose');
+      decompose.disabled = selected === null;
+      decompose.addEventListener('click', () => {
+        this.callbacks.onDecomposeOrb(this.benchSlot);
+        this.rebuildSheet();
+      });
+      acts.append(unload, decompose);
+      body.append(acts);
 
       // ---- result preview
       const recipe = orb.peekTransmutation();

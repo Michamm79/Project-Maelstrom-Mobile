@@ -33,6 +33,8 @@ export interface RenderState {
   rightOrb: MaterialId | null;
   /** The node the player could gather right now, highlighted in the world. */
   highlightNodeId: number | null;
+  /** The enemy the action button would strike. */
+  highlightEnemyId: number | null;
 }
 
 export class Renderer {
@@ -104,6 +106,7 @@ export class Renderer {
     this.drawGround(world, camera);
     this.drawProps(world, camera);
     this.drawNodes(world, state, camera);
+    this.drawEnemies(world, state, camera);
     this.drawPlayer(world, state);
     this.drawFloaters();
 
@@ -266,6 +269,60 @@ export class Renderer {
     }
   }
 
+  private drawEnemies(world: World, state: RenderState, camera: { x: number; y: number }): void {
+    const ctx = this.ctx;
+    const bounds = this.visibleBounds(camera, 90);
+
+    for (const enemy of world.enemies) {
+      if (enemy.dead) continue;
+      if (enemy.x < bounds.left || enemy.x > bounds.right || enemy.y < bounds.top || enemy.y > bounds.bottom) continue;
+
+      const { def } = enemy;
+      ctx.save();
+      ctx.translate(enemy.x, enemy.y);
+
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(0, 14, 13, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Target ring: which one the action button would hit.
+      if (state.highlightEnemyId === enemy.id) {
+        ctx.strokeStyle = withAlpha('#f87171', 0.55 + Math.sin(world.time * 7) * 0.2);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 26, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Aggro tell, so being chased is legible before it reaches you.
+      if (enemy.aggro) {
+        ctx.fillStyle = withAlpha('#f87171', 0.85);
+        ctx.beginPath();
+        ctx.moveTo(0, -30);
+        ctx.lineTo(4, -24);
+        ctx.lineTo(-4, -24);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      const bob = Math.sin(world.time * 3 + enemy.id) * 2;
+      ctx.translate(0, bob);
+      drawIcon(ctx, def.shape, enemy.hitFlash > 0 ? '#ffffff' : def.color, 38);
+
+      // Health bar only once damaged, so an untouched field stays uncluttered.
+      if (enemy.hp < def.hp) {
+        const w = 28;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(-w / 2, -28, w, 4);
+        ctx.fillStyle = '#f87171';
+        ctx.fillRect(-w / 2, -28, w * (enemy.hp / def.hp), 4);
+      }
+
+      ctx.restore();
+    }
+  }
+
   private drawPlayer(world: World, state: RenderState): void {
     const ctx = this.ctx;
     const { player } = world;
@@ -279,6 +336,26 @@ export class Renderer {
     ctx.ellipse(0, 18, 16, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // The swing: an arc sweeping the direction the player faces.
+    if (player.attackAnim > 0) {
+      const config = this.content.progression.combat;
+      const t = 1 - player.attackAnim / 0.22;
+      ctx.save();
+      ctx.rotate(player.facing);
+      ctx.strokeStyle = withAlpha('#ffffff', 0.75 * (1 - t));
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(0, -6, config.attackRange * 0.8, -config.attackArc + t * 0.6, config.attackArc + t * 0.6);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Flash while briefly invulnerable after a hit.
+    if (player.invulnerable > 0 && Math.floor(player.invulnerable * 12) % 2 === 0) {
+      ctx.globalAlpha = 0.45;
+    }
+    if (player.dead) ctx.globalAlpha = 0.3;
+
     // Orbs genuinely circle the character, so the half of the orbit behind them
     // is drawn first. Without this the orbs sit flatly over the sprite's face.
     this.drawOrbs(ctx, world, state, bob, 'behind');
@@ -290,6 +367,7 @@ export class Renderer {
     }
 
     this.drawOrbs(ctx, world, state, bob, 'front');
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 

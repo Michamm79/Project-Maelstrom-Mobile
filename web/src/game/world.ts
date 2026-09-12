@@ -4,7 +4,8 @@
  */
 import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
-import type { MaterialId, ZoneDef } from '../core/types';
+import { applyDamage, inSwing, rollDrops } from '../core/combat';
+import type { EnemyDef, MaterialId, ZoneDef } from '../core/types';
 
 /** World pixels travelled per walk-cycle frame. */
 const STEP_DISTANCE = 13;
@@ -23,6 +24,36 @@ export interface WorldNode {
   scale: number;
 }
 
+export interface Enemy {
+  id: number;
+  def: EnemyDef;
+  x: number;
+  y: number;
+  hp: number;
+  /** Where it returns to when it loses interest. */
+  homeX: number;
+  homeY: number;
+  aggro: boolean;
+  /** Seconds until it can swing again. */
+  cooldown: number;
+  /** Counts down after being hit, for the flash and the knockback slide. */
+  hitFlash: number;
+  knockX: number;
+  knockY: number;
+  /** Set on death; the corpse fades, then the slot respawns. */
+  dead: boolean;
+  respawnAt: number;
+  facing: number;
+}
+
+export interface CombatEvent {
+  kind: 'player-hit' | 'enemy-hit' | 'enemy-killed' | 'player-died' | 'miss';
+  enemy?: Enemy;
+  amount?: number;
+  drops?: MaterialId[];
+  xp?: number;
+}
+
 /** Non-interactive scenery, so a zone doesn't read as an empty field. */
 export interface Prop {
   x: number;
@@ -38,6 +69,17 @@ export type Facing = 'down' | 'up' | 'side';
 export interface Player {
   x: number;
   y: number;
+  hp: number;
+  maxHp: number;
+  /** Counts down; while positive the player cannot be hit again. */
+  invulnerable: number;
+  /** Seconds since last taking damage, gating regeneration. */
+  sinceHit: number;
+  /** Counts down while the swing animation plays. */
+  attackAnim: number;
+  attackCooldown: number;
+  dead: boolean;
+  respawnAt: number;
   /** Facing angle in radians, kept through idle frames so the sprite doesn't snap. */
   facing: number;
   moving: boolean;
@@ -56,7 +98,11 @@ export interface Player {
 export class World {
   readonly nodes: WorldNode[] = [];
   readonly props: Prop[] = [];
+  readonly enemies: Enemy[] = [];
   readonly player: Player;
+
+  /** Drained by the game layer each frame. */
+  readonly events: CombatEvent[] = [];
 
   private elapsed = 0;
 
@@ -70,9 +116,18 @@ export class World {
   ) {
     const rng = new Rng(hashString(zone.id));
 
+    const combat = content.progression.combat;
     this.player = {
       x: zone.size.w / 2,
       y: zone.size.h / 2,
+      hp: combat.maxHp,
+      maxHp: combat.maxHp,
+      invulnerable: 0,
+      sinceHit: combat.regenDelaySeconds,
+      attackAnim: 0,
+      attackCooldown: 0,
+      dead: false,
+      respawnAt: 0,
       facing: -Math.PI / 2,
       moving: false,
       bob: 0,
@@ -84,6 +139,41 @@ export class World {
 
     this.generateProps(rng);
     this.generateNodes(rng);
+    this.generateEnemies(rng);
+  }
+
+  private generateEnemies(rng: Rng): void {
+    if (!this.zone.enemies.length) return;
+
+    for (let i = 0; i < this.zone.enemyCount; i++) {
+      const def = this.content.enemy(rng.pick(this.zone.enemies));
+      // Keep spawns off the player's start, so arriving in a zone is not an ambush.
+      let x = 0;
+      let y = 0;
+      for (let attempt = 0; attempt < 24; attempt++) {
+        x = rng.range(80, this.zone.size.w - 80);
+        y = rng.range(80, this.zone.size.h - 80);
+        if (Math.hypot(x - this.player.x, y - this.player.y) > 320) break;
+      }
+
+      this.enemies.push({
+        id: i,
+        def,
+        x,
+        y,
+        hp: def.hp,
+        homeX: x,
+        homeY: y,
+        aggro: false,
+        cooldown: 0,
+        hitFlash: 0,
+        knockX: 0,
+        knockY: 0,
+        dead: false,
+        respawnAt: 0,
+        facing: rng.range(0, Math.PI * 2),
+      });
+    }
   }
 
   private generateProps(rng: Rng): void {
@@ -132,7 +222,7 @@ export class World {
     }
   }
 
-  /** Advance respawn timers and the player's walk-bob. dt is in seconds. */
+  /** Advance respawn timers, combat and the player's walk-bob. dt is in seconds. */
   update(dt: number): void {
     this.elapsed += dt;
 
@@ -141,10 +231,204 @@ export class World {
     }
 
     this.player.bob = this.player.moving ? this.player.bob + dt * 9 : 0;
+    this.updatePlayerCombat(dt);
+    this.updateEnemies(dt);
+  }
+
+  private updatePlayerCombat(dt: number): void {
+    const combat = this.content.progression.combat;
+    const p = this.player;
+
+    p.invulnerable = Math.max(0, p.invulnerable - dt);
+    p.attackAnim = Math.max(0, p.attackAnim - dt);
+    p.attackCooldown = Math.max(0, p.attackCooldown - dt);
+
+    if (p.dead) {
+      if (this.elapsed >= p.respawnAt) this.respawnPlayer();
+      return;
+    }
+
+    p.sinceHit += dt;
+    if (p.hp < p.maxHp && p.sinceHit >= combat.regenDelaySeconds) {
+      p.hp = Math.min(p.maxHp, p.hp + combat.regenPerSecond * dt);
+    }
+  }
+
+  private updateEnemies(dt: number): void {
+    const p = this.player;
+    const combat = this.content.progression.combat;
+
+    for (const enemy of this.enemies) {
+      enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
+      enemy.cooldown = Math.max(0, enemy.cooldown - dt);
+
+      // Knockback decays rather than stopping dead, so a hit reads as a shove.
+      if (enemy.knockX || enemy.knockY) {
+        enemy.x += enemy.knockX * dt;
+        enemy.y += enemy.knockY * dt;
+        const decay = Math.exp(-dt * 9);
+        enemy.knockX *= decay;
+        enemy.knockY *= decay;
+        if (Math.hypot(enemy.knockX, enemy.knockY) < 1) {
+          enemy.knockX = 0;
+          enemy.knockY = 0;
+        }
+      }
+
+      if (enemy.dead) {
+        if (this.elapsed >= enemy.respawnAt) {
+          enemy.dead = false;
+          enemy.hp = enemy.def.hp;
+          enemy.x = enemy.homeX;
+          enemy.y = enemy.homeY;
+          enemy.aggro = false;
+        }
+        continue;
+      }
+
+      const dx = p.x - enemy.x;
+      const dy = p.y - enemy.y;
+      const distance = Math.hypot(dx, dy);
+
+      // A dead player is not a target; enemies drift home instead.
+      if (p.dead) {
+        enemy.aggro = false;
+      } else if (distance <= enemy.def.aggroRadius) {
+        enemy.aggro = true;
+      } else if (distance > enemy.def.aggroRadius * 1.8) {
+        enemy.aggro = false;
+      }
+
+      if (enemy.aggro && distance > 0.01) {
+        enemy.facing = Math.atan2(dy, dx);
+
+        if (distance > enemy.def.attackRange * 0.8) {
+          const step = enemy.def.speed * dt;
+          enemy.x += (dx / distance) * step;
+          enemy.y += (dy / distance) * step;
+        } else if (enemy.cooldown <= 0) {
+          enemy.cooldown = enemy.def.attackCooldown;
+          this.damagePlayer(enemy.def.damage, combat);
+        }
+      } else if (!enemy.aggro) {
+        const hx = enemy.homeX - enemy.x;
+        const hy = enemy.homeY - enemy.y;
+        const home = Math.hypot(hx, hy);
+        if (home > 4) {
+          const step = Math.min(home, enemy.def.speed * 0.6 * dt);
+          enemy.x += (hx / home) * step;
+          enemy.y += (hy / home) * step;
+        }
+      }
+
+      enemy.x = clamp(enemy.x, 8, this.zone.size.w - 8);
+      enemy.y = clamp(enemy.y, 8, this.zone.size.h - 8);
+    }
+  }
+
+  private damagePlayer(amount: number, combat: { invulnerableSeconds: number; respawnSeconds: number }): void {
+    const p = this.player;
+    if (p.dead || p.invulnerable > 0) return;
+
+    const died = applyDamage(p, amount);
+    p.invulnerable = combat.invulnerableSeconds;
+    p.sinceHit = 0;
+    this.events.push({ kind: 'player-hit', amount });
+
+    if (died) {
+      p.dead = true;
+      p.respawnAt = this.elapsed + combat.respawnSeconds;
+      this.events.push({ kind: 'player-died' });
+    }
+  }
+
+  private respawnPlayer(): void {
+    const p = this.player;
+    p.dead = false;
+    p.hp = p.maxHp;
+    p.invulnerable = this.content.progression.combat.invulnerableSeconds;
+    p.sinceHit = 0;
+    p.x = this.zone.size.w / 2;
+    p.y = this.zone.size.h / 2;
+
+    // Reset the field rather than respawning into whatever was chasing you.
+    for (const enemy of this.enemies) {
+      enemy.aggro = false;
+      enemy.x = enemy.homeX;
+      enemy.y = enemy.homeY;
+    }
+  }
+
+  /** The nearest living enemy inside the swing, or null. */
+  enemyInReach(): Enemy | null {
+    const combat = this.content.progression.combat;
+    let best: Enemy | null = null;
+    let bestDistance = Infinity;
+
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const distance = Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y);
+      if (distance > combat.attackRange || distance >= bestDistance) continue;
+      best = enemy;
+      bestDistance = distance;
+    }
+    return best;
+  }
+
+  /**
+   * Swing. Hits every living enemy inside the arc, not just the nearest, so
+   * being surrounded is survivable rather than a death sentence.
+   */
+  attack(damage: number, roll: () => number): boolean {
+    const p = this.player;
+    const combat = this.content.progression.combat;
+    if (p.dead || p.attackCooldown > 0) return false;
+
+    p.attackCooldown = combat.attackCooldown;
+    p.attackAnim = Math.min(combat.attackCooldown, 0.22);
+
+    let hitAny = false;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      if (!inSwing(p, enemy, combat)) continue;
+
+      hitAny = true;
+      enemy.hitFlash = 0.18;
+      enemy.aggro = true;
+
+      const away = Math.atan2(enemy.y - p.y, enemy.x - p.x);
+      enemy.knockX = Math.cos(away) * combat.knockback * 6;
+      enemy.knockY = Math.sin(away) * combat.knockback * 6;
+
+      if (applyDamage(enemy, damage)) {
+        enemy.dead = true;
+        enemy.respawnAt = this.elapsed + this.zone.respawnSeconds * 2;
+        this.events.push({
+          kind: 'enemy-killed',
+          enemy,
+          xp: enemy.def.xp,
+          drops: rollDrops(enemy.def.drops, roll),
+        });
+      } else {
+        this.events.push({ kind: 'enemy-hit', enemy, amount: damage });
+      }
+    }
+
+    if (!hitAny) this.events.push({ kind: 'miss' });
+    return true;
+  }
+
+  /** Take and clear queued combat events. */
+  drainEvents(): CombatEvent[] {
+    return this.events.splice(0, this.events.length);
   }
 
   /** Move the player by a normalised direction vector, clamped to the zone. */
   movePlayer(dx: number, dy: number, dt: number): void {
+    if (this.player.dead) {
+      this.player.moving = false;
+      return;
+    }
     const magnitude = Math.hypot(dx, dy);
     if (magnitude < 0.01) {
       this.player.moving = false;

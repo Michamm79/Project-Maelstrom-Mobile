@@ -41,6 +41,14 @@ export interface GameStats {
   transmuted: number;
   alchemized: number;
   decomposed: number;
+  slain: number;
+  deaths: number;
+}
+
+/** Health carried across zone changes, so travelling is not a free heal. */
+export interface Vitals {
+  hp: number;
+  maxHp: number;
 }
 
 export interface GameState {
@@ -53,10 +61,15 @@ export interface GameState {
   discovered: Set<RecipeId>;
   seenMaterials: Set<MaterialId>;
   stats: GameStats;
+  vitals: Vitals;
+  /** Whether the player has chosen a start option yet. */
+  started: boolean;
+  /** Tutorial step index; -1 once finished or skipped. */
+  tutorialStep: number;
   playtimeMs: number;
 }
 
-export type XpReason = 'gather' | 'discover' | 'transmute' | 'alchemy' | 'decompose';
+export type XpReason = 'gather' | 'discover' | 'transmute' | 'alchemy' | 'decompose' | 'combat';
 
 export interface OrbEvents {
   orbsChanged: void;
@@ -65,7 +78,7 @@ export interface OrbEvents {
   stateChanged: void;
   xpGained: { amount: number; reason: XpReason };
   levelUp: { level: number; unlockedAlchemy: boolean; unlockedZones: ZoneId[] };
-  discovered: { recipe: TransmutationRecipe | AlchemyRecipe; material: MaterialId };
+  discovered: { recipe: TransmutationRecipe | AlchemyRecipe | null; material: MaterialId };
   crafted: { material: MaterialId; via: 'transmutation' | 'alchemy'; isNew: boolean };
   gathered: { material: MaterialId; isNew: boolean; toOrb: Hand | null };
   decomposed: { material: MaterialId; gained: Record<ElementId, number> };
@@ -338,6 +351,37 @@ export class OrbContainer {
     return recipe.result;
   }
 
+  // ---------------------------------------------------------------- combat
+
+  /** Credit a kill: XP, drops, and the stat. */
+  recordKill(xp: number, drops: readonly MaterialId[]): void {
+    this.state.stats.slain++;
+
+    for (const material of drops) {
+      if (!this.content.hasMaterial(material)) continue;
+      this.addToInventory(material, 1);
+      const isNew = !this.state.seenMaterials.has(material);
+      this.markSeen(material);
+      if (isNew) this.events.emit('discovered', { recipe: null, material });
+    }
+
+    this.addXp(xp, 'combat');
+    this.events.emit('stateChanged', undefined);
+  }
+
+  recordDeath(): void {
+    this.state.stats.deaths++;
+    this.events.emit('stateChanged', undefined);
+  }
+
+  /** Everything the player is carrying, including what is loaded in the orbs. */
+  carried(): MaterialId[] {
+    const all = Object.keys(this.state.inventory).filter((id) => this.countOf(id) > 0);
+    if (this.state.orbs.left) all.push(this.state.orbs.left);
+    if (this.state.orbs.right) all.push(this.state.orbs.right);
+    return all;
+  }
+
   // ---------------------------------------------------------------- travel
 
   travelTo(zoneId: ZoneId): boolean {
@@ -409,7 +453,10 @@ export function createInitialState(content: Content): GameState {
     inventory: {},
     discovered: new Set(),
     seenMaterials: new Set(),
-    stats: { gathered: 0, transmuted: 0, alchemized: 0, decomposed: 0 },
+    stats: { gathered: 0, transmuted: 0, alchemized: 0, decomposed: 0, slain: 0, deaths: 0 },
+    vitals: { hp: content.progression.combat.maxHp, maxHp: content.progression.combat.maxHp },
+    started: false,
+    tutorialStep: -1,
     playtimeMs: 0,
   };
 }

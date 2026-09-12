@@ -319,6 +319,136 @@ const reloadedLevel = await page.locator('.level .row b').textContent();
 check('save survives a reload', reloadedLevel === level, `${reloadedLevel} vs ${level}`);
 await page.screenshot({ path: join(SHOTS, '10-after-reload.png') });
 
+// ---------------------------------------------------------------- combat + action button
+
+const combat = await page.evaluate(async () => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
+
+  // Rather than fabricate spawns, reuse what the zone generated: park one enemy
+  // inside reach and move every node out of it, so only attack is possible.
+  const enemy = world.enemies[0];
+  for (const n of world.nodes) { n.x = world.player.x + 4000; n.y = world.player.y + 4000; }
+  for (const e of world.enemies.slice(1)) { e.x = world.player.x + 4000; e.y = world.player.y + 4000; }
+  enemy.dead = false;
+  enemy.hp = enemy.def.hp;
+  enemy.x = world.player.x + 30;
+  enemy.y = world.player.y;
+  const hpBefore = enemy.hp;
+
+  await new Promise((r) => setTimeout(r, 140));
+  const glyphAttack = document.querySelector('.action .aglyph').textContent;
+  const isAttack = document.querySelector('.action').classList.contains('attack');
+
+  document.querySelector('.action').click();
+  await new Promise((r) => setTimeout(r, 80));
+  const hpAfter = enemy.hp;
+
+  // Now hide the enemy and bring a node back: the same button must become gather.
+  enemy.x = world.player.x + 4000;
+  const node = world.nodes[0];
+  node.available = true;
+  node.material = 'stick';
+  node.x = world.player.x + 20;
+  node.y = world.player.y;
+  await new Promise((r) => setTimeout(r, 240));
+  const glyphGather = document.querySelector('.action .aglyph').textContent;
+  const isGather = document.querySelector('.action').classList.contains('gather');
+
+  orb.unloadOrb('left');
+  orb.unloadOrb('right');
+  document.querySelector('.action').click();
+  await new Promise((r) => setTimeout(r, 80));
+
+  return {
+    isAttack, isGather, glyphAttack, glyphGather,
+    hpBefore, hpAfter,
+    gatheredInto: orb.orb('left') ?? orb.orb('right'),
+    hp: world.player.hp, maxHp: world.player.maxHp,
+  };
+});
+
+check('an enemy in reach puts the button in attack mode', combat.isAttack, JSON.stringify(combat));
+check('attacking damages the enemy', combat.hpAfter < combat.hpBefore, `${combat.hpBefore} -> ${combat.hpAfter}`);
+check('with no enemy the same button becomes gather', combat.isGather, JSON.stringify(combat));
+check('the attack and gather glyphs differ', combat.glyphAttack !== combat.glyphGather,
+  `${combat.glyphAttack} vs ${combat.glyphGather}`);
+check('the gather press picked the node up', combat.gatheredInto === 'stick', String(combat.gatheredInto));
+check('the HP readout is populated', /^\d+\/\d+$/.test((await page.locator('.hptext').textContent()) ?? ''),
+  (await page.locator('.hptext').textContent()) ?? '');
+await page.screenshot({ path: join(SHOTS, '12-combat.png') });
+
+// An enemy hitting back must actually take health off. Drive it through the real
+// aggro path rather than poking hp, so the damage tick is what is under test.
+const hurt = await page.evaluate(async () => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  const before = world.player.hp;
+
+  const enemy = world.enemies[0];
+  enemy.dead = false;
+  enemy.hp = enemy.def.hp;
+  enemy.aggro = true;
+  enemy.cooldown = 0;
+  enemy.x = world.player.x + 6;
+  enemy.y = world.player.y;
+
+  for (let i = 0; i < 40 && world.player.hp >= before; i++) {
+    enemy.x = world.player.x + 6;
+    enemy.y = world.player.y;
+    enemy.aggro = true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return { before, after: world.player.hp, width: document.querySelector('.hpbar i').style.width };
+});
+check('an enemy attack lowers health and the bar', hurt.after < hurt.before && hurt.width !== '100%',
+  JSON.stringify(hurt));
+
+// ---------------------------------------------------------------- landscape HUD budget
+// The complaint that started this: in landscape the HUD ate over half the screen.
+
+const landscape = await context.newPage();
+await landscape.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+await landscape.setViewportSize({ width: 844, height: 390 });
+await landscape.waitForTimeout(500);
+
+const budget = await landscape.evaluate(() => {
+  const h = window.innerHeight;
+  const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+
+  // Measure the reserved bands, not the sum of element heights: in landscape the
+  // orb bar and the nav share one line, so adding their heights double-counts it.
+  const top = Math.max(rect('.topbar').bottom, rect('.vitals').bottom);
+  const bottom = h - Math.min(rect('.orbbar').top, rect('.nav').top);
+  const action = rect('.action');
+  const nav = rect('.nav');
+  const orbbar = rect('.orbbar');
+
+  return {
+    h,
+    pct: Math.round(((top + bottom) / h) * 100),
+    action: action.height,
+    oneLine: Math.abs(orbbar.top - nav.top) < 4,
+    clearOfAction: nav.right <= action.left,
+    stickRoom: Math.round(orbbar.left),
+    verbFits: (() => {
+      const v = document.querySelector('.craft .verb');
+      return v ? v.scrollWidth <= v.getBoundingClientRect().width + 1 : false;
+    })(),
+    vitalsWidth: Math.round(rect('.vitals').width),
+  };
+});
+check('landscape chrome stays under a third of the screen', budget.pct < 34, `${budget.pct}% of ${budget.h}px`);
+check('orb bar and nav share one line in landscape', budget.oneLine, JSON.stringify(budget));
+check('the nav does not run under the action button', budget.clearOfAction, JSON.stringify(budget));
+check('the left thumb keeps a stick zone free of buttons', budget.stickRoom > 140, `${budget.stickRoom}px`);
+check('the action button stays thumb-sized in landscape', budget.action >= 76, `${budget.action}px`);
+check('the transmute label is not clipped in landscape', budget.verbFits, JSON.stringify(budget));
+check('the health bar does not stretch the full width', budget.vitalsWidth < budget.h, `${budget.vitalsWidth}px`);
+await landscape.screenshot({ path: join(SHOTS, '13-landscape.png') });
+await landscape.close();
+
 check('no uncaught page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 await browser.close();

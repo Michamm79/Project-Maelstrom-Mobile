@@ -10,6 +10,8 @@ import type {
   ContentBundle,
   ElementDef,
   ElementId,
+  EnemyDef,
+  EnemyId,
   MaterialDef,
   MaterialId,
   ProgressionConfig,
@@ -27,10 +29,12 @@ export class Content {
   readonly transmutation: readonly TransmutationRecipe[] = bundle.transmutation;
   readonly alchemy: readonly AlchemyRecipe[] = bundle.alchemy;
   readonly zones: readonly ZoneDef[] = bundle.zones;
+  readonly enemies: readonly EnemyDef[] = bundle.enemies;
 
   private readonly elementById = new Map<ElementId, ElementDef>();
   private readonly materialById = new Map<MaterialId, MaterialDef>();
   private readonly zoneById = new Map<ZoneId, ZoneDef>();
+  private readonly enemyById = new Map<EnemyId, EnemyDef>();
 
   /**
    * Transmutation lookup keyed by the sorted input pair, which is what makes
@@ -42,6 +46,7 @@ export class Content {
     for (const e of this.elements) this.elementById.set(e.id, e);
     for (const m of this.materials) this.materialById.set(m.id, m);
     for (const z of this.zones) this.zoneById.set(z.id, z);
+    for (const e of this.enemies) this.enemyById.set(e.id, e);
     for (const r of this.transmutation) this.transmutationByPair.set(pairKey(r.a, r.b), r);
   }
 
@@ -65,6 +70,12 @@ export class Content {
 
   hasMaterial(id: MaterialId): boolean {
     return this.materialById.has(id);
+  }
+
+  enemy(id: EnemyId): EnemyDef {
+    const e = this.enemyById.get(id);
+    if (!e) throw new Error(`unknown enemy "${id}"`);
+    return e;
   }
 
   recipeByPair(a: MaterialId, b: MaterialId): TransmutationRecipe | undefined {

@@ -29,6 +29,19 @@
       "gatherGraceSeconds": 0.45,
       "gatherGraceRangeFactor": 2
     },
+    "combat": {
+      "$comment": "Damage is base plus the best weapon carried - there is no equip slot, so the tech tree itself is the progression. Regen is generous because this is a crafting game: dying should cost time, not progress.",
+      "maxHp": 60,
+      "baseDamage": 3,
+      "attackRange": 52,
+      "attackCooldown": 0.5,
+      "attackArc": 1.6,
+      "knockback": 26,
+      "invulnerableSeconds": 0.6,
+      "regenPerSecond": 2.5,
+      "regenDelaySeconds": 5,
+      "respawnSeconds": 2.5
+    },
     "xpTable": [
       0,
       60,
@@ -599,7 +612,8 @@
       "composition": {
         "verdant": 1,
         "terran": 2
-      }
+      },
+      "damage": 7
     },
     {
       "id": "flint_knife",
@@ -618,7 +632,8 @@
         "verdant": 1,
         "terran": 2,
         "pyron": 1
-      }
+      },
+      "damage": 5
     },
     {
       "id": "snare",
@@ -652,7 +667,8 @@
       "composition": {
         "verdant": 4,
         "terran": 1
-      }
+      },
+      "damage": 9
     },
     {
       "id": "kiln",
@@ -913,7 +929,8 @@
         "terran": 3,
         "umbral": 1,
         "verdant": 1
-      }
+      },
+      "damage": 14
     },
     {
       "id": "iron_ingot",
@@ -1033,7 +1050,8 @@
         "aqualis": 1,
         "pyron": 1,
         "verdant": 2
-      }
+      },
+      "damage": 22
     },
     {
       "id": "silver_mirror",
@@ -1228,7 +1246,8 @@
         "aqualis": 1,
         "pyron": 1,
         "verdant": 2
-      }
+      },
+      "damage": 38
     },
     {
       "id": "orb_focus",
@@ -1935,7 +1954,11 @@
           "material": "spring_water",
           "weight": 6
         }
-      ]
+      ],
+      "enemies": [
+        "mire_husk"
+      ],
+      "enemyCount": 4
     },
     {
       "id": "rustpine_wood",
@@ -1980,7 +2003,12 @@
           "material": "gale_moss",
           "weight": 12
         }
-      ]
+      ],
+      "enemies": [
+        "mire_husk",
+        "pine_stalker"
+      ],
+      "enemyCount": 6
     },
     {
       "id": "cinder_flats",
@@ -2025,7 +2053,12 @@
           "material": "ember_bloom",
           "weight": 10
         }
-      ]
+      ],
+      "enemies": [
+        "ember_wisp",
+        "pine_stalker"
+      ],
+      "enemyCount": 7
     },
     {
       "id": "ferrous_deep",
@@ -2070,7 +2103,12 @@
           "material": "crystal_shard",
           "weight": 12
         }
-      ]
+      ],
+      "enemies": [
+        "deep_crawler",
+        "ember_wisp"
+      ],
+      "enemyCount": 8
     },
     {
       "id": "maelstrom_rim",
@@ -2110,6 +2148,133 @@
         {
           "material": "gale_moss",
           "weight": 16
+        }
+      ],
+      "enemies": [
+        "rift_shade",
+        "deep_crawler"
+      ],
+      "enemyCount": 9
+    }
+  ],
+  "enemies": [
+    {
+      "id": "mire_husk",
+      "name": "Mire Husk",
+      "description": "Waterlogged bark grown around something that used to walk. Slow, and it does not stop.",
+      "shape": "lump",
+      "color": "#5d7a52",
+      "hp": 14,
+      "damage": 3,
+      "speed": 52,
+      "aggroRadius": 150,
+      "attackRange": 26,
+      "attackCooldown": 1.4,
+      "xp": 12,
+      "drops": [
+        {
+          "material": "fiber",
+          "chance": 0.5
+        },
+        {
+          "material": "resin",
+          "chance": 0.2
+        }
+      ]
+    },
+    {
+      "id": "pine_stalker",
+      "name": "Pine Stalker",
+      "description": "It has been stripping the lower branches. Now it has noticed you.",
+      "shape": "shard",
+      "color": "#8a5a32",
+      "hp": 26,
+      "damage": 6,
+      "speed": 74,
+      "aggroRadius": 210,
+      "attackRange": 28,
+      "attackCooldown": 1.15,
+      "xp": 26,
+      "drops": [
+        {
+          "material": "bone",
+          "chance": 0.45
+        },
+        {
+          "material": "resin",
+          "chance": 0.3
+        }
+      ]
+    },
+    {
+      "id": "ember_wisp",
+      "name": "Ember Wisp",
+      "description": "A scrap of the fire that made the flats, still looking for fuel.",
+      "shape": "flame",
+      "color": "#ff8347",
+      "hp": 30,
+      "damage": 9,
+      "speed": 96,
+      "aggroRadius": 240,
+      "attackRange": 24,
+      "attackCooldown": 0.95,
+      "xp": 42,
+      "drops": [
+        {
+          "material": "coal",
+          "chance": 0.45
+        },
+        {
+          "material": "ember_bloom",
+          "chance": 0.25
+        }
+      ]
+    },
+    {
+      "id": "deep_crawler",
+      "name": "Deep Crawler",
+      "description": "Armoured in the ore it eats. Hits like the mountain it came out of.",
+      "shape": "ore",
+      "color": "#7d6a5c",
+      "hp": 68,
+      "damage": 14,
+      "speed": 62,
+      "aggroRadius": 200,
+      "attackRange": 30,
+      "attackCooldown": 1.5,
+      "xp": 80,
+      "drops": [
+        {
+          "material": "iron_ore",
+          "chance": 0.5
+        },
+        {
+          "material": "crystal_shard",
+          "chance": 0.2
+        }
+      ]
+    },
+    {
+      "id": "rift_shade",
+      "name": "Rift Shade",
+      "description": "The storm's idea of a person. It arrives slightly before it moves.",
+      "shape": "core",
+      "color": "#8b7cd8",
+      "hp": 95,
+      "damage": 22,
+      "speed": 112,
+      "aggroRadius": 280,
+      "attackRange": 30,
+      "attackCooldown": 1.05,
+      "xp": 160,
+      "drops": [
+        {
+          "material": "voidglass",
+          "chance": 0.4
+        },
+        {
+          "material": "aetherdust",
+          "chance": 0.3
         }
       ]
     }

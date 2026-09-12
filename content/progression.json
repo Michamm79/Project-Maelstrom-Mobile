@@ -3,7 +3,6 @@
   "alchemyUnlockLevel": 5,
   "orbCount": 2,
   "maxLevel": 25,
-
   "$comment_yield": "Decomposition is lossy on purpose: breaking a crafted thing returns only this fraction of its inputs' essence (min 1 per element). Without it, composition doubles every craft tier and a late-game item would decompose into hundreds of elements.",
   "decompositionYield": 0.6,
   "xp": {
@@ -25,5 +24,18 @@
     "radius": 13,
     "gatherGraceSeconds": 0.45,
     "gatherGraceRangeFactor": 2
+  },
+  "combat": {
+    "$comment": "Damage is base plus the best weapon carried - there is no equip slot, so the tech tree itself is the progression. Regen is generous because this is a crafting game: dying should cost time, not progress.",
+    "maxHp": 60,
+    "baseDamage": 3,
+    "attackRange": 52,
+    "attackCooldown": 0.5,
+    "attackArc": 1.6,
+    "knockback": 26,
+    "invulnerableSeconds": 0.6,
+    "regenPerSecond": 2.5,
+    "regenDelaySeconds": 5,
+    "respawnSeconds": 2.5
   }
 }
