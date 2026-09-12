@@ -84,7 +84,13 @@ export class InputController {
 
     event.preventDefault();
     this.pointerId = event.pointerId;
-    this.surface.setPointerCapture?.(event.pointerId);
+    try {
+      this.surface.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Capture is an optimisation - it keeps the stick tracking a thumb that
+      // slides off the canvas. If the pointer is already gone the stick still
+      // works, so never let this take the rest of the handler down with it.
+    }
     this.origin = { x: event.clientX, y: event.clientY };
     this.knob = { ...this.origin };
     this.pointerStart = { x: event.clientX, y: event.clientY, time: performance.now() };

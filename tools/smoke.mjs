@@ -67,6 +67,50 @@ page.on('console', (m) => {
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 
+// ---------------------------------------------------------------- title screen
+
+check('a fresh load opens on the title screen', await page.locator('.title').isVisible());
+check('the title offers both a guided and an unguided start',
+  (await page.locator('.title .tbtn').count()) === 2,
+  (await page.locator('.title .tbtn').allTextContents()).join(' | '));
+check('the world is frozen behind the title card', await page.evaluate(async () => {
+  const canvas = document.querySelector('#stage');
+  const rect = canvas.getBoundingClientRect();
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  const before = { x: world.player.x, y: world.player.y };
+  canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 9, clientX: 60, clientY: rect.height / 2, bubbles: true }));
+  canvas.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, clientX: 160, clientY: rect.height / 2, bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  canvas.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, clientX: 160, clientY: rect.height / 2, bubbles: true }));
+  return Math.hypot(world.player.x - before.x, world.player.y - before.y) < 1;
+}));
+await page.screenshot({ path: join(SHOTS, '00-title.png') });
+
+// Take the guided start: everything below runs with the tutorial active, which
+// is the path a new player actually takes.
+await page.locator('.title .tbtn.primary').click();
+await page.waitForTimeout(250);
+check('choosing a start dismisses the title', !(await page.locator('.title').isVisible()));
+check('the guide shows its first objective', await page.locator('.objective').isVisible());
+
+const firstStep = await page.locator('.objective b').textContent();
+check('the first objective is the movement step', /feet/i.test(firstStep ?? ''), firstStep ?? '');
+
+// Walking far enough must advance the guide on its own - there is no next button.
+await page.evaluate(async () => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  for (let i = 0; i < 40; i++) {
+    world.player.x += 12;
+    await new Promise((r) => setTimeout(r, 16));
+  }
+});
+await page.waitForTimeout(200);
+const secondStep = await page.locator('.objective b').textContent();
+check('walking advances the guide without a next button', secondStep !== firstStep,
+  `${firstStep} -> ${secondStep}`);
+
 // ---------------------------------------------------------------- boot
 
 check('page renders the HUD', await page.locator('.orbbar').isVisible());
@@ -315,6 +359,15 @@ check('progress is written to localStorage', persisted !== null && persisted.lev
 
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
+check('a started run comes back to a Continue card', await page.locator('.title').isVisible());
+const resumeLabel = await page.locator('.title .tbtn.primary').textContent();
+check('the title offers to continue, not to restart', /continue/i.test(resumeLabel ?? ''), resumeLabel ?? '');
+check('the Continue card says where you left off',
+  /level/i.test((await page.locator('.title .tsub').first().textContent()) ?? ''),
+  (await page.locator('.title .tsub').first().textContent()) ?? '');
+await page.locator('.title .tbtn.primary').click();
+await page.waitForTimeout(200);
+
 const reloadedLevel = await page.locator('.level .row b').textContent();
 check('save survives a reload', reloadedLevel === level, `${reloadedLevel} vs ${level}`);
 await page.screenshot({ path: join(SHOTS, '10-after-reload.png') });
@@ -411,7 +464,9 @@ check('an enemy attack lowers health and the bar', hurt.after < hurt.before && h
 const landscape = await context.newPage();
 await landscape.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
 await landscape.setViewportSize({ width: 844, height: 390 });
-await landscape.waitForTimeout(500);
+await landscape.waitForTimeout(400);
+await landscape.locator('.title .tbtn.primary').click();
+await landscape.waitForTimeout(400);
 
 const budget = await landscape.evaluate(() => {
   const h = window.innerHeight;
@@ -448,6 +503,29 @@ check('the transmute label is not clipped in landscape', budget.verbFits, JSON.s
 check('the health bar does not stretch the full width', budget.vitalsWidth < budget.h, `${budget.vitalsWidth}px`);
 await landscape.screenshot({ path: join(SHOTS, '13-landscape.png') });
 await landscape.close();
+
+// ---------------------------------------------------------------- replay the guide
+
+await page.locator('.nav button', { hasText: 'Menu' }).click();
+await page.waitForTimeout(200);
+check('the menu counts kills and deaths', (await page.locator('.sheet .stat').count()) === 6,
+  String(await page.locator('.sheet .stat').count()));
+await page.locator('.sheet button', { hasText: 'Replay the opening guide' }).click();
+await page.waitForTimeout(250);
+check('replaying the guide reopens it at step one',
+  (await page.locator('.objective b').textContent()) === 'Find your feet',
+  (await page.locator('.objective b').textContent()) ?? 'no banner');
+
+await page.locator('.objective .oskip').click();
+await page.waitForTimeout(200);
+check('skipping the guide dismisses the banner', !(await page.locator('.objective').isVisible()));
+check('a skipped guide stays skipped across a reload', await (async () => {
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.locator('.title .tbtn.primary').click();
+  await page.waitForTimeout(300);
+  return !(await page.locator('.objective').isVisible());
+})());
 
 check('no uncaught page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 

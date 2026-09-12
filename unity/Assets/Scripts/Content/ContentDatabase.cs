@@ -38,6 +38,8 @@ namespace OrbSystem
         private readonly List<TransmutationRecipe> transmutationRecipes = new List<TransmutationRecipe>();
         private readonly List<AlchemyRecipe> alchemyRecipes = new List<AlchemyRecipe>();
         private readonly List<ZoneJson> zones = new List<ZoneJson>();
+        private readonly List<EnemyJson> enemies = new List<EnemyJson>();
+        private readonly List<TutorialStepJson> tutorial = new List<TutorialStepJson>();
 
         private ProgressionJson progression = new ProgressionJson();
         private bool loaded;
@@ -45,6 +47,8 @@ namespace OrbSystem
         public bool Loaded => loaded;
         public ProgressionJson Progression => progression;
         public IReadOnlyList<ZoneJson> Zones => zones;
+        public IReadOnlyList<EnemyJson> Enemies => enemies;
+        public IReadOnlyList<TutorialStepJson> Tutorial => tutorial;
         public IReadOnlyDictionary<string, ElementSO> Elements => elementsById;
         public IReadOnlyDictionary<string, MaterialSO> Materials => materialsById;
         public IReadOnlyList<TransmutationRecipe> TransmutationRecipes => transmutationRecipes;
@@ -68,6 +72,8 @@ namespace OrbSystem
             transmutationRecipes.Clear();
             alchemyRecipes.Clear();
             zones.Clear();
+            enemies.Clear();
+            tutorial.Clear();
 
             var asset = Resources.Load<TextAsset>(resourcePath);
             if (asset == null)
@@ -89,6 +95,8 @@ namespace OrbSystem
 
             progression = bundle.progression ?? new ProgressionJson();
             zones.AddRange(bundle.zones);
+            enemies.AddRange(bundle.enemies);
+            tutorial.AddRange(bundle.tutorial);
 
             BuildElements(bundle);
             BuildMaterials(bundle);
@@ -102,7 +110,7 @@ namespace OrbSystem
             Debug.Log(
                 $"[ContentDatabase] {elementsById.Count} elements, {materialsById.Count} materials, " +
                 $"{transmutationRecipes.Count} transmutations, {alchemyRecipes.Count} alchemy recipes, " +
-                $"{zones.Count} zones.");
+                $"{zones.Count} zones, {enemies.Count} enemies.");
         }
 
         private void BuildElements(ContentBundleJson bundle)
@@ -225,6 +233,15 @@ namespace OrbSystem
             foreach (var zone in zones)
             {
                 if (zone.id == id) return zone;
+            }
+            return null;
+        }
+
+        public EnemyJson Enemy(string id)
+        {
+            foreach (var enemy in enemies)
+            {
+                if (enemy.id == id) return enemy;
             }
             return null;
         }

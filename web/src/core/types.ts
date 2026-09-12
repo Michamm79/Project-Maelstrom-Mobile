@@ -163,9 +163,17 @@ export interface ProgressionConfig {
   combat: CombatConfig;
 }
 
+/** One card of the opening guide. The rule that completes it lives in core/tutorial.ts. */
+export interface TutorialStep {
+  id: string;
+  title: string;
+  hint: string;
+}
+
 export interface ContentBundle {
   version: number;
   progression: ProgressionConfig;
+  tutorial: readonly TutorialStep[];
   enemies: readonly EnemyDef[];
   elements: readonly ElementDef[];
   materials: readonly MaterialDef[];

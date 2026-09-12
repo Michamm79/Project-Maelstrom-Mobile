@@ -25,6 +25,8 @@ namespace OrbSystem.ContentModel
         public List<TransmutationJson> transmutation = new List<TransmutationJson>();
         public List<AlchemyJson> alchemy = new List<AlchemyJson>();
         public List<ZoneJson> zones = new List<ZoneJson>();
+        public List<EnemyJson> enemies = new List<EnemyJson>();
+        public List<TutorialStepJson> tutorial = new List<TutorialStepJson>();
     }
 
     [Serializable]
@@ -36,6 +38,8 @@ namespace OrbSystem.ContentModel
         public float decompositionYield = 0.6f;
         public XpJson xp = new XpJson();
         public int[] xpTable = new int[0];
+        public CombatJson combat = new CombatJson();
+        public PlayerJson player = new PlayerJson();
     }
 
     [Serializable]
@@ -55,6 +59,13 @@ namespace OrbSystem.ContentModel
         public string name;
         public string description;
         public string color;
+        // Periodic-table layout. The alchemy screen is generated from these, so a
+        // duplicate symbol or cell is a content error the build already rejects.
+        public string symbol;
+        public int number;
+        public string group;
+        public int row;
+        public int col;
     }
 
     [Serializable]
@@ -77,6 +88,13 @@ namespace OrbSystem.ContentModel
         public int tier;
         public int availableAtLevel;
         public List<ElementQuantityJson> composition = new List<ElementQuantityJson>();
+
+        /// <summary>
+        /// Weapon damage. JsonUtility has no nullable int, so a non-weapon reads
+        /// back as 0; the build refuses to emit a weapon without a damage value,
+        /// so 0 here always means "not a weapon" and never "a broken weapon".
+        /// </summary>
+        public int damage;
     }
 
     [Serializable]
@@ -113,6 +131,8 @@ namespace OrbSystem.ContentModel
         public int nodeCount;
         public float respawnSeconds;
         public List<SpawnJson> spawns = new List<SpawnJson>();
+        public List<string> enemies = new List<string>();
+        public int enemyCount;
     }
 
     [Serializable]
@@ -136,5 +156,67 @@ namespace OrbSystem.ContentModel
     {
         public string material;
         public float weight;
+    }
+
+    [Serializable]
+    public class CombatJson
+    {
+        public int maxHp = 60;
+        public int baseDamage = 3;
+        public float attackRange = 52f;
+        public float attackCooldown = 0.5f;
+        public float attackArc = 1.6f;
+        public float knockback = 26f;
+        public float invulnerableSeconds = 0.6f;
+        public float regenPerSecond = 2.5f;
+        public float regenDelaySeconds = 5f;
+        public float respawnSeconds = 2.5f;
+    }
+
+    [Serializable]
+    public class PlayerJson
+    {
+        public float moveSpeed = 168f;
+        public float gatherRadius = 42f;
+        public float radius = 13f;
+        public float gatherGraceSeconds = 0.45f;
+        public float gatherGraceRangeFactor = 2f;
+    }
+
+    [Serializable]
+    public class EnemyJson
+    {
+        public string id;
+        public string name;
+        public string description;
+        public string shape;
+        public string color;
+        public int hp;
+        public int damage;
+        public float speed;
+        public float aggroRadius;
+        public float attackRange;
+        public float attackCooldown;
+        public int xp;
+        public List<EnemyDropJson> drops = new List<EnemyDropJson>();
+    }
+
+    [Serializable]
+    public class EnemyDropJson
+    {
+        public string material;
+        public float chance;
+    }
+
+    /// <summary>
+    /// One card of the opening guide. The rule that completes each step is code,
+    /// keyed by id - see web/src/core/tutorial.ts for the reference implementation.
+    /// </summary>
+    [Serializable]
+    public class TutorialStepJson
+    {
+        public string id;
+        public string title;
+        public string hint;
     }
 }

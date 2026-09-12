@@ -7,9 +7,11 @@ import { content } from '../core/content';
 import { playerDamage } from '../core/combat';
 import { createInitialState, OrbContainer } from '../core/orbContainer';
 import { clearSave, load, save } from '../core/save';
+import { advanceTutorial, emptyProgress, tutorialComplete, type TutorialProgress } from '../core/tutorial';
 import { InputController } from './input';
 import { Renderer } from './renderer';
 import { Ui } from './ui';
+import { TitleScreen } from './title';
 import { World } from './world';
 import type { AlchemyRecipe, Hand, MaterialId, ZoneId } from '../core/types';
 
@@ -29,6 +31,11 @@ export class Game {
   private saveHandle = 0;
   private running = false;
 
+  private readonly title: TitleScreen;
+  private tutorial: TutorialProgress = emptyProgress();
+  /** Where the player stood at the last tutorial tick, for the walk-distance rule. */
+  private tutorialMark = { x: 0, y: 0 };
+
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const state = load(content) ?? createInitialState(content);
     this.orb = new OrbContainer(content, state);
@@ -39,6 +46,9 @@ export class Game {
 
     this.ui = new Ui(uiRoot, content, {
       onAction: () => this.contextAction(),
+      onSkipTutorial: () => this.endTutorial(),
+      onReplayTutorial: () => this.replayTutorial(),
+      onBenchOpened: () => { this.tutorial.benchOpened += 1; },
       onGather: () => this.gatherNearest(),
       onTransmute: () => this.transmute(),
       onUnloadOrb: (hand) => this.unloadOrb(hand),
@@ -52,8 +62,22 @@ export class Game {
     });
     this.ui.bind(this.orb);
 
+    this.title = new TitleScreen(uiRoot, {
+      onContinue: () => this.beginPlay(),
+      onNewGame: (guided) => this.startNewGame(guided),
+    });
+
     this.wireEvents();
     this.ui.refresh(this.orb);
+
+    // A run that was already started resumes behind the title card; a fresh one
+    // has nothing to continue, so the card only offers the two ways to begin.
+    if (this.orb.state.started) {
+      this.title.show(true, this.runSummary());
+    } else {
+      this.title.show(false, null);
+    }
+    this.syncObjective();
 
     window.addEventListener('resize', this.onResize);
     window.addEventListener('orientationchange', this.onResize);
@@ -78,6 +102,7 @@ export class Game {
     events.on('xpGained', () => this.ui.refresh(this.orb));
 
     events.on('gathered', ({ material, isNew, toOrb }) => {
+      this.tutorial.gathered += 1;
       const def = content.material(material);
       this.renderer.addFloater(this.world.player.x, this.world.player.y, `+ ${def.name}`, def.color);
       if (isNew) this.ui.toast(`New material: ${def.name}`, 'good');
@@ -85,6 +110,7 @@ export class Game {
     });
 
     events.on('crafted', ({ material, via, isNew }) => {
+      if (via === 'transmutation') this.tutorial.transmuted += 1;
       const def = content.material(material);
       this.renderer.addFloater(this.world.player.x, this.world.player.y, def.name, def.color, 1.6);
       if (!isNew) this.ui.toast(`${via === 'alchemy' ? 'Brewed' : 'Transmuted'}: ${def.name}`, 'good');
@@ -165,6 +191,7 @@ export class Game {
           this.ui.toast(`${event.enemy.def.name} dropped ${content.material(drop).name}`, 'good');
         }
       } else if (event.kind === 'enemy-hit' && event.enemy) {
+        this.tutorial.enemiesHit += 1;
         this.renderer.addFloater(event.enemy.x, event.enemy.y - 8, `-${event.amount}`, '#ffffff', 0.7);
       } else if (event.kind === 'player-hit') {
         this.renderer.addFloater(player.x, player.y - 30, `-${event.amount}`, '#f87171', 0.9);
@@ -254,6 +281,88 @@ export class Game {
     if (!this.orb.travelTo(zone)) this.ui.toast('You cannot go there yet', 'bad');
   }
 
+  // ---------------------------------------------------------------- opening
+
+  /** A one-line "here is where you left off" for the Continue button. */
+  private runSummary(): string {
+    const { state } = this.orb;
+    const minutes = Math.floor(state.playtimeMs / 60000);
+    const where = content.zone(state.zoneId).name;
+    return minutes > 0 ? `Level ${state.level} in ${where}, ${minutes} min played` : `Level ${state.level} in ${where}`;
+  }
+
+  /** Leave the title card and hand control to the player. */
+  private beginPlay(): void {
+    if (!this.orb.state.started) {
+      this.orb.state.started = true;
+      this.scheduleSave();
+    }
+    this.tutorialMark = { x: this.world.player.x, y: this.world.player.y };
+    this.syncObjective();
+  }
+
+  private startNewGame(guided: boolean): void {
+    // Starting over from an existing run has to actually clear it, not layer a
+    // new game on top of the old inventory.
+    if (this.orb.state.started) {
+      clearSave();
+      window.location.reload();
+      return;
+    }
+
+    this.orb.state.started = true;
+    this.orb.state.tutorialStep = guided ? 0 : -1;
+    this.tutorial = emptyProgress();
+    this.beginPlay();
+  }
+
+  /** Run the guide again from the top, with a clean tally so nothing auto-skips. */
+  private replayTutorial(): void {
+    this.tutorial = emptyProgress();
+    this.tutorialMark = { x: this.world.player.x, y: this.world.player.y };
+    this.orb.state.tutorialStep = 0;
+    this.syncObjective();
+    this.scheduleSave();
+  }
+
+  private endTutorial(): void {
+    this.orb.state.tutorialStep = -1;
+    this.ui.setObjective(null);
+    this.scheduleSave();
+  }
+
+  /** Push the current step's text to the banner, or clear it when the guide is done. */
+  private syncObjective(): void {
+    const steps = content.tutorial;
+    const step = this.orb.state.tutorialStep;
+    this.ui.setObjective(tutorialComplete(steps, step) ? null : (steps[step] ?? null));
+  }
+
+  /**
+   * Advance the guide. Called once a frame; every rule reads the running tally
+   * rather than a "next" button, so the guide is finished by playing.
+   */
+  private updateTutorial(): void {
+    const steps = content.tutorial;
+    const step = this.orb.state.tutorialStep;
+    if (tutorialComplete(steps, step)) return;
+
+    const { player } = this.world;
+    this.tutorial.travelled += Math.hypot(player.x - this.tutorialMark.x, player.y - this.tutorialMark.y);
+    this.tutorialMark = { x: player.x, y: player.y };
+    this.tutorial.orbsFilled = (this.orb.leftOrb ? 1 : 0) + (this.orb.rightOrb ? 1 : 0);
+
+    const next = advanceTutorial(steps, step, this.tutorial);
+    if (next === step) return;
+
+    this.orb.state.tutorialStep = next;
+    this.syncObjective();
+    this.scheduleSave();
+    if (tutorialComplete(steps, next)) {
+      this.ui.toast('That is the whole of it. The rest is yours to work out.', 'big');
+    }
+  }
+
   private reset(): void {
     clearSave();
     window.location.reload();
@@ -280,7 +389,9 @@ export class Game {
     const dt = Math.min((now - this.lastFrame) / 1000, MAX_FRAME_SECONDS);
     this.lastFrame = now;
 
-    const move = this.input.read();
+    // The world keeps animating behind the title card, but the player does not
+    // move until they have chosen how to start.
+    const move = this.title.visible ? { x: 0, y: 0 } : this.input.read();
     this.world.movePlayer(move.x, move.y, dt);
     this.world.update(dt);
     this.renderer.update(dt);
@@ -292,6 +403,7 @@ export class Game {
 
     this.drainCombat();
     this.ui.setVitals(this.world.player.hp, this.world.player.maxHp);
+    if (!this.title.visible) this.updateTutorial();
 
     // Attack wins whenever it is available. The node is still resolved either
     // way, because the world highlight should follow what a gather would take.

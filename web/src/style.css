@@ -217,7 +217,7 @@ button {
   gap: 1px;
   background: rgba(30, 38, 50, 0.82);
   border: 2px solid var(--line);
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
   transition: transform 0.08s ease, border-color 0.16s ease, background 0.16s ease;
 }
@@ -227,7 +227,7 @@ button {
 }
 
 .action:disabled {
-  opacity: 0.55;
+  opacity: 0.8;
   border-style: dashed;
 }
 
@@ -970,6 +970,161 @@ button.ghost {
 
 button.ghost:disabled { opacity: .4; }
 
+/* ---------------------------------------------------------------- objective */
+
+/*
+ * The guide banner. One line of what to do, one of how, and a way out - it is
+ * deliberately the same height as a toast so it does not shove the playfield
+ * around when it appears and disappears.
+ */
+/* Both of these are toggled with the hidden attribute, which a display rule
+   would otherwise quietly override. */
+.objective[hidden],
+.title[hidden] {
+  display: none;
+}
+
+.objective {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 12px 0;
+  padding: 7px 8px 7px 12px;
+  border-radius: var(--radius);
+  background: rgba(30, 24, 44, 0.92);
+  border: 1px solid var(--accent);
+  animation: rise 0.22s ease;
+}
+
+.objective .otext {
+  flex: 1;
+  min-width: 0;
+}
+
+.objective b {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0d9ff;
+}
+
+.objective span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ink-dim);
+}
+
+.objective .oskip {
+  flex: none;
+  align-self: flex-start;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- title */
+
+.title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-t) + 16px) 18px calc(var(--safe-b) + 16px);
+  background: radial-gradient(ellipse at 50% 38%, rgba(20, 14, 32, 0.72), rgba(8, 10, 15, 0.95) 72%);
+  backdrop-filter: blur(2px);
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.tcard {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+}
+
+.teyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tcard h1 {
+  margin: 2px 0 0;
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  background: linear-gradient(100deg, var(--accent-2), var(--accent) 62%, #f0b6d8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tblurb {
+  margin: 12px auto 0;
+  max-width: 330px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.tactions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 22px;
+}
+
+.tbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 54px;
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.tbtn:active {
+  transform: scale(0.985);
+}
+
+.tbtn.primary {
+  background: linear-gradient(150deg, #3a2a52, #2a3350);
+  border-color: var(--accent);
+}
+
+.tbtn.danger {
+  border-color: var(--bad);
+  color: #fca5a5;
+}
+
+.tbtn .tsub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-faint);
+}
+
+.twarn {
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warn);
+}
+
 /* ----------------------------------------------------------- short screens */
 
 /*
@@ -1084,6 +1239,35 @@ button.ghost:disabled { opacity: .4; }
   .sheet {
     max-height: 94vh;
   }
+
+  /* The banner overlaps the playfield here rather than pushing it down: at
+     390px tall there is no row to spare for it. */
+  .objective {
+    position: absolute;
+    top: calc(var(--safe-t) + 52px);
+    left: 12px;
+    width: 46%;
+    margin: 0;
+    padding: 6px 8px 6px 10px;
+  }
+
+  .tcard h1 {
+    font-size: 34px;
+  }
+
+  .tblurb {
+    margin-top: 8px;
+  }
+
+  .tactions {
+    flex-direction: row;
+    margin-top: 14px;
+  }
+
+  .tbtn {
+    flex: 1;
+    min-height: 50px;
+  }
 }
 
 /* Wide and short: the two thumbs are far apart, so use the whole width. */
@@ -1102,4 +1286,12 @@ button.ghost:disabled { opacity: .4; }
 .bacts button {
   flex: 1;
   min-height: 38px;
+}
+
+button.ghost.wide {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  font-size: 13px;
 }

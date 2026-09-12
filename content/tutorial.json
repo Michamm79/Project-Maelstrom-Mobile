@@ -1,0 +1,35 @@
+{
+  "$comment": "The opening guide. Text lives here; the rule that completes each step lives in web/src/core/tutorial.ts, keyed by id. The build fails if the two ever disagree.",
+  "steps": [
+    {
+      "id": "move",
+      "title": "Find your feet",
+      "hint": "Press and drag anywhere on the left of the screen to walk."
+    },
+    {
+      "id": "gather",
+      "title": "Take what you find",
+      "hint": "Stand next to something glowing, then press the green button on the right."
+    },
+    {
+      "id": "fill",
+      "title": "Fill the second orb",
+      "hint": "You carry two orbs and each holds one material. Gather another."
+    },
+    {
+      "id": "transmute",
+      "title": "Make something new",
+      "hint": "Press TRANSMUTE between the orbs to fuse what they hold."
+    },
+    {
+      "id": "fight",
+      "title": "Something else lives here",
+      "hint": "Near an enemy the button turns red. Attacking always beats gathering, so you never pick a flower mid-fight."
+    },
+    {
+      "id": "bench",
+      "title": "The bench",
+      "hint": "Open Bench to swap what the orbs hold, unload one, or break a material down into elements."
+    }
+  ]
+}

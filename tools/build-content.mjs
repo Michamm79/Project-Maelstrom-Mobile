@@ -35,6 +35,7 @@ const transmutation = read('content/transmutation.json').recipes;
 const alchemy = read('content/alchemy.json').recipes;
 const zones = read('content/zones.json').zones;
 const enemies = read('content/enemies.json').enemies;
+const tutorial = read('content/tutorial.json').steps;
 const progression = read('content/progression.json');
 
 const elementIds = new Set(elements.map((e) => e.id));
@@ -204,6 +205,27 @@ for (const e of enemies) {
   }
 }
 
+// ---------------------------------------------------------------- tutorial
+
+// Each step is completed by a rule in web/src/core/tutorial.ts keyed by id. If
+// the two drift apart the guide silently stalls on a step nothing can finish,
+// so read the rule names back out of the source and require an exact match.
+const ruleSource = readFileSync(join(ROOT, 'web/src/core/tutorial.ts'), 'utf8');
+const ruleBlock = ruleSource.match(/TUTORIAL_RULES[^{]*\{([\s\S]*?)\n\};/);
+if (!ruleBlock) fail('could not find TUTORIAL_RULES in web/src/core/tutorial.ts');
+const ruleIds = new Set([...ruleBlock[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]));
+
+const stepIds = new Set();
+for (const step of tutorial) {
+  if (stepIds.has(step.id)) fail(`duplicate tutorial step id "${step.id}"`);
+  stepIds.add(step.id);
+  if (!step.title || !step.hint) fail(`tutorial step "${step.id}" is missing a title or hint`);
+  if (!ruleIds.has(step.id)) fail(`tutorial step "${step.id}" has no rule in core/tutorial.ts, so it can never complete`);
+}
+for (const id of ruleIds) {
+  if (!stepIds.has(id)) warn(`tutorial rule "${id}" has no step in content/tutorial.json and will never run`);
+}
+
 // Weapons need a damage value or they are decoration; anything with a damage
 // value that is not a weapon is a content mistake.
 for (const m of crafted) {
@@ -311,6 +333,7 @@ const bundle = {
   note: 'GENERATED FILE - do not edit. Source of truth is content/*.json; run npm run build:content.',
   version: 1,
   progression: { ...progression, xpTable },
+  tutorial,
   elements,
   materials: [...materials.values()].map((m) => ({
     id: m.id,

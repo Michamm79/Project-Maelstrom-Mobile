@@ -18,6 +18,9 @@ export type ActionMode = 'attack' | 'gather' | 'idle';
 export interface UiCallbacks {
   /** The single context action button: attacks if it can, otherwise gathers. */
   onAction: () => void;
+  onSkipTutorial: () => void;
+  onReplayTutorial: () => void;
+  onBenchOpened: () => void;
   onGather: () => void;
   onTransmute: () => void;
   onUnloadOrb: (hand: Hand) => void;
@@ -49,6 +52,9 @@ export class Ui {
   private readonly actionBtn: HTMLButtonElement;
   private readonly actionGlyph: HTMLElement;
   private readonly actionLabel: HTMLElement;
+  private readonly objective: HTMLElement;
+  private readonly objectiveTitle: HTMLElement;
+  private readonly objectiveHint: HTMLElement;
   private readonly hpFill: HTMLElement;
   private readonly hpText: HTMLElement;
 
@@ -118,6 +124,19 @@ export class Ui {
     this.hpText = el('span', 'hptext', '');
     vitals.append(hpBar, this.hpText);
 
+    // -------------------------------------------------------------- guide banner
+    this.objective = el('div', 'objective');
+    this.objective.dataset.ui = '';
+    this.objective.hidden = true;
+    this.objectiveTitle = el('b');
+    this.objectiveHint = el('span');
+    const skipGuide = el('button', 'oskip', 'Skip');
+    skipGuide.setAttribute('aria-label', 'Skip the guide');
+    skipGuide.addEventListener('click', () => this.callbacks.onSkipTutorial());
+    const objectiveText = el('div', 'otext');
+    objectiveText.append(this.objectiveTitle, this.objectiveHint);
+    this.objective.append(objectiveText, skipGuide);
+
     // -------------------------------------------------------------- action button
     const actionWrap = el('div', 'action-wrap');
     actionWrap.dataset.ui = '';
@@ -167,7 +186,7 @@ export class Ui {
 
     this.toasts = el('div', 'toasts');
 
-    root.append(topbar, vitals, this.toasts, actionWrap, orbbar, nav, this.scrim, this.sheet);
+    root.append(topbar, vitals, this.objective, this.toasts, actionWrap, orbbar, nav, this.scrim, this.sheet);
   }
 
   private buildNav(label: string, icon: string, onClick: () => void): HTMLButtonElement {
@@ -270,6 +289,17 @@ export class Ui {
    * before this split the bar only moved when some unrelated event forced a
    * refresh, so it sat a hit behind the damage it was meant to show.
    */
+  /** Show the current guide step, or pass null to clear the banner. */
+  setObjective(step: { title: string; hint: string } | null): void {
+    if (!step) {
+      this.objective.hidden = true;
+      return;
+    }
+    this.objectiveTitle.textContent = step.title;
+    this.objectiveHint.textContent = step.hint;
+    this.objective.hidden = false;
+  }
+
   setVitals(hp: number, maxHp: number): void {
     const shown = Math.ceil(Math.max(0, hp));
     if (shown === this.shownHp && maxHp === this.shownMaxHp) return;
@@ -405,6 +435,7 @@ export class Ui {
    * replacing whatever was in it, which goes back to the pack.
    */
   openBench(): void {
+    this.callbacks.onBenchOpened();
     this.openSheet('Transmutation Bench', (body) => {
       const orb = this.requireOrb();
 
@@ -795,6 +826,8 @@ export class Ui {
         stat(stats.transmuted, 'transmuted'),
         stat(stats.decomposed, 'decomposed'),
         stat(stats.alchemized, 'alchemised'),
+        stat(stats.slain, 'slain'),
+        stat(stats.deaths, 'deaths'),
       );
       body.append(grid);
 
@@ -802,9 +835,19 @@ export class Ui {
         el(
           'p',
           'note',
-          'Move with the left thumb - drag anywhere on the map. Walk near a node and tap Gather. Fill both orbs to transmute. Progress saves to this device automatically.',
+          'Drag on the left of the screen to walk. The button on the right does whatever is ' +
+            'closest: it swings at an enemy in reach, otherwise it picks up what you are standing ' +
+            'by. Carrying a weapon makes you hit harder - there is no equip slot. Fill both orbs ' +
+            'to transmute. Progress saves to this device automatically.',
         ),
       );
+
+      const replay = el('button', 'ghost wide', 'Replay the opening guide');
+      replay.addEventListener('click', () => {
+        this.callbacks.onReplayTutorial();
+        this.closeSheet();
+      });
+      body.append(replay);
 
       const reset = el('button', 'danger', 'Erase save and start over');
       reset.addEventListener('click', () => {

@@ -39,16 +39,26 @@ out from `main`.
 
 ### How to play
 
-- **Move** — drag your thumb anywhere on the map. The stick appears where you touch it.
-- **Gather** — walk near a node and tap the **Gather** button, or tap the node itself.
+Two thumbs, ARPG style: the left half of the screen moves you, and one button on
+the right does whatever the situation calls for.
+
+- **Move** — drag your thumb anywhere on the left of the map. The stick appears where you touch it.
+- **Act** — the round button on the right. Red with a blade means an enemy is in reach and you will
+  swing; green with a hand means you will pick up what you are standing next to. Attack always wins,
+  so you never harvest a flower mid-fight.
+- **Fight** — damage is your base plus the best weapon you happen to be carrying. There is no equip
+  slot: the tech tree *is* the progression, and a better blade in your pack is a better blade in your hand.
 - **Transmute** — with both orbs full, the centre button previews the result. Tap it.
-- **Pack** — crafted things land here. Tap one to load it back into an orb; that is how you reach tier 2 and beyond.
-- **Decompose** (level 5+) — the **⚗** button under an orb breaks that material into elements.
+- **Bench** — swap what the orbs hold, unload one, or break a material down. Crafted things land in the
+  pack; loading one back into an orb is how you reach tier 2 and beyond.
 - **Alchemy** (level 5+) — spend pooled elements on recipes no material pair can produce.
 - **Travel** — tap the zone name, top left. New regions open at levels 3, 6, 10 and 15.
 
-Progress saves to the device automatically. Keyboard works too (WASD/arrows, space to gather),
-which is handy in a desktop browser.
+A short guide runs on your first game and is finished by playing, never by pressing *next*. Skipping it
+costs nothing, and **Menu → Replay the opening guide** brings it back.
+
+Progress saves to the device automatically. Keyboard works too (WASD/arrows, space for the action
+button), which is handy in a desktop browser.
 
 ---
 
@@ -60,14 +70,15 @@ npm run dev          # http://localhost:5173 — open it on your phone over the 
 ```
 
 ```bash
-npm test             # 47 unit tests over the core systems
+npm test             # 101 unit tests over the core systems
 npm run build        # content + icons + typecheck + production bundle
 npm run smoke        # builds, then drives the real game in headless Chromium
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
-browser, plays through gather → transmute → level up → decompose → brew → travel,
-asserts 26 behaviours, and drops screenshots in `.verify/`.
+browser, plays through title → guide → gather → transmute → fight → level up →
+decompose → brew → travel, asserts 64 behaviours — including that the HUD stays
+under a third of a landscape screen — and drops screenshots in `.verify/`.
 
 ---
 
@@ -129,7 +140,9 @@ content/            the game, as data
   transmutation.json          40 two-input recipes
   alchemy.json                10 element recipes
   zones.json                  5 regions with weighted spawn tables
-  progression.json            XP curve and tuning constants
+  enemies.json                5 enemies with aggro, damage and drop tables
+  tutorial.json               the opening guide's text
+  progression.json            XP curve, combat and player tuning constants
   generated/                  built artefact — do not edit
 
 web/src/
@@ -137,6 +150,8 @@ web/src/
     transmutation.ts    port of TransmutationSystem.cs
     alchemy.ts          port of AlchemySystem.cs
     orbContainer.ts     port of OrbContainer.cs
+    combat.ts           damage, swing arcs, drops and regen
+    tutorial.ts         the rule that completes each guide step
     progression.ts, save.ts, content.ts, events.ts, rng.ts
     __tests__/          47 tests
   game/               browser layer

@@ -16,6 +16,7 @@ import type {
   MaterialId,
   ProgressionConfig,
   TransmutationRecipe,
+  TutorialStep,
   ZoneDef,
   ZoneId,
 } from './types';
@@ -30,6 +31,7 @@ export class Content {
   readonly alchemy: readonly AlchemyRecipe[] = bundle.alchemy;
   readonly zones: readonly ZoneDef[] = bundle.zones;
   readonly enemies: readonly EnemyDef[] = bundle.enemies;
+  readonly tutorial: readonly TutorialStep[] = bundle.tutorial;
 
   private readonly elementById = new Map<ElementId, ElementDef>();
   private readonly materialById = new Map<MaterialId, MaterialDef>();
