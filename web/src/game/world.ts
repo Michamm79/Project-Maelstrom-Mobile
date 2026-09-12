@@ -6,6 +6,10 @@ import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
 import type { MaterialId, ZoneDef } from '../core/types';
 
+/** World pixels travelled per walk-cycle frame. */
+const STEP_DISTANCE = 13;
+const WALK_FRAMES = 4;
+
 export interface WorldNode {
   id: number;
   material: MaterialId;
@@ -28,6 +32,9 @@ export interface Prop {
   tone: number;
 }
 
+/** The four sprite facings. Movement commits to one rather than interpolating. */
+export type Facing = 'down' | 'up' | 'side';
+
 export interface Player {
   x: number;
   y: number;
@@ -35,6 +42,15 @@ export interface Player {
   facing: number;
   moving: boolean;
   bob: number;
+
+  /** Which sprite row to draw. */
+  facing4: Facing;
+  /** Side facing is one mirrored row, as the era did to save cartridge space. */
+  mirrored: boolean;
+  /** Walk cycle index, 0..3. */
+  frame: number;
+  /** Distance since the last frame advance - the cycle ticks on travel, not time. */
+  travelled: number;
 }
 
 export class World {
@@ -56,6 +72,10 @@ export class World {
       facing: -Math.PI / 2,
       moving: false,
       bob: 0,
+      facing4: 'down',
+      mirrored: false,
+      frame: 0,
+      travelled: 0,
     };
 
     this.generateProps(rng);
@@ -124,6 +144,9 @@ export class World {
     const magnitude = Math.hypot(dx, dy);
     if (magnitude < 0.01) {
       this.player.moving = false;
+      // Rest on the contact frame rather than wherever the cycle stopped.
+      this.player.frame = 0;
+      this.player.travelled = 0;
       return;
     }
 
@@ -134,10 +157,32 @@ export class World {
     const ny = (dy / magnitude) * scale;
 
     const radius = this.content.progression.player.radius;
+    const beforeX = this.player.x;
+    const beforeY = this.player.y;
+
     this.player.x = clamp(this.player.x + nx * speed * dt, radius, this.zone.size.w - radius);
     this.player.y = clamp(this.player.y + ny * speed * dt, radius, this.zone.size.h - radius);
     this.player.facing = Math.atan2(ny, nx);
     this.player.moving = true;
+
+    // Commit to one of four facings by dominant axis. Interpolating between them
+    // would need a sprite per angle; committing is what makes the look readable.
+    if (Math.abs(nx) > Math.abs(ny)) {
+      this.player.facing4 = 'side';
+      this.player.mirrored = nx > 0;
+    } else {
+      this.player.facing4 = ny < 0 ? 'up' : 'down';
+    }
+
+    // Advance on distance actually moved - measured after clamping, so walking
+    // into a zone edge doesn't cycle the legs on the spot. Tying the cycle to
+    // travel rather than to a timer is what stops the walk looking like skating.
+    const moved = Math.hypot(this.player.x - beforeX, this.player.y - beforeY);
+    this.player.travelled += moved;
+    while (this.player.travelled >= STEP_DISTANCE) {
+      this.player.travelled -= STEP_DISTANCE;
+      this.player.frame = (this.player.frame + 1) % WALK_FRAMES;
+    }
   }
 
   /** The closest available node inside gather range, if any. */

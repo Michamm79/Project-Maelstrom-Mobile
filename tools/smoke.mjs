@@ -286,6 +286,27 @@ const moved = await page.evaluate(async () => {
 });
 check('joystick drag moves the player', moved.after.x > moved.before.x + 5, JSON.stringify(moved));
 
+// The character sprite: facing must commit to a side row, and the walk cycle
+// must have advanced off the resting frame purely from distance travelled.
+const anim = await page.evaluate(() => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  const { facing4, mirrored, frame } = world.player;
+  return { facing4, mirrored, frame };
+});
+check('sprite commits to a 4-way facing when walking right',
+  anim.facing4 === 'side' && anim.mirrored === true, JSON.stringify(anim));
+
+const sheet = await page.evaluate(() => {
+  const imgs = [...document.querySelectorAll('img')];
+  const game = window.maelstrom;
+  const r = Object.values(game).find((v) => v && v.sheet instanceof HTMLImageElement);
+  return r ? { complete: r.sheet.complete, w: r.sheet.naturalWidth, h: r.sheet.naturalHeight, ready: r.sheetReady, inline: r.sheet.src.startsWith('data:') } : { found: false, imgs: imgs.length };
+});
+check('character sheet decoded and inlined',
+  sheet.w === 64 && sheet.h === 96 && sheet.ready === true && sheet.inline === true, JSON.stringify(sheet));
+await page.screenshot({ path: join(SHOTS, '11-sprite-walking.png') });
+
 const persisted = await page.evaluate(() => {
   const raw = localStorage.getItem('maelstrom.save.v1');
   return raw ? JSON.parse(raw) : null;

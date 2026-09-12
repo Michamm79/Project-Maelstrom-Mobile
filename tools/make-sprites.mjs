@@ -16,8 +16,13 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { encodePng, scale } from './lib/png.mjs';
 
-const OUT = resolve(import.meta.dirname, '../web/public/sprites');
+// The sheet goes into src/ so the bundler processes it: at 875 bytes it lands
+// under Vite's inline limit and becomes a data URI, which is what keeps the
+// single-file build self-contained. A public/ path would 404 there.
+const OUT = resolve(import.meta.dirname, '../web/src/assets');
+const PREVIEW_OUT = resolve(import.meta.dirname, '../docs/art');
 mkdirSync(OUT, { recursive: true });
+mkdirSync(PREVIEW_OUT, { recursive: true });
 
 const W = 16;
 const H = 24;
@@ -238,8 +243,8 @@ for (let i = 0; i < preview.length; i += 4) {
     preview[i + 3] = 255;
   }
 }
-writeFileSync(join(OUT, 'alchemist-preview.png'), encodePng(sheetW * Z, sheetH * Z, preview));
+writeFileSync(join(PREVIEW_OUT, 'alchemist-preview.png'), encodePng(sheetW * Z, sheetH * Z, preview));
 
-console.log(`\n  sprites -> web/public/sprites/alchemist.png  (${sheetW}x${sheetH}, ${W}x${H} frames)`);
+console.log(`\n  sheet   -> web/src/assets/alchemist.png  (${sheetW}x${sheetH}, ${W}x${H} frames)`);
 console.log(`  rows: ${ROWS.join(', ')}   frames per row: ${WALK.length}`);
-console.log(`  preview -> web/public/sprites/alchemist-preview.png (${Z}x)\n`);
+console.log(`  preview -> docs/art/alchemist-preview.png (${Z}x, documentation only)\n`);

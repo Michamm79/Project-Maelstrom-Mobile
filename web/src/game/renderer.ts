@@ -5,11 +5,19 @@
  * The camera follows the player and is clamped to the zone, so walking to an
  * edge never reveals blank space outside the map.
  */
+import alchemistSheet from '../assets/alchemist.png';
 import { drawIcon, shade, withAlpha } from './icons';
 import { clamp, type World } from './world';
 import type { Content } from '../core/content';
 import type { InputController } from './input';
 import type { MaterialId } from '../core/types';
+
+/** Sprite sheet geometry. Rows match the order make-sprites.mjs emits. */
+const SPRITE_W = 16;
+const SPRITE_H = 24;
+const SPRITE_ROWS = { down: 0, side: 1, up: 2, sideMirror: 3 } as const;
+/** Drawn at 2x so the 16x24 character sits right next to 44px item icons. */
+const SPRITE_SCALE = 2;
 
 interface Floater {
   x: number;
@@ -34,6 +42,10 @@ export class Renderer {
   private height = 0;
   private dpr = 1;
 
+  /** Character sheet. Bundled as a data URI, so this resolves immediately. */
+  private readonly sheet = new Image();
+  private sheetReady = false;
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly content: Content,
@@ -41,6 +53,12 @@ export class Renderer {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('2D canvas context unavailable');
     this.ctx = ctx;
+
+    this.sheet.onload = () => {
+      this.sheetReady = true;
+    };
+    this.sheet.src = alchemistSheet;
+
     this.resize();
   }
 
@@ -261,7 +279,43 @@ export class Renderer {
     ctx.ellipse(0, 18, 16, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Robed figure: a hood over a tapered body, facing the walk direction.
+    // Orbs genuinely circle the character, so the half of the orbit behind them
+    // is drawn first. Without this the orbs sit flatly over the sprite's face.
+    this.drawOrbs(ctx, world, state, bob, 'behind');
+
+    if (this.sheetReady) {
+      this.drawPlayerSprite(ctx, player);
+    } else {
+      this.drawPlayerFallback(ctx, player, bob);
+    }
+
+    this.drawOrbs(ctx, world, state, bob, 'front');
+    ctx.restore();
+  }
+
+  /** The pixel-art character, drawn from the sheet at the current facing and frame. */
+  private drawPlayerSprite(ctx: CanvasRenderingContext2D, player: World['player']): void {
+    const row =
+      player.facing4 === 'side'
+        ? player.mirrored
+          ? SPRITE_ROWS.sideMirror
+          : SPRITE_ROWS.side
+        : SPRITE_ROWS[player.facing4];
+
+    const w = SPRITE_W * SPRITE_SCALE;
+    const h = SPRITE_H * SPRITE_SCALE;
+
+    // Round to whole pixels: a sprite drawn on a half-pixel shimmers as it moves.
+    const x = Math.round(-w / 2);
+    const y = Math.round(-h + 16);
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.sheet, player.frame * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H, x, y, w, h);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  /** Kept for the frames before the sheet decodes, so the player is never invisible. */
+  private drawPlayerFallback(ctx: CanvasRenderingContext2D, player: World['player'], bob: number): void {
     ctx.save();
     ctx.translate(0, bob);
     ctx.fillStyle = '#2f3448';
@@ -285,34 +339,49 @@ export class Renderer {
     ctx.ellipse(Math.cos(player.facing) * 3, -14 + Math.sin(player.facing) * 2, 6, 5.2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  }
 
-    // The two orbs, orbiting. Filled orbs take their material's colour, which
-    // makes the current pair readable without looking at the HUD.
+  /**
+   * The two orbs, orbiting. Filled orbs take their material's colour, which
+   * makes the current pair readable without looking at the HUD.
+   */
+  private drawOrbs(
+    ctx: CanvasRenderingContext2D,
+    world: World,
+    state: RenderState,
+    bob: number,
+    half: 'behind' | 'front',
+  ): void {
     const orbs: [MaterialId | null, number][] = [
       [state.leftOrb, world.time * 1.1],
       [state.rightOrb, world.time * 1.1 + Math.PI],
     ];
 
     for (const [material, angle] of orbs) {
-      const ox = Math.cos(angle) * 25;
-      const oy = Math.sin(angle) * 10 - 5 + bob;
+      const depth = Math.sin(angle);
+      // sin < 0 is the far side of the orbit, drawn before the character.
+      if ((half === 'behind') !== (depth < 0)) continue;
+
+      const ox = Math.cos(angle) * 27;
+      // Orbit the chest of a 48px-tall sprite, not the old figure's centre.
+      const oy = depth * 7 - 15 + bob;
+      // A touch smaller on the far side sells the depth without needing scaling maths.
+      const radius = depth < 0 ? 4.6 : 5.6;
       const color = material ? this.content.material(material).color : '#5c6480';
 
       ctx.beginPath();
-      ctx.arc(ox, oy, 8.5, 0, Math.PI * 2);
-      ctx.fillStyle = withAlpha(color, material ? 0.32 : 0.14);
+      ctx.arc(ox, oy, radius + 3, 0, Math.PI * 2);
+      ctx.fillStyle = withAlpha(color, material ? 0.3 : 0.1);
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(ox, oy, 5.4, 0, Math.PI * 2);
-      ctx.fillStyle = material ? color : 'rgba(255,255,255,0.14)';
+      ctx.arc(ox, oy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = material ? color : 'rgba(255,255,255,0.1)';
       ctx.fill();
-      ctx.lineWidth = 1.4;
-      ctx.strokeStyle = withAlpha('#ffffff', material ? 0.7 : 0.28);
+      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = withAlpha('#ffffff', material ? 0.7 : 0.2);
       ctx.stroke();
     }
-
-    ctx.restore();
   }
 
   private drawFloaters(): void {
