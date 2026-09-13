@@ -12,7 +12,7 @@ import { InputController } from './input';
 import { Renderer } from './renderer';
 import { Ui } from './ui';
 import { TitleScreen } from './title';
-import { World } from './world';
+import { World, type Enemy } from './world';
 import type { AlchemyRecipe, Hand, MaterialId, ZoneId } from '../core/types';
 
 const AUTOSAVE_DELAY_MS = 900;
@@ -159,14 +159,17 @@ export class Game {
   private contextAction(): void {
     if (this.world.player.dead) return;
 
-    if (this.world.enemyInReach()) {
-      this.swing();
+    const enemy = this.world.enemyInReach();
+    if (enemy) {
+      this.swing(enemy);
       return;
     }
     this.gatherNearest();
   }
 
-  private swing(): void {
+  private swing(target: Enemy | null): void {
+    // Face what the button said you would hit, so the arc test cannot betray it.
+    if (target) this.world.faceToward(target.x, target.y);
     const damage = playerDamage(content, this.orb.carried());
     this.world.attack(damage, () => Math.random());
   }

@@ -67,6 +67,17 @@ body {
   pointer-events: auto;
 }
 
+/*
+ * ...except the two full-width layers that only exist to position something.
+ * `#ui > *` outranks a bare class selector, so `.toasts { pointer-events: none }`
+ * silently lost and both of these became invisible bands that swallowed touches
+ * across the whole screen width - including the thumb reaching for the stick.
+ */
+#ui > .toasts,
+#ui > .action-wrap {
+  pointer-events: none;
+}
+
 button {
   font: inherit;
   color: inherit;

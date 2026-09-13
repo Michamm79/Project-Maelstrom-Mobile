@@ -376,6 +376,29 @@ export class World {
   }
 
   /**
+   * Turn to face a point, sprite row included.
+   *
+   * enemyInReach() promises the button an attack using distance alone, but the
+   * swing also tests a 92-degree arc. Walk past something and the button still
+   * said ATTACK while the swing whiffed behind you - the button lied. Facing the
+   * target as part of the press keeps that promise, and it is what an ARPG does
+   * anyway: the attack button turns you toward what you are hitting.
+   */
+  faceToward(x: number, y: number): void {
+    const dx = x - this.player.x;
+    const dy = y - this.player.y;
+    if (dx === 0 && dy === 0) return;
+
+    this.player.facing = Math.atan2(dy, dx);
+    if (Math.abs(dx) > Math.abs(dy)) {
+      this.player.facing4 = 'side';
+      this.player.mirrored = dx > 0;
+    } else {
+      this.player.facing4 = dy < 0 ? 'up' : 'down';
+    }
+  }
+
+  /**
    * Swing. Hits every living enemy inside the arc, not just the nearest, so
    * being surrounded is survivable rather than a death sentence.
    */

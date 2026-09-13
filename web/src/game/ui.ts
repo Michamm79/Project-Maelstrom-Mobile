@@ -48,6 +48,40 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/**
+ * Activate a control on pointerdown rather than click.
+ *
+ * A browser does not synthesise a `click` for a touch that is part of a
+ * multi-touch sequence. With one thumb holding the joystick, a second thumb on
+ * a `click`-bound button therefore did nothing at all - which is exactly the
+ * "can't pick anything up while moving" report. Binding pointerdown fixes it
+ * and is the right behaviour for a game button anyway: an action should fire
+ * the instant the thumb lands, not on release.
+ *
+ * The click listener stays for keyboard activation (Enter/Space on a focused
+ * button raise a click with no pointerdown before it); the timestamp guard
+ * swallows the synthesised click that follows a press we already handled.
+ */
+function onPress(target: HTMLElement, handler: () => void): void {
+  let lastPress = 0;
+
+  target.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      event.preventDefault();
+      lastPress = event.timeStamp;
+      handler();
+    },
+    { passive: false },
+  );
+
+  target.addEventListener('click', (event) => {
+    if (event.timeStamp - lastPress < 700) return;
+    handler();
+  });
+}
+
 export class Ui {
   private readonly actionBtn: HTMLButtonElement;
   private readonly actionGlyph: HTMLElement;
@@ -144,7 +178,7 @@ export class Ui {
     this.actionGlyph = el('span', 'aglyph', '');
     this.actionLabel = el('span', 'alabel', '');
     this.actionBtn.append(this.actionGlyph, this.actionLabel);
-    this.actionBtn.addEventListener('click', () => this.callbacks.onAction());
+    onPress(this.actionBtn, () => this.callbacks.onAction());
     actionWrap.append(this.actionBtn);
 
     // -------------------------------------------------------------- orb bar
@@ -156,7 +190,7 @@ export class Ui {
     };
 
     this.craftBtn = el('button', 'craft');
-    this.craftBtn.addEventListener('click', () => this.callbacks.onTransmute());
+    onPress(this.craftBtn, () => this.callbacks.onTransmute());
     orbbar.append(this.orbEls.left.root, this.craftBtn, this.orbEls.right.root);
 
     // -------------------------------------------------------------- nav
@@ -192,7 +226,7 @@ export class Ui {
   private buildNav(label: string, icon: string, onClick: () => void): HTMLButtonElement {
     const button = el('button');
     button.append(el('span', 'ico', icon), el('span', undefined, label));
-    button.addEventListener('click', onClick);
+    onPress(button, onClick);
     return button;
   }
 
@@ -207,7 +241,7 @@ export class Ui {
     const name = el('span', 'onm', 'empty');
     root.title = hand === 'left' ? 'Left orb' : 'Right orb';
     root.append(icon, name);
-    root.addEventListener('click', () => {
+    onPress(root, () => {
       this.benchSlot = hand;
       this.openBench();
     });

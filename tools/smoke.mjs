@@ -527,6 +527,142 @@ check('a skipped guide stays skipped across a reload', await (async () => {
   return !(await page.locator('.objective').isVisible());
 })());
 
+// ------------------------------------------------- real multi-touch (regression)
+//
+// This section drives CDP touch events rather than element.click(). That matters:
+// a programmatic click always succeeds, so the earlier checks in this file could
+// never have caught the bug they were supposed to cover. A browser does NOT
+// synthesise a click for a touch that belongs to a multi-touch sequence, so with
+// a thumb on the stick the click-bound action button did nothing at all - which
+// is what "can't pick anything up while moving" actually was.
+
+const cdp = await context.newCDPSession(page);
+const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+
+const pressAndHoldStick = async (x, y) => {
+  await touch('touchStart', [{ x, y, id: 1 }]);
+  await page.waitForTimeout(40);
+  await touch('touchMove', [{ x: x + 40, y, id: 1 }]);
+  await page.waitForTimeout(160);
+};
+
+const placeNodeAtPlayer = () => page.evaluate(() => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
+  orb.unloadOrb('left');
+  orb.unloadOrb('right');
+  // Move the enemies out of reach rather than deleting them - the attack check
+  // below needs one to still exist.
+  for (const e of world.enemies) { e.x = world.player.x + 5000; e.y = world.player.y + 5000; }
+  for (const n of world.nodes) { n.x = world.player.x + 5000; n.y = world.player.y + 5000; }
+  const node = world.nodes[0];
+  node.available = true;
+  node.material = 'stick';
+  node.x = world.player.x + 10;
+  node.y = world.player.y;
+});
+
+await placeNodeAtPlayer();
+await page.waitForTimeout(220);
+
+const btnBox = await page.locator('.action').boundingBox();
+const bx = btnBox.x + btnBox.width / 2;
+const by = btnBox.y + btnBox.height / 2;
+const vp = page.viewportSize();
+
+const startedAt = await page.evaluate(() => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  return { x: world.player.x, y: world.player.y };
+});
+
+await pressAndHoldStick(vp.width * 0.25, vp.height * 0.55);
+// Second thumb lands on the action button while the first still holds the stick.
+await touch('touchStart', [
+  { x: vp.width * 0.25 + 40, y: vp.height * 0.55, id: 1 },
+  { x: bx, y: by, id: 2 },
+]);
+await page.waitForTimeout(70);
+await touch('touchEnd', [{ x: vp.width * 0.25 + 40, y: vp.height * 0.55, id: 1 }]);
+await page.waitForTimeout(140);
+await touch('touchEnd', []);
+await page.waitForTimeout(200);
+
+const twoThumb = await page.evaluate((from) => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
+  return {
+    moved: Math.hypot(world.player.x - from.x, world.player.y - from.y),
+    carried: orb.orb('left') ?? orb.orb('right'),
+  };
+}, startedAt);
+
+check('a real two-thumb touch both walks and gathers',
+  twoThumb.moved > 5 && twoThumb.carried === 'stick', JSON.stringify(twoThumb));
+
+// The same button must swing while moving, not just gather.
+const twoThumbFight = await page.evaluate(() => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  for (const n of world.nodes) { n.x = world.player.x + 5000; n.y = world.player.y + 5000; }
+  const enemy = world.enemies[0] ?? null;
+  if (!enemy) return null;
+  enemy.dead = false;
+  enemy.hp = enemy.def.hp;
+  enemy.x = world.player.x + 26;
+  enemy.y = world.player.y;
+  return { hp: enemy.hp };
+});
+
+check('the zone still has an enemy to test the swing against', twoThumbFight !== null,
+  twoThumbFight === null ? 'no enemies in zone' : `hp ${twoThumbFight.hp}`);
+
+if (twoThumbFight) {
+  await page.waitForTimeout(200);
+  await pressAndHoldStick(vp.width * 0.25, vp.height * 0.55);
+  await touch('touchStart', [
+    { x: vp.width * 0.25 + 40, y: vp.height * 0.55, id: 1 },
+    { x: bx, y: by, id: 2 },
+  ]);
+  await page.waitForTimeout(70);
+  await touch('touchEnd', [{ x: vp.width * 0.25 + 40, y: vp.height * 0.55, id: 1 }]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+
+  const hpNow = await page.evaluate(() => {
+    const game = window.maelstrom;
+    const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+    return world.enemies[0]?.hp ?? null;
+  });
+  check('a real two-thumb touch also swings while moving', hpNow < twoThumbFight.hp,
+    `${twoThumbFight.hp} -> ${hpNow}`);
+}
+
+// The transparent layers above the playfield must not swallow a touch meant for
+// the stick. Press where .action-wrap spans, on the stick side of the screen.
+const wrapBox = await page.locator('.action-wrap').boundingBox();
+const beforeBand = await page.evaluate(() => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  return { x: world.player.x, y: world.player.y };
+});
+await touch('touchStart', [{ x: vp.width * 0.18, y: wrapBox.y + wrapBox.height / 2, id: 1 }]);
+await page.waitForTimeout(40);
+await touch('touchMove', [{ x: vp.width * 0.18 + 45, y: wrapBox.y + wrapBox.height / 2, id: 1 }]);
+await page.waitForTimeout(220);
+await touch('touchEnd', []);
+const bandMoved = await page.evaluate((from) => {
+  const game = window.maelstrom;
+  const world = game.world ?? Object.values(game).find((v) => v && v.player && v.nodes);
+  return Math.hypot(world.player.x - from.x, world.player.y - from.y);
+}, beforeBand);
+check('the transparent HUD layers do not swallow a stick touch', bandMoved > 5,
+  `${bandMoved.toFixed(1)}px`);
+
+await page.screenshot({ path: join(SHOTS, '14-multitouch.png') });
+
 check('no uncaught page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 await browser.close();
