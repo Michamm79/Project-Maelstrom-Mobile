@@ -555,16 +555,184 @@ const shapes: Record<string, ShapeFn> = {
   },
 };
 
+// ---------------------------------------------------------------- presentation
+
+/**
+ * Everything above draws a flat silhouette. The passes below are applied to all
+ * of them at once, so that shapes written weeks apart still read as one item
+ * set: one light from the upper left, a specular hotspot where it lands, and a
+ * shadow cast away from it.
+ *
+ * Doing this here rather than inside each shape is the whole point - any shape
+ * added later inherits the lighting for free, and re-colouring or replacing the
+ * material list changes nothing about how items are lit.
+ */
+
+/** The composited box, in units of `size`. The extra margin is the shadow's. */
+const PAD = 1.25;
+
+const SHADOW_OFFSET = 0.03;
+const SHADOW_BLUR = 0.022;
+const SHADOW_ALPHA = 0.36;
+const BEVEL = 0.022;
+
+/**
+ * Icons are identical every frame, so they are rendered once and blitted after
+ * that. Drops in the world would otherwise re-run their paths sixty times a
+ * second for no visual difference.
+ */
+const CACHE_LIMIT = 320;
+const cache = new Map<string, HTMLCanvasElement>();
+
+function makeCanvas(px: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = px;
+  canvas.height = px;
+  return canvas;
+}
+
+/**
+ * A band along one edge of a silhouette: the shape, minus a copy of itself
+ * nudged away from that edge. Subtracting the shape from itself is what makes
+ * this work for all 38 shapes without any of them knowing about it - a bevel
+ * hand-drawn per shape would be 38 chances to draw it inconsistently.
+ */
+function edgeBand(
+  mask: HTMLCanvasElement, px: number, dx: number, dy: number, tint: string,
+): HTMLCanvasElement | null {
+  const band = makeCanvas(px);
+  const ctx = band?.getContext('2d');
+  if (!band || !ctx) return null;
+
+  ctx.drawImage(mask, 0, 0);
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(mask, dx, dy);
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = tint;
+  ctx.fillRect(0, 0, px, px);
+  return band;
+}
+
+function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement | null {
+  const mask = makeCanvas(px);
+  const maskCtx = mask?.getContext('2d');
+  const art = makeCanvas(px);
+  const artCtx = art?.getContext('2d');
+  const out = makeCanvas(px);
+  const outCtx = out?.getContext('2d');
+  if (!mask || !maskCtx || !art || !artCtx || !out || !outCtx) return null;
+
+  // Shapes measure their line widths against the size they are handed, so hand
+  // them device pixels and keep the transform to a plain recentring.
+  const artSize = px / PAD;
+  const half = px / 2;
+  maskCtx.translate(half, half);
+  maskCtx.lineJoin = 'round';
+  (shapes[shape] ?? shapes.rock)?.(maskCtx, color, artSize);
+
+  artCtx.drawImage(mask, 0, 0);
+
+  // `source-atop` keeps every pass inside whatever the shape actually drew, so a
+  // thin shape like `chain` is lit as precisely as a solid one like `brick`.
+  artCtx.globalCompositeOperation = 'source-atop';
+
+  const light = artCtx.createLinearGradient(
+    half - artSize * 0.5, half - artSize * 0.55,
+    half + artSize * 0.5, half + artSize * 0.55,
+  );
+  light.addColorStop(0, 'rgba(255,246,224,0.3)');
+  light.addColorStop(0.4, 'rgba(255,255,255,0)');
+  light.addColorStop(0.58, 'rgba(0,0,0,0)');
+  light.addColorStop(1, 'rgba(18,12,30,0.36)');
+  artCtx.fillStyle = light;
+  artCtx.fillRect(0, 0, px, px);
+
+  const spec = artCtx.createRadialGradient(
+    half - artSize * 0.2, half - artSize * 0.26, 0,
+    half - artSize * 0.2, half - artSize * 0.26, artSize * 0.46,
+  );
+  spec.addColorStop(0, 'rgba(255,255,255,0.3)');
+  spec.addColorStop(0.55, 'rgba(255,255,255,0.07)');
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  artCtx.fillStyle = spec;
+  artCtx.fillRect(0, 0, px, px);
+
+  // The bevel: lit edge facing the light, occluded edge facing away from it.
+  const bevel = Math.max(1, px * BEVEL);
+  const rim = edgeBand(mask, px, bevel, bevel, '#fff6e2');
+  const occlusion = edgeBand(mask, px, -bevel, -bevel, '#0e0a18');
+  const blurs = typeof artCtx.filter === 'string';
+  if (blurs) artCtx.filter = `blur(${bevel * 0.6}px)`;
+  if (rim) {
+    artCtx.globalAlpha = 0.6;
+    artCtx.drawImage(rim, 0, 0);
+  }
+  if (occlusion) {
+    artCtx.globalAlpha = 0.5;
+    artCtx.drawImage(occlusion, 0, 0);
+  }
+  if (blurs) artCtx.filter = 'none';
+  artCtx.globalAlpha = 1;
+
+  // The drop shadow is the silhouette again: `brightness(0)` keeps the alpha and
+  // throws the colour away, which beats approximating 38 outlines by hand.
+  if (blurs) {
+    outCtx.filter = `blur(${Math.max(0.75, px * SHADOW_BLUR)}px) brightness(0)`;
+    outCtx.globalAlpha = SHADOW_ALPHA;
+    outCtx.drawImage(mask, px * SHADOW_OFFSET, px * SHADOW_OFFSET * 1.3);
+    outCtx.filter = 'none';
+    outCtx.globalAlpha = 1;
+  }
+  outCtx.drawImage(art, 0, 0);
+
+  return out;
+}
+
+/**
+ * How many device pixels the box covers once the caller's transform is applied,
+ * so an icon on a 3x phone is rendered at 3x rather than scaled up from 1x.
+ * Quantised, or a camera that drifts by a hair would fill the cache.
+ */
+function devicePixels(ctx: Ctx, box: number): number {
+  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  const scale = t ? Math.max(Math.hypot(t.a, t.b), Math.hypot(t.c, t.d)) : 1;
+  return Math.min(512, Math.max(24, Math.ceil((box * scale) / 8) * 8));
+}
+
 /**
  * Draw a material icon centred on the current origin.
  * An unknown shape key falls back to a plain rock rather than drawing nothing,
  * so new content is always visible even before it has art direction.
  */
 export function drawIcon(ctx: Ctx, shape: string, color: string, size: number): void {
-  ctx.save();
-  ctx.lineJoin = 'round';
-  (shapes[shape] ?? shapes.rock)?.(ctx, color, size);
-  ctx.restore();
+  const box = size * PAD;
+  const key = `${shape}|${color}|${devicePixels(ctx, box)}`;
+
+  let icon = cache.get(key);
+  if (!icon) {
+    const rendered = renderIcon(shape, color, devicePixels(ctx, box));
+    if (!rendered) {
+      // Nothing to composite into - no DOM, or a context we cannot get. Draw the
+      // bare shape so the icon is still right, just unlit.
+      ctx.save();
+      ctx.lineJoin = 'round';
+      (shapes[shape] ?? shapes.rock)?.(ctx, color, size);
+      ctx.restore();
+      return;
+    }
+    if (cache.size >= CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, rendered);
+    icon = rendered;
+  }
+
+  ctx.drawImage(icon, -box / 2, -box / 2, box, box);
 }
+
+/** The margin drawIcon reserves around the art, in units of `size`. */
+export const iconPad = PAD;
 
 export const knownShapes = Object.keys(shapes);

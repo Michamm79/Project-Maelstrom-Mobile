@@ -6,7 +6,7 @@
  * tap targets are things the browser is already good at, and native scrolling
  * feels far better on a phone than anything hand-rolled into a canvas.
  */
-import { drawIcon } from './icons';
+import { drawIcon, iconPad } from './icons';
 import { findRecipeForSelection, selectionSize, shortfall } from '../core/alchemy';
 import { levelProgress, xpAtLevelStart, xpAtNextLevel } from '../core/progression';
 import { countCombinable, previewPair, type PairOutlook } from '../core/transmutation';
@@ -267,7 +267,9 @@ export class Ui {
       const def = this.content.material(material);
       ctx.scale(dpr, dpr);
       ctx.translate(size / 2, size / 2);
-      drawIcon(ctx, def.shape, def.color, size * 0.92);
+      // Divided by the pad so the whole composite - shadow included - lands inside
+      // the cell instead of being clipped at its edges.
+      drawIcon(ctx, def.shape, def.color, size / iconPad);
     }
     return canvas;
   }

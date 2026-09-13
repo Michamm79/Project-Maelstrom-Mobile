@@ -301,6 +301,72 @@ await page.locator('.nav button', { hasText: 'Codex' }).click();
 await page.waitForTimeout(300);
 check('codex opens with material grid', (await page.locator('.sheet .cell').count()) > 20);
 await page.screenshot({ path: join(SHOTS, '06-codex.png') });
+
+// Icon lighting. Reading the pixels is the only way to tell the composite
+// actually ran: if `filter` or `source-atop` quietly no-ops, the icons still
+// draw and every other check still passes.
+const lighting = await page.evaluate(() => {
+  let measured = 0;
+  let withShadow = 0;
+  let litBrighter = 0;
+  let ratio = 0;
+
+  for (const canvas of document.querySelectorAll('.sheet .cell canvas')) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    const { width: w, height: h } = canvas;
+    const data = ctx.getImageData(0, 0, w, h).data;
+
+    // Where the solid art ends. Every shape has a different footprint, so the
+    // shadow has to be looked for just outside each one rather than at a fixed
+    // distance from the centre.
+    let left = w, right = -1, top = h, bottom = -1, ink = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] < 220) continue;
+        ink++;
+        if (x < left) left = x;
+        if (x > right) right = x;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+      }
+    }
+    if (ink < 50) continue;
+
+    const gap = 3; // clears the art's own antialiased edge
+    let litSum = 0, litN = 0, shadeSum = 0, shadeN = 0, cast = 0, against = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const a = data[i + 3];
+        if (a < 12) continue;
+        if (x > right + gap || y > bottom + gap) { cast++; continue; }
+        if (x < left - gap || y < top - gap) { against++; continue; }
+        if (a < 200) continue;
+        const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        if (x / w + y / h < 0.85) { litSum += luma; litN++; }
+        else if (x / w + y / h > 1.15) { shadeSum += luma; shadeN++; }
+      }
+    }
+
+    measured++;
+    // Cast away from the light and only away from it - a symmetric glow would
+    // mean the shadow pass is drawing without the offset.
+    if (cast > 10 && cast > against * 3) withShadow++;
+    if (litN > 20 && shadeN > 20) {
+      const lift = (litSum / litN) / (shadeSum / shadeN);
+      ratio = ratio === 0 ? lift : Math.min(ratio, lift);
+      if (lift > 1.05) litBrighter++;
+    }
+  }
+  return { measured, withShadow, litBrighter, ratio: Math.round(ratio * 100) / 100 };
+});
+
+check('the codex actually rendered icons to measure', lighting.measured >= 4, JSON.stringify(lighting));
+check('item icons cast a shadow down and to the right of their own art',
+  lighting.withShadow === lighting.measured, JSON.stringify(lighting));
+check('item icons are lit from the upper left',
+  lighting.litBrighter === lighting.measured, JSON.stringify(lighting));
 await page.locator('.sheet .tabs button', { hasText: 'Transmutation' }).click();
 await page.waitForTimeout(250);
 check('codex transmutation tab lists recipes', (await page.locator('.sheet .row-item').count()) > 10);
