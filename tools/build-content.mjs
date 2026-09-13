@@ -49,6 +49,19 @@ for (const e of elements) {
   for (const field of ['symbol', 'number', 'group', 'row', 'col']) {
     if (e[field] === undefined) fail(`element "${e.id}" is missing "${field}"`);
   }
+  // SAFETY RULE from the GDD, stated there as non-negotiable: the alchemy table
+  // must never be mistakable for the periodic table, and must never read as a
+  // lookup for combining real substances. Every real element symbol is one or
+  // two letters, so requiring exactly three is what enforces it - the format
+  // makes a collision impossible rather than relying on a blocklist anyone can
+  // forget to update. This check exists because the table shipped with two
+  // letter symbols including "Fe", which is iron.
+  if (!/^[A-Z]{3}$/.test(String(e.symbol))) {
+    fail(
+      `element "${e.id}" has symbol "${e.symbol}" - symbols must be exactly three ` +
+        'uppercase letters, so the table cannot be mistaken for the periodic table',
+    );
+  }
   if (seenSymbols.has(e.symbol)) fail(`elements "${seenSymbols.get(e.symbol)}" and "${e.id}" share the symbol "${e.symbol}"`);
   seenSymbols.set(e.symbol, e.id);
 

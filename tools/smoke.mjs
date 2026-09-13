@@ -237,6 +237,14 @@ await page.locator('.nav button', { hasText: 'Alchemy' }).click();
 await page.waitForTimeout(300);
 check('alchemy sheet opens', await page.locator('.sheet.on').isVisible());
 check('element table renders every element', (await page.locator('.sheet .pcell').count()) === 9);
+// The GDD's safety rule, checked where a player would actually see it.
+const symbols = await page.locator('.sheet .pcell .psym').allTextContents();
+check('every element symbol is three letters, so the table cannot read as the periodic table',
+  symbols.length === 9 && symbols.every((t) => /^[A-Z]{3}$/.test(t.trim())), symbols.join(' '));
+check('no symbol fits inside its cell only by overflowing', await page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.sheet .pcell .psym')];
+  return cells.every((c) => c.scrollWidth <= c.parentElement.clientWidth + 1);
+}));
 check('held elements are highlighted', (await page.locator('.sheet .pcell.has').count()) > 0);
 check('unheld elements are disabled', (await page.locator('.sheet .pcell[disabled]').count()) > 0);
 
