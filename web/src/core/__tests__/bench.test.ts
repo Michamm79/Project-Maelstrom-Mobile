@@ -144,11 +144,27 @@ describe('the element table', () => {
     expect(cells.size).toBe(content.elements.length);
   });
 
-  it('keeps symbols short enough for a table cell', () => {
+  /*
+   * This test used to require symbols of at most two characters, which encoded
+   * the exact thing the GDD forbids: real element symbols are one or two
+   * letters, so a two-letter table is one that can be mistaken for the periodic
+   * table. It is inverted here deliberately - three letters is the rule, and no
+   * real element symbol is three letters, so the format is what enforces
+   * "nothing here is real chemistry".
+   */
+  it('gives every element a three-letter symbol, so the table cannot read as the periodic table', () => {
     for (const e of content.elements) {
-      expect(e.symbol.length).toBeGreaterThan(0);
-      expect(e.symbol.length).toBeLessThanOrEqual(2);
+      expect(e.symbol, `element "${e.id}"`).toMatch(/^[A-Z]{3}$/);
     }
+  });
+
+  it('uses no real element symbol', () => {
+    // Every real symbol is one or two letters; three letters cannot collide.
+    // Spot-check the two that actually shipped by mistake, so the regression
+    // stays named rather than merely absent.
+    const shipped = new Set(content.elements.map((e) => e.symbol));
+    expect(shipped.has('Fe')).toBe(false);
+    expect(shipped.has('Te')).toBe(false);
   });
 
   it('lays out on a grid with no negative or zero coordinates', () => {
