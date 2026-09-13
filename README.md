@@ -50,7 +50,11 @@ the right does whatever the situation calls for.
   slot: the tech tree *is* the progression, and a better blade in your pack is a better blade in your hand.
 - **Transmute** — with both orbs full, the centre button previews the result. Tap it.
 - **Bench** — swap what the orbs hold, unload one, or break a material down. Crafted things land in the
-  pack; loading one back into an orb is how you reach tier 2 and beyond.
+  pack; loading one back into an orb is how you reach tier 2 and beyond. With one orb filled, the pack
+  lights up whatever reacts with it and greys out whatever doesn't, so finding the one pairing that
+  works is a glance rather than forty taps. Amber means "reacts, but not until level N".
+- **Weapons are never equipped.** There is no equip slot: the best weapon you are carrying is the one
+  you swing, and the bench shows your current damage and marks that weapon with ⚔.
 - **Alchemy** (level 5+) — spend pooled elements on recipes no material pair can produce.
 - **Travel** — tap the zone name, top left. New regions open at levels 3, 6, 10 and 15.
 
@@ -70,14 +74,14 @@ npm run dev          # http://localhost:5173 — open it on your phone over the 
 ```
 
 ```bash
-npm test             # 101 unit tests over the core systems
+npm test             # 123 unit tests over the core systems
 npm run build        # content + icons + typecheck + production bundle
 npm run smoke        # builds, then drives the real game in headless Chromium
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
 browser, plays through title → guide → gather → transmute → fight → level up →
-decompose → brew → travel, asserts 64 behaviours — including that the HUD stays
+decompose → brew → travel, asserts 75 behaviours — including that the HUD stays
 under a third of a landscape screen — and drops screenshots in `.verify/`.
 
 ---

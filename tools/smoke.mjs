@@ -527,6 +527,82 @@ check('a skipped guide stays skipped across a reload', await (async () => {
   return !(await page.locator('.objective').isVisible());
 })());
 
+// ------------------------------------------------- bench pair highlighting
+
+const bench = await page.evaluate(() => {
+  const game = window.maelstrom;
+  const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
+  // Carry a spread, then put one material in the right orb so the left-hand
+  // pick has something to react against.
+  orb.unloadOrb('left');
+  orb.unloadOrb('right');
+  for (const m of ['stick', 'stone', 'fiber', 'flint']) orb.gather(m);
+  orb.unloadOrb('left');
+  orb.unloadOrb('right');
+  orb.replaceOrb('right', 'stone');
+  return { right: orb.orb('right') };
+});
+check('a partner material is set in the right orb', bench.right === 'stone', JSON.stringify(bench));
+
+await page.locator('.nav button', { hasText: 'Bench' }).click();
+await page.waitForTimeout(250);
+// Target the left slot, so the right orb is the partner.
+await page.locator('.sheet .bslot').first().click();
+await page.waitForTimeout(200);
+
+const marks = await page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.sheet .cell')];
+  return {
+    total: cells.length,
+    reacts: cells.filter((c) => c.classList.contains('reacts')).length,
+    inert: cells.filter((c) => c.classList.contains('inert')).length,
+    soon: cells.filter((c) => c.classList.contains('soon')).length,
+    note: document.querySelector('.sheet .note')?.textContent ?? '',
+    weaponMarks: document.querySelectorAll('.sheet .cell .wep').length,
+    damage: document.querySelector('.sheet .dmgline b')?.textContent ?? '',
+  };
+});
+
+check('the bench splits the pack into reacting and inert', marks.reacts > 0 && marks.inert > 0,
+  JSON.stringify(marks));
+check('every cell lands in exactly one state',
+  marks.reacts + marks.inert + marks.soon === marks.total, JSON.stringify(marks));
+check('the note counts what reacts', /reacts? with/i.test(marks.note), marks.note);
+check('the bench states current damage', /^\d+ damage$/.test(marks.damage), marks.damage);
+check('the carried weapon is marked, since there is no equip slot',
+  marks.weaponMarks === 1, `${marks.weaponMarks} marks`);
+
+await page.screenshot({ path: join(SHOTS, '15-bench-highlight.png') });
+
+// Now the zero case. Carrying other things that react with stick would mask it,
+// so reduce the pack to stick alone - stick + stick has no recipe.
+await page.evaluate(() => {
+  const game = window.maelstrom;
+  const orb = game.orb ?? Object.values(game).find((v) => v && typeof v.tryTransmute === 'function');
+  // Swap FIRST: replaceOrb returns the displaced material to the pack, so
+  // clearing beforehand just lets stone back in and masks the case under test.
+  orb.state.inventory.stick = (orb.state.inventory.stick ?? 0) + 1;
+  orb.replaceOrb('right', 'stick');
+  for (const id of Object.keys(orb.state.inventory)) delete orb.state.inventory[id];
+  orb.state.inventory.stick = 1;
+  orb.events.emit('inventoryChanged', undefined);
+});
+await page.waitForTimeout(250);
+const allInert = await page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.sheet .cell')];
+  return {
+    reacts: cells.filter((c) => c.classList.contains('reacts')).length,
+    note: document.querySelector('.sheet .note')?.textContent ?? '',
+  };
+});
+check('a partner nothing reacts with says so rather than lighting nothing up',
+  allInert.reacts === 0 && /nothing you are carrying reacts/i.test(allInert.note),
+  JSON.stringify(allInert));
+
+await page.screenshot({ path: join(SHOTS, '16-bench-no-reaction.png') });
+await page.locator('.sheet .close').click();
+await page.waitForTimeout(200);
+
 // ------------------------------------------------- real multi-touch (regression)
 //
 // This section drives CDP touch events rather than element.click(). That matters:

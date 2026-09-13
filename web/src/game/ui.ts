@@ -9,6 +9,8 @@
 import { drawIcon } from './icons';
 import { findRecipeForSelection, selectionSize, shortfall } from '../core/alchemy';
 import { levelProgress, xpAtLevelStart, xpAtNextLevel } from '../core/progression';
+import { countCombinable, previewPair } from '../core/transmutation';
+import { bestWeapon, playerDamage } from '../core/combat';
 import type { Content } from '../core/content';
 import type { OrbContainer } from '../core/orbContainer';
 import type { AlchemyRecipe, ElementId, Hand, MaterialId, ZoneId } from '../core/types';
@@ -517,6 +519,23 @@ export class Ui {
       acts.append(unload, decompose);
       body.append(acts);
 
+      // There is no equip slot by design - carrying the weapon is equipping it.
+      // That is invisible unless it is stated, so state it.
+      const carried = orb.carried();
+      const weapon = bestWeapon(this.content, carried);
+      const dmg = el('div', 'dmgline');
+      dmg.append(el('b', undefined, `${playerDamage(this.content, carried)} damage`));
+      dmg.append(
+        el(
+          'span',
+          undefined,
+          weapon
+            ? `bare hands + ${this.content.material(weapon.material).name} (⚔ below). Carrying a better weapon is how you equip it.`
+            : 'bare hands. Craft or carry a weapon and it counts automatically - there is no equip slot.',
+        ),
+      );
+      body.append(dmg);
+
       // ---- result preview
       const recipe = orb.peekTransmutation();
       const locked =
@@ -549,15 +568,28 @@ export class Ui {
 
       // ---- carried materials
       const items = orb.packContents();
-      body.append(
-        el(
-          'p',
-          'note',
-          items.length === 0
-            ? 'You are carrying nothing yet.'
-            : `Carrying ${items.length} kind${items.length === 1 ? '' : 's'} — tap one to place it in the ${this.benchSlot} orb.`,
-        ),
+      const otherHand = this.benchSlot === 'left' ? 'right' : 'left';
+      const partnerId = orb.orb(otherHand);
+      const reactive = countCombinable(
+        this.content,
+        items.map((i) => i.material),
+        partnerId,
+        orb.playerLevel,
       );
+
+      let note: string;
+      if (items.length === 0) {
+        note = 'You are carrying nothing yet.';
+      } else if (partnerId === null) {
+        note = `Carrying ${items.length} kind${items.length === 1 ? '' : 's'} — tap one to place it in the ${this.benchSlot} orb.`;
+      } else {
+        const partnerName = this.content.material(partnerId).name;
+        note =
+          reactive === 0
+            ? `Nothing you are carrying reacts with ${partnerName}. Try a different pairing.`
+            : `${reactive} of ${items.length} react with ${partnerName} — those are lit up.`;
+      }
+      body.append(el('p', 'note', note));
 
       if (items.length === 0) {
         body.append(
@@ -565,6 +597,11 @@ export class Ui {
         );
         return;
       }
+
+      // Whatever sits in the OTHER orb is what a tapped material would react
+      // with, so that is what decides the highlighting.
+      const partner = orb.orb(this.benchSlot === 'left' ? 'right' : 'left');
+      const equipped = bestWeapon(this.content, orb.carried());
 
       const grid = el('div', 'grid');
       for (const { material, count } of items) {
@@ -574,6 +611,32 @@ export class Ui {
         // Only badge a stack: a lone item needs no "1" cluttering the grid.
         if (count > 1) cell.append(el('span', 'ct', String(count)));
         if (orb.orb(this.benchSlot) === material) cell.classList.add('here');
+
+        // The weapon actually counting toward your damage, marked where you
+        // would look for it. There is no equip slot, so this is the only way
+        // to tell which of three blades in the pack is doing the work.
+        if (equipped && equipped.material === material) {
+          const mark = el('span', 'wep', '⚔');
+          mark.title = `In use - ${equipped.damage} damage`;
+          cell.append(mark);
+        }
+
+        const { outlook, recipe } = previewPair(this.content, material, partner, orb.playerLevel);
+        if (outlook === 'inert') {
+          cell.classList.add('inert');
+          cell.title = `No reaction with ${this.content.material(partner!).name}`;
+        } else if (outlook === 'locked' && recipe) {
+          cell.classList.add('soon');
+          cell.append(el('span', 'lv', `Lv ${recipe.requiredLevel}`));
+          cell.title = `Reacts at level ${recipe.requiredLevel}`;
+        } else if (partner !== null) {
+          cell.classList.add('reacts');
+        }
+
+        // Click, not onPress: this grid scrolls, and activating on pointerdown
+        // would place a material the moment you drag to scroll past it. The
+        // multi-touch problem onPress solves does not apply in a sheet - it is
+        // modal, so you are not holding the stick while you tap here.
         cell.addEventListener('click', () => this.callbacks.onPlaceInSlot(this.benchSlot, material));
         grid.append(cell);
       }
@@ -875,6 +938,21 @@ export class Ui {
             'to transmute. Progress saves to this device automatically.',
         ),
       );
+
+      const carriedNow = orb.carried();
+      const weaponNow = bestWeapon(this.content, carriedNow);
+      const dmgNow = el('div', 'dmgline');
+      dmgNow.append(el('b', undefined, `${playerDamage(this.content, carriedNow)} damage`));
+      dmgNow.append(
+        el(
+          'span',
+          undefined,
+          weaponNow
+            ? `from your ${this.content.material(weaponNow.material).name}. Weapons are never equipped - the best one you carry is the one you swing.`
+            : 'bare-handed. Weapons are never equipped: carry one and it counts automatically.',
+        ),
+      );
+      body.append(dmgNow);
 
       const replay = el('button', 'ghost wide', 'Replay the opening guide');
       replay.addEventListener('click', () => {

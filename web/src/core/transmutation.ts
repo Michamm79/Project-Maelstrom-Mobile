@@ -51,3 +51,51 @@ export function findLockedRecipe(
 export function availableRecipes(content: Content, playerLevel: number): readonly TransmutationRecipe[] {
   return content.transmutation.filter((r) => r.requiredLevel <= playerLevel);
 }
+
+/**
+ * What would happen if this material were placed opposite `partner`.
+ *
+ * The bench uses this to grey out what cannot react and light up what can, so
+ * finding the one material in a pack of forty that does something is a glance
+ * rather than forty taps. "locked" is kept distinct from "inert" on purpose:
+ * "nothing happens" and "nothing happens yet" are different lessons, and
+ * conflating them teaches the player to stop trying a pair that works later.
+ */
+export type PairOutlook = 'combines' | 'locked' | 'inert';
+
+export interface PairPreview {
+  outlook: PairOutlook;
+  /** Present for 'combines' and 'locked'. */
+  recipe: TransmutationRecipe | null;
+}
+
+export function previewPair(
+  content: Content,
+  candidate: MaterialId,
+  partner: MaterialId | null,
+  playerLevel: number,
+): PairPreview {
+  // With nothing opposite it, every material is still a live option - greying
+  // the whole pack out would be noise, not information.
+  if (partner === null) return { outlook: 'combines', recipe: null };
+
+  const recipe = content.recipeByPair(candidate, partner);
+  if (!recipe) return { outlook: 'inert', recipe: null };
+
+  return recipe.requiredLevel > playerLevel
+    ? { outlook: 'locked', recipe }
+    : { outlook: 'combines', recipe };
+}
+
+/** How many of these materials react with `partner` right now. */
+export function countCombinable(
+  content: Content,
+  candidates: readonly MaterialId[],
+  partner: MaterialId | null,
+  playerLevel: number,
+): number {
+  if (partner === null) return candidates.length;
+  return candidates.filter(
+    (c) => previewPair(content, c, partner, playerLevel).outlook === 'combines',
+  ).length;
+}
