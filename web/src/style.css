@@ -1394,3 +1394,51 @@ button.ghost.wide {
   line-height: 1.35;
   color: var(--ink-faint);
 }
+
+/* ------------------------------------------------------ bench pack filter */
+
+.filterchip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 8px 11px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: left;
+}
+
+.filterchip.on {
+  border-color: var(--accent-2);
+  color: var(--ink);
+}
+
+.filterchip .box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--bg);
+}
+
+.filterchip.on .box {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
+.filterchip .cnt {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-faint);
+}

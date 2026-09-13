@@ -9,7 +9,7 @@
 import { drawIcon } from './icons';
 import { findRecipeForSelection, selectionSize, shortfall } from '../core/alchemy';
 import { levelProgress, xpAtLevelStart, xpAtNextLevel } from '../core/progression';
-import { countCombinable, previewPair } from '../core/transmutation';
+import { countCombinable, previewPair, type PairOutlook } from '../core/transmutation';
 import { bestWeapon, playerDamage } from '../core/combat';
 import type { Content } from '../core/content';
 import type { OrbContainer } from '../core/orbContainer';
@@ -112,6 +112,8 @@ export class Ui {
 
   private openBuilder: SheetBuilder | null = null;
   private actionMode: ActionMode = 'idle';
+  /** Bench view preference: hide everything that cannot react right now. */
+  private benchOnlyReacting = false;
   private shownHp = -1;
   private shownMaxHp = -1;
   private actionSubject: string | null = null;
@@ -603,8 +605,52 @@ export class Ui {
       const partner = orb.orb(this.benchSlot === 'left' ? 'right' : 'left');
       const equipped = bestWeapon(this.content, orb.carried());
 
+      // Resolve every material's outlook once: it decides the styling, the
+      // order, and whether the filter keeps it.
+      const RANK: Record<PairOutlook, number> = { combines: 0, locked: 1, inert: 2 };
+      const rows = items.map((item) => ({
+        ...item,
+        preview: previewPair(this.content, item.material, partner, orb.playerLevel),
+      }));
+
+      // Sort reacting to the top. A pack of forty with two useful entries is
+      // otherwise a scrolling exercise, and the two that matter are below the
+      // fold exactly when you need them. Ties keep pack order, so nothing
+      // jumps around for reasons the player cannot see.
+      if (partner !== null) {
+        rows.sort((a, b) => RANK[a.preview.outlook] - RANK[b.preview.outlook]);
+      }
+
+      // The filter only means anything once there is something to react with.
+      const hidden = partner === null
+        ? 0
+        : rows.filter((r) => r.preview.outlook !== 'combines'
+            && orb.orb(this.benchSlot) !== r.material).length;
+
+      if (partner !== null && hidden > 0) {
+        const toggle = el('button', 'filterchip');
+        toggle.classList.toggle('on', this.benchOnlyReacting);
+        toggle.setAttribute('aria-pressed', String(this.benchOnlyReacting));
+        toggle.append(
+          el('span', 'box', this.benchOnlyReacting ? '✓' : ''),
+          el('span', undefined, 'Only what reacts'),
+          el('span', 'cnt', this.benchOnlyReacting ? `${hidden} hidden` : `hides ${hidden}`),
+        );
+        toggle.addEventListener('click', () => {
+          this.benchOnlyReacting = !this.benchOnlyReacting;
+          this.rebuildSheet();
+        });
+        body.append(toggle);
+      }
+
+      const visible = this.benchOnlyReacting && partner !== null
+        // Never hide what is already in the slot you are editing: vanishing
+        // your own current selection reads as a bug, not as a filter.
+        ? rows.filter((r) => r.preview.outlook === 'combines' || orb.orb(this.benchSlot) === r.material)
+        : rows;
+
       const grid = el('div', 'grid');
-      for (const { material, count } of items) {
+      for (const { material, count, preview } of visible) {
         const def = this.content.material(material);
         const cell = el('button', 'cell');
         cell.append(this.icon(material, 38), el('span', 'nm', def.name));
@@ -621,7 +667,7 @@ export class Ui {
           cell.append(mark);
         }
 
-        const { outlook, recipe } = previewPair(this.content, material, partner, orb.playerLevel);
+        const { outlook, recipe } = preview;
         if (outlook === 'inert') {
           cell.classList.add('inert');
           cell.title = `No reaction with ${this.content.material(partner!).name}`;

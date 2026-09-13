@@ -574,6 +574,49 @@ check('the carried weapon is marked, since there is no equip slot',
 
 await page.screenshot({ path: join(SHOTS, '15-bench-highlight.png') });
 
+// ---- reacting materials sort to the top, and the filter hides the rest
+const order = await page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.sheet .cell')];
+  const state = (c) =>
+    c.classList.contains('reacts') ? 0 : c.classList.contains('soon') ? 1 : 2;
+  const ranks = cells.map(state);
+  return {
+    ranks,
+    sorted: ranks.every((r, i) => i === 0 || ranks[i - 1] <= r),
+    hasChip: !!document.querySelector('.sheet .filterchip'),
+    chip: document.querySelector('.sheet .filterchip')?.textContent ?? '',
+  };
+});
+check('reacting materials sort above the rest', order.sorted, JSON.stringify(order.ranks));
+check('a filter toggle is offered when something would be hidden', order.hasChip, order.chip);
+
+await page.locator('.sheet .filterchip').click();
+await page.waitForTimeout(220);
+const filtered = await page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.sheet .cell')];
+  return {
+    total: cells.length,
+    nonReacting: cells.filter(
+      (c) => !c.classList.contains('reacts') && !c.classList.contains('here'),
+    ).length,
+    chipOn: document.querySelector('.sheet .filterchip')?.classList.contains('on') ?? false,
+  };
+});
+check('the filter hides everything that cannot react', filtered.nonReacting === 0,
+  JSON.stringify(filtered));
+check('the filter leaves the reacting materials in place', filtered.total > 0,
+  JSON.stringify(filtered));
+check('the toggle reads as on', filtered.chipOn);
+await page.screenshot({ path: join(SHOTS, '17-bench-filtered.png') });
+
+// Turning it off restores the full pack.
+await page.locator('.sheet .filterchip').click();
+await page.waitForTimeout(220);
+const restored = await page.evaluate(() => document.querySelectorAll('.sheet .cell').length);
+check('turning the filter off restores the whole pack', restored > filtered.total,
+  `${filtered.total} -> ${restored}`);
+
+
 // Now the zero case. Carrying other things that react with stick would mask it,
 // so reduce the pack to stick alone - stick + stick has no recipe.
 await page.evaluate(() => {
