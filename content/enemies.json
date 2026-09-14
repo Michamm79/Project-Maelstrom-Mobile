@@ -1,0 +1,48 @@
+{
+  "$comment": "Three tiers, from GDD section 2.2. These are renderings, not creatures: hostile code manifests as a goblin the way a file manifests as an icon. That is what keeps the setting a corporate dystopia rather than a fantasy world, and it makes threat legible at a glance - seeing a Minotaur tells the player the difficulty changed without a number appearing anywhere. Scarcity is the tuning knob.",
+  "$stats_comment": "Tier identity and meaning are canon. Health, damage and speed are INFERRED - canon does not specify combat numbers. Enemies drop nothing: materials come from the world, and drop tables would make fighting a gathering strategy, which inverts the loop.",
+  "tiers": [
+    {
+      "id": "goblin",
+      "name": "Goblin",
+      "tier": 1,
+      "represents": "Baseline firewalls and low-skill rival hackers",
+      "shape": "blob",
+      "color": "#6f8f4a",
+      "hp": 16,
+      "damage": 4,
+      "speed": 62,
+      "aggroRadius": 220,
+      "attackRange": 34,
+      "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
+    },
+    {
+      "id": "minotaur",
+      "name": "Minotaur",
+      "tier": 2,
+      "represents": "Hardened defences and genuinely competent rivals",
+      "shape": "bone",
+      "color": "#a2603a",
+      "hp": 58,
+      "damage": 12,
+      "speed": 54,
+      "aggroRadius": 280,
+      "attackRange": 44,
+      "description": "Something in the program decided you were worth spending on. Only ever a few."
+    },
+    {
+      "id": "scythe_bearer",
+      "name": "Scythe-bearer",
+      "tier": 3,
+      "represents": "Elite. The most capable opposition in the program",
+      "shape": "blade",
+      "color": "#8b2f4a",
+      "hp": 140,
+      "damage": 26,
+      "speed": 70,
+      "aggroRadius": 360,
+      "attackRange": 60,
+      "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
+    }
+  ]
+}

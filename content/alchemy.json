@@ -1,0 +1,59 @@
+{
+  "$comment": "Alchemy consumes ELEMENTS extracted from materials and produces combat abilities - not items, and not more materials. Visible but non-interactive before Level 2, so the player knows something is being withheld; at Level 2 the full menu opens, populated with whatever elements are held, everything else visibly locked. The three combinations below are canon (GDD section 6.2) and are the ones taught in the tutorial, all craftable from Plains/Forest material alone so the tutorial requires no travel.",
+  "$gap_comment": "Canon's Corporate economy table implies four combinations available at Level 2, and Milestone 1B lists 'the wider element table' as still to come - so the full combination list does not exist in canon yet. Only the three canon combinations ship here. Inventing more would repeat the mistake this rebuild is correcting.",
+  "$effects_comment": "Effect names and shapes are canon; the numbers are INFERRED and flagged as such. Gust is deliberately the cheapest at a single Aeryl: at the spawn only Stormpetal carries Aeryl, so anything dearer could leave a player arriving at the first wave bundle with nothing they can cast.",
+  "combinations": [
+    {
+      "id": "gust",
+      "name": "Gust",
+      "elements": {
+        "aeryl": 1
+      },
+      "tutorial": true,
+      "effect": {
+        "kind": "shove",
+        "damage": 2,
+        "knockback": 260,
+        "radius": 180
+      },
+      "description": "A hard shove pulled straight out of the air.",
+      "cooldownSeconds": 2.5
+    },
+    {
+      "id": "torrent",
+      "name": "Torrent",
+      "elements": {
+        "aeryl": 2,
+        "vossen": 3
+      },
+      "tutorial": true,
+      "effect": {
+        "kind": "beam",
+        "damage": 9,
+        "knockback": 90,
+        "range": 320
+      },
+      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far.",
+      "cooldownSeconds": 6
+    },
+    {
+      "id": "emberlash",
+      "name": "Emberlash",
+      "elements": {
+        "cindral": 3,
+        "aeryl": 2
+      },
+      "tutorial": true,
+      "effect": {
+        "kind": "burst",
+        "damage": 14,
+        "knockback": 140,
+        "radius": 210,
+        "burnSeconds": 3
+      },
+      "description": "Ignited air. Cheap to make and difficult to be near.",
+      "cooldownSeconds": 9
+    }
+  ],
+  "$cooldown_comment": "Cooldowns are INFERRED - canon does not give them. They exist so the combinations can sit as skill buttons beside the basic attack rather than being spammed the moment the elements allow it."
+}

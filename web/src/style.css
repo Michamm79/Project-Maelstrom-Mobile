@@ -1,0 +1,2033 @@
+/* Project Maelstrom Mobile - portrait-first, thumb-reachable, dark by default. */
+
+:root {
+  --bg: #0d1117;
+  --panel: #161c26;
+  --panel-2: #1e2632;
+  --line: #2b3542;
+  --ink: #e8edf5;
+  --ink-dim: #93a1b5;
+  --ink-faint: #64748b;
+  --accent: #c58fd8;
+  --accent-2: #7dd3fc;
+  --good: #4ade80;
+  --warn: #ffb454;
+  --bad: #f87171;
+  --radius: 14px;
+  --tap: 46px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  display: block;
+}
+
+#ui {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+#ui > * {
+  pointer-events: auto;
+}
+
+/*
+ * ...except the two full-width layers that only exist to position something.
+ * `#ui > *` outranks a bare class selector, so `.toasts { pointer-events: none }`
+ * silently lost and both of these became invisible bands that swallowed touches
+ * across the whole screen width - including the thumb reaching for the stick.
+ */
+#ui > .toasts,
+#ui > .action-wrap,
+#ui > .orbwrap {
+  pointer-events: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ---------------------------------------------------------------- top bar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(var(--safe-t) + 8px) 10px 8px;
+  background: linear-gradient(to bottom, rgba(13, 17, 23, 0.92), rgba(13, 17, 23, 0));
+}
+
+.zone-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 12px;
+  min-height: var(--tap);
+  border-radius: var(--radius);
+  background: rgba(22, 28, 38, 0.85);
+  border: 1px solid var(--line);
+}
+
+.zone-btn .name {
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.zone-btn .sub {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.level {
+  margin-left: auto;
+  min-width: 134px;
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  background: rgba(22, 28, 38, 0.85);
+  border: 1px solid var(--line);
+}
+
+.level .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.level .row b {
+  font-weight: 650;
+}
+
+.level .row span {
+  color: var(--ink-faint);
+}
+
+.xpbar {
+  margin-top: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background: #0b0f15;
+  overflow: hidden;
+}
+
+.xpbar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width 0.28s ease;
+}
+
+/* ---------------------------------------------------------------- vitals */
+
+.vitals {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  margin-top: 6px;
+}
+
+.hpbar {
+  flex: 1;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.hpbar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4ade80, #86efac);
+  transition: width 0.18s linear, background 0.25s ease;
+}
+
+.hpbar i.low {
+  background: linear-gradient(90deg, #dc2626, var(--bad));
+}
+
+.hptext {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  min-width: 44px;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------- action */
+
+/*
+ * ARPG layout: the movement stick lives on the left half of the stage, so the
+ * one context action button is parked in the right thumb arc. It never moves,
+ * because a button that moves is a button you have to look at.
+ */
+.action-wrap {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 12px;
+  pointer-events: none;
+}
+
+.action {
+  pointer-events: auto;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  background: rgba(30, 38, 50, 0.82);
+  border: 2px solid var(--line);
+  color: var(--ink-dim);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  transition: transform 0.08s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.action:active {
+  transform: scale(0.93);
+}
+
+.action:disabled {
+  opacity: 0.8;
+  border-style: dashed;
+}
+
+.action:disabled .alabel {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.action .aglyph {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.action .alabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action.gather {
+  background: rgba(22, 60, 40, 0.92);
+  border-color: var(--good);
+  color: #d8ffe8;
+}
+
+.action.attack {
+  background: rgba(72, 24, 28, 0.92);
+  border-color: var(--bad);
+  color: #ffe0e0;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45), 0 0 0 6px rgba(248, 113, 113, 0.14);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---------------------------------------------------------------- orb bar */
+
+.orbchip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  min-height: 46px;
+  border-radius: var(--radius);
+  background: rgba(22, 28, 38, 0.92);
+  border: 1px solid var(--line);
+  text-align: left;
+  overflow: hidden;
+}
+
+.orbchip.filled {
+  border-color: var(--accent-2);
+}
+
+.orbchip .oicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.orbchip canvas {
+  width: 28px;
+  height: 28px;
+}
+
+.orbchip .onm {
+  font-size: 11px;
+  line-height: 1.15;
+  color: var(--ink-dim);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.orbchip.filled .onm {
+  color: var(--ink);
+}
+
+.craft {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px 6px;
+  min-height: 46px;
+  border-radius: var(--radius);
+  background: rgba(30, 38, 50, 0.92);
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  text-align: center;
+  overflow: hidden;
+}
+
+.craft.ready {
+  background: linear-gradient(160deg, #3a2a52, #2a3350);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.craft.locked {
+  border-color: var(--warn);
+}
+
+.craft .verb {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.craft .out {
+  font-size: 11px;
+  line-height: 1.15;
+  color: var(--accent-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.craft.locked .out {
+  color: var(--warn);
+}
+
+.craft canvas {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- nav */
+
+.nav {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 6px;
+  padding: 0 10px calc(var(--safe-b) + 10px);
+  background: rgba(13, 17, 23, 0.97);
+}
+
+.nav button {
+  min-height: var(--tap);
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  position: relative;
+}
+
+.nav button .ico {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.nav button:disabled {
+  opacity: 0.38;
+}
+
+.nav button .dot {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ---------------------------------------------------------------- sheets */
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.62);
+  backdrop-filter: blur(2px);
+  display: none;
+}
+
+.scrim.on {
+  display: block;
+}
+
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 82%;
+  display: none;
+  flex-direction: column;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+  animation: slide 0.2s ease;
+}
+
+.sheet.on {
+  display: flex;
+}
+
+@keyframes slide {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+.sheet header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.sheet header .close {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sheet .body {
+  padding: 12px 14px calc(var(--safe-b) + 18px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+.tabs button {
+  flex: 1;
+  min-height: 34px;
+  border-radius: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+.tabs button.on {
+  background: #33294a;
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- lists */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px 6px;
+  border-radius: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  position: relative;
+  text-align: center;
+}
+
+.cell.dim {
+  opacity: 0.4;
+}
+
+.cell canvas {
+  width: 38px;
+  height: 38px;
+}
+
+.cell .nm {
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--ink-dim);
+}
+
+.cell .ct {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.row-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  margin-bottom: 7px;
+  width: 100%;
+  text-align: left;
+}
+
+.row-item.dim {
+  opacity: 0.45;
+}
+
+.row-item canvas {
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+
+.row-item .meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-item .meta b {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.row-item .meta span {
+  display: block;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.go {
+  flex: none;
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: 9px;
+  background: #33294a;
+  border: 1px solid var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.go:disabled {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--ink-faint);
+}
+
+.tray.ok .go {
+  background: #2f6b45;
+  border-color: var(--good);
+  color: #eafff2;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  background: #0e1219;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+}
+
+.chip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.chip.miss {
+  color: var(--bad);
+  border-color: #4a2a2a;
+}
+
+.empty {
+  padding: 26px 10px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.note {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin: 0 0 10px;
+}
+
+.danger {
+  width: 100%;
+  min-height: var(--tap);
+  border-radius: 11px;
+  background: #3a1f22;
+  border: 1px solid #6b3034;
+  color: #fca5a5;
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.stat {
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.stat b {
+  display: block;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat span {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- toasts */
+
+.toasts {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--safe-t) + 82px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: rgba(24, 30, 41, 0.95);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  animation: rise 0.2s ease;
+  max-width: 88vw;
+  text-align: center;
+}
+
+.toast.good {
+  border-color: #2f6b45;
+  color: #b7f5cd;
+}
+
+.toast.bad {
+  border-color: #6b3034;
+  color: #fca5a5;
+}
+
+.toast.big {
+  font-size: 14px;
+  font-weight: 650;
+  border-color: var(--accent);
+  color: #f0d9ff;
+}
+
+/* Wider screens: keep the play column phone-shaped instead of stretching the HUD. */
+@media (min-width: 720px) {
+  #ui {
+    max-width: 520px;
+    margin: 0 auto;
+  }
+}
+
+/* ---------------------------------------------------------------- bench */
+
+.bench {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.bslot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 8px 10px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  min-height: 124px;
+}
+
+.bslot.filled { border-color: var(--accent-2); }
+
+.bslot.sel {
+  background: #2a2140;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.bslot .blabel {
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.bslot.sel .blabel { color: var(--accent); }
+
+.bslot .bicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+}
+
+.bslot .bname {
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: center;
+  line-height: 1.25;
+}
+
+.boutcome {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.boutcome.ok { background: linear-gradient(160deg, #33294a, #26324a); border-color: var(--accent); }
+.boutcome.locked { border-color: var(--warn); }
+
+.boutcome b { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
+.boutcome.ok b { color: var(--ink); }
+.boutcome.locked b { color: var(--warn); }
+.boutcome .meta { flex: 1; min-width: 0; }
+.boutcome .meta span { display: block; font-size: 11px; color: var(--ink-faint); }
+
+/* A material already sitting in the targeted slot. */
+.cell.here {
+  border-color: var(--accent);
+  background: #2a2140;
+}
+
+/* ---------------------------------------------------------------- alchemy table */
+
+.ptable {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.pcell {
+  --el: var(--ink-faint);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  aspect-ratio: 1 / 1.12;
+  padding: 3px 2px;
+  border-radius: 7px;
+  background: #0e1219;
+  border: 1px solid var(--line);
+  opacity: .38;
+  overflow: hidden;
+}
+
+/* Elements you actually hold light up; the rest stay legible but clearly inert. */
+.pcell.has {
+  opacity: 1;
+  background: color-mix(in srgb, var(--el) 15%, #0e1219);
+  border-color: color-mix(in srgb, var(--el) 55%, var(--line));
+}
+
+.pcell.picked {
+  background: color-mix(in srgb, var(--el) 34%, #0e1219);
+  border-color: var(--el);
+  box-shadow: 0 0 0 1px var(--el);
+}
+
+.pcell .pnum {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 8px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.pcell .psym {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.pcell.has .psym { color: var(--el); }
+
+.pcell .pname {
+  font-size: 7.5px;
+  letter-spacing: .02em;
+  color: var(--ink-faint);
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcell .pheld {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+  line-height: 1;
+}
+
+.pcell.picked .pheld { color: var(--ink); font-weight: 700; }
+
+.pgap { display: block; }
+
+/* ---------------------------------------------------------------- mixing tray */
+
+.tray {
+  padding: 10px 12px 11px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px dashed var(--line);
+  margin-bottom: 14px;
+}
+
+.tray.ok {
+  border-style: solid;
+  border-color: var(--good);
+  background: #1b2b24;
+}
+
+.tray .trayhint {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+
+.traybar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.traystatus {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.tray.ok .traystatus { color: #b7f5cd; font-weight: 600; }
+
+button.ghost {
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+button.ghost:disabled { opacity: .4; }
+
+/* ---------------------------------------------------------------- objective */
+
+/*
+ * The guide banner. One line of what to do, one of how, and a way out - it is
+ * deliberately the same height as a toast so it does not shove the playfield
+ * around when it appears and disappears.
+ */
+/* Both of these are toggled with the hidden attribute, which a display rule
+   would otherwise quietly override. */
+.objective[hidden],
+.title[hidden] {
+  display: none;
+}
+
+.objective {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 12px 0;
+  padding: 7px 8px 7px 12px;
+  border-radius: var(--radius);
+  background: rgba(30, 24, 44, 0.92);
+  border: 1px solid var(--accent);
+  animation: rise 0.22s ease;
+}
+
+.objective .otext {
+  flex: 1;
+  min-width: 0;
+}
+
+.objective b {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0d9ff;
+}
+
+.objective span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ink-dim);
+}
+
+.objective .oskip {
+  flex: none;
+  align-self: flex-start;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- title */
+
+.title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-t) + 16px) 18px calc(var(--safe-b) + 16px);
+  background: radial-gradient(ellipse at 50% 38%, rgba(20, 14, 32, 0.72), rgba(8, 10, 15, 0.95) 72%);
+  backdrop-filter: blur(2px);
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.tcard {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+}
+
+.teyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tcard h1 {
+  margin: 2px 0 0;
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  background: linear-gradient(100deg, var(--accent-2), var(--accent) 62%, #f0b6d8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tblurb {
+  margin: 12px auto 0;
+  max-width: 330px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.tactions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 22px;
+}
+
+.tbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 54px;
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.tbtn:active {
+  transform: scale(0.985);
+}
+
+.tbtn.primary {
+  background: linear-gradient(150deg, #3a2a52, #2a3350);
+  border-color: var(--accent);
+}
+
+.tbtn.danger {
+  border-color: var(--bad);
+  color: #fca5a5;
+}
+
+.tbtn .tsub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-faint);
+}
+
+.twarn {
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warn);
+}
+
+/* ----------------------------------------------------------- short screens */
+
+/*
+ * Landscape phones are ~390px tall, and the portrait layout stacked four full
+ * width bands down that. Here the bands are unstacked instead of merely shrunk:
+ * the orb bar and the nav lift out of the flow and sit side by side on one
+ * bottom line, which buys back a whole row of playfield.
+ *
+ * The three reserved columns along that line, left to right:
+ *   0 - 26%    left thumb, movement stick (kept clear of any DOM button)
+ *   26% - 84%  orb chips, then the nav glyphs
+ *   84% - 100% right thumb, the action button
+ */
+
+/* Wide and short: the two thumbs are far apart, so use the whole width. */
+@media (min-width: 720px) and (max-height: 560px) and (orientation: landscape) {
+  #ui {
+    max-width: none;
+  }
+}
+
+.bacts {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.bacts button {
+  flex: 1;
+  min-height: 38px;
+}
+
+button.ghost.wide {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------ bench pair highlighting */
+
+/*
+ * With one orb filled, the pack grid answers "what reacts with this?" without
+ * forty taps. Three states, because "nothing happens" and "nothing happens
+ * yet" teach different things and must not look alike.
+ */
+.cell.reacts {
+  border-color: var(--accent-2);
+  background: linear-gradient(170deg, rgba(125, 211, 252, 0.14), rgba(125, 211, 252, 0.04));
+}
+
+.cell.soon {
+  border-color: var(--warn);
+}
+
+.cell.soon .lv {
+  position: absolute;
+  bottom: 4px;
+  right: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+/*
+ * Dimmed, not hidden: you can still place an inert pair and see for yourself.
+ * The dimming is applied to the icon and name rather than the whole cell, so
+ * the badges layered on top - the stack count, and the weapon-in-use mark -
+ * stay readable. Fading the cell wholesale hid the very thing that explains
+ * where your damage comes from.
+ */
+.cell.inert {
+  background: rgba(0, 0, 0, 0.18);
+  border-color: rgba(43, 53, 66, 0.6);
+}
+
+.cell.inert canvas {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.cell.inert .nm {
+  opacity: 0.45;
+}
+
+.cell.inert .ct {
+  opacity: 0.55;
+}
+
+.cell .wep {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(60, 42, 12, 0.95);
+  border: 1px solid #ffd27a;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #ffd27a;
+}
+
+.dmgline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 11px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.dmgline b {
+  font-size: 14px;
+  color: #ffd27a;
+}
+
+.dmgline span {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------ bench pack filter */
+
+.filterchip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 8px 11px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: left;
+}
+
+.filterchip.on {
+  border-color: var(--accent-2);
+  color: var(--ink);
+}
+
+.filterchip .box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--bg);
+}
+
+.filterchip.on .box {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
+.filterchip .cnt {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------ canon HUD
+   The rebuild onto the GDD: gauntlet orbs that display rather than store, a
+   held PULL, and one menu holding both crafting and alchemy. */
+
+.place {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: rgba(14, 16, 26, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  min-width: 0;
+}
+.place b {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+.place span {
+  font-size: 10px;
+  opacity: 0.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40vw;
+}
+
+/*
+ * Bottom-left, in two rows rather than one.
+ *
+ * Laid out as a single row these three ran 326px wide on a 412px screen and
+ * pushed the menu button under the skill arc, which then swallowed the press.
+ * Two rows keep the whole readout inside 206px - clear of the arc, clear of
+ * the gathering toggle - and put the one button of the three furthest from
+ * where a steering thumb rests.
+ */
+.orbwrap {
+  position: absolute;
+  left: 12px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    'menu menu'
+    'orbs carry';
+  align-items: center;
+  justify-items: start;
+  gap: 8px 10px;
+}
+/* The orbs and the carry count report; only the menu takes a press. Leaving
+   them inert lets the floating stick be placed through them, which matters
+   because this corner is exactly where a left thumb lands. */
+.orbwrap .nav-btn {
+  grid-area: menu;
+  pointer-events: auto;
+}
+.orbbar {
+  grid-area: orbs;
+  display: flex;
+  gap: 8px;
+}
+.carry {
+  grid-area: carry;
+}
+.orb {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.12), rgba(10, 12, 20, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 6px;
+}
+/* How full the inventory is, read as how full the orb looks. */
+.orb .fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(159, 216, 232, 0.22), rgba(159, 216, 232, 0.06));
+  transition: height 0.25s ease;
+  pointer-events: none;
+}
+.orb .mote {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.orb .mote em {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 700;
+  color: #e8e2d4;
+  text-shadow: 0 1px 2px #000;
+}
+.carry {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(14, 16, 26, 0.7);
+}
+.carry.full {
+  color: #f8a0a0;
+  opacity: 1;
+}
+.nav-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e2d4;
+  padding: 9px 14px;
+  border-radius: 11px;
+  background: rgba(30, 34, 50, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Two stacked actions on the right: CAST above, PULL under the thumb.
+   align-items must stay flex-end - centring these put the column over the orb
+   readout, which then swallowed every press on PULL. */
+.action-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.action.pull {
+  background: radial-gradient(circle at 36% 30%, #3e7f92, #1d4350);
+  border-color: rgba(159, 216, 232, 0.5);
+}
+.action.pull:active {
+  background: radial-gradient(circle at 36% 30%, #58a6bd, #255566);
+}
+.action.cast {
+  width: 62px;
+  height: 62px;
+  background: radial-gradient(circle at 36% 30%, #8a4a7a, #47223f);
+  border-color: rgba(224, 160, 210, 0.45);
+}
+.action b {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+/* The readied combinations, as one row above the action buttons. */
+.castbar {
+  position: absolute;
+  right: 12px;
+  bottom: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+.castbar .cast {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font: inherit;
+  color: #e8e2d4;
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: rgba(20, 22, 34, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.castbar .cast b {
+  font-size: 11px;
+}
+.castbar .cast span {
+  font-size: 9px;
+  opacity: 0.55;
+  letter-spacing: 0.02em;
+}
+.castbar .cast.on {
+  border-color: rgba(224, 160, 210, 0.75);
+  background: rgba(60, 30, 54, 0.9);
+}
+.castbar .cast.short {
+  opacity: 0.45;
+}
+
+/* Menu rows. Fast to read, because the world does not stop for this. */
+.sheet .note {
+  margin: 0 14px 8px;
+  font-size: 11px;
+  opacity: 0.5;
+}
+.row-item .head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.row-item .head em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.62;
+}
+.row-item .cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0;
+}
+.row-item p {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.45;
+}
+.row-item .go {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e2d4;
+  padding: 7px 14px;
+  border-radius: 9px;
+  background: rgba(60, 78, 108, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.row-item .go:disabled {
+  opacity: 0.4;
+}
+.row-item .tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+.row-item.done {
+  opacity: 0.55;
+}
+.row-item.locked {
+  opacity: 0.45;
+}
+.pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 10px;
+}
+.locked-note {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(40, 28, 56, 0.5);
+  border: 1px solid rgba(176, 124, 240, 0.22);
+  margin-bottom: 12px;
+}
+.locked-note b {
+  font-size: 12px;
+}
+.locked-note p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+
+/* The top bar is three flex children now - place, health, level - so health
+   needs to claim its share or it collapses to nothing between the other two. */
+.topbar .vitals {
+  flex: 1;
+  min-width: 54px;
+  padding: 0;
+  margin-top: 0;
+}
+.topbar .vitals.hurt .hpbar i {
+  background: linear-gradient(90deg, #dc2626, #f87171);
+}
+
+/* Clear of the guide banner: they were landing on top of each other. */
+.toasts {
+  top: calc(var(--safe-t) + 158px);
+}
+
+/* These rows stack: a name-and-effect line, the cost, what it does, then the
+   button. The old rule laid them out as a horizontal strip, which squeezed the
+   description into a column three words wide. */
+.sheet .row-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.sheet .row-item .go {
+  align-self: flex-start;
+}
+.sheet .row-item .head b {
+  font-size: 14px;
+}
+
+/* The health bar claimed flex:1 and crushed the place card down to a dark pill.
+   The name of where you are is the more useful of the two, so it takes the
+   slack and health gets a fixed share. */
+.topbar .place {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.topbar .vitals {
+  flex: 0 0 84px;
+  min-width: 84px;
+}
+.topbar .level {
+  flex: 0 0 auto;
+}
+
+/* The menu holds both disciplines the game is named for, so the button says
+   what it opens and carries a count of what can actually be done in there. */
+.nav-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-btn.ready {
+  border-color: rgba(159, 216, 232, 0.55);
+  background: rgba(40, 62, 74, 0.94);
+}
+.nav-btn .badge {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 16px;
+  padding: 3px 4px;
+  border-radius: 999px;
+  text-align: center;
+  color: #10202a;
+  background: #9fd8e8;
+}
+.row-item.on {
+  border-color: rgba(224, 160, 210, 0.7);
+  background: rgba(58, 30, 52, 0.55);
+}
+/* Whole-row tap target, so readying a combination is not a 40px button hunt. */
+.sheet .row-item {
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ action cluster
+   Laid out the way a mobile action MMO does it: one large attack under the
+   thumb, the skills arced above it within reach, and the gathering toggle set
+   apart so it is never hit by accident mid-fight. */
+
+.action-wrap {
+  display: block;
+  padding: 0;
+}
+.action-wrap .action,
+.action-wrap .skill {
+  pointer-events: auto;
+}
+
+.action.attack {
+  position: absolute;
+  right: 14px;
+  bottom: 18px;
+  width: 92px;
+  height: 92px;
+  background: radial-gradient(circle at 36% 30%, #9a4a4a, #4c1f24);
+  border-color: rgba(248, 160, 160, 0.5);
+}
+.action.attack:active {
+  transform: scale(0.94);
+}
+.action.attack .combo {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd9a0;
+}
+
+.action.pull {
+  position: absolute;
+  right: 122px;
+  bottom: 22px;
+  width: 58px;
+  height: 58px;
+  background: radial-gradient(circle at 36% 30%, #2c4750, #16262c);
+  border-color: rgba(159, 216, 232, 0.28);
+}
+.action.pull.on {
+  background: radial-gradient(circle at 36% 30%, #3e7f92, #1d4350);
+  border-color: rgba(159, 216, 232, 0.65);
+}
+.action.pull b {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.action.pull .sub {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+/* The arc: skills stepped up and to the left of the attack button. */
+.skillarc {
+  position: absolute;
+  right: 12px;
+  bottom: 118px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  align-items: flex-end;
+}
+.skillarc .skill {
+  position: relative;
+  overflow: hidden;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font: inherit;
+  color: #e8e2d4;
+  background: radial-gradient(circle at 36% 30%, #6b3f72, #2f1a3a);
+  border: 2px solid rgba(224, 160, 210, 0.4);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.4);
+}
+/* Each skill up the stack steps further left, so the row curves away from the
+   attack button instead of zig-zagging. column-reverse puts the first child at
+   the bottom, so the offsets grow with the index. */
+.skillarc .skill:nth-child(2) {
+  margin-right: 46px;
+}
+.skillarc .skill:nth-child(3) {
+  margin-right: 80px;
+}
+.skillarc .skill:nth-child(4) {
+  margin-right: 100px;
+}
+.skillarc .skill b {
+  /* "Emberlash" has to fit inside a 62px circle without being clipped. */
+  font-size: 9px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  max-width: 100%;
+  padding: 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skillarc .skill span {
+  font-size: 8px;
+  opacity: 0.6;
+  line-height: 1.15;
+  padding: 0 3px;
+}
+.skillarc .skill.short {
+  opacity: 0.45;
+}
+/* Cooldown sweeps up from the bottom, so "ready" is a glance not a count. */
+.skillarc .skill .sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: rgba(8, 6, 14, 0.66);
+  pointer-events: none;
+  transition: height 0.1s linear;
+}
+.skillarc .skill.cooling {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* ------------------------------------------------------------- landscape
+ * A phone on its side has ~400px of height, and every band of HUD costs twice
+ * what the same band costs in portrait. So nothing here is merely shrunk: the
+ * left readout unstacks into one row along the bottom, the banner overlays the
+ * playfield instead of pushing it down, and the two thumb zones keep their
+ * corners. Paired with the camera's long-axis zoom, turning the phone gives
+ * the same view rotated rather than a wide slice of a vertical one.
+ */
+@media (max-height: 560px) and (orientation: landscape) {
+  .topbar {
+    padding: calc(var(--safe-t) + 5px) 10px 4px;
+    gap: 8px;
+  }
+
+  .level {
+    padding: 4px 10px;
+  }
+
+  .vitals {
+    margin-top: 3px;
+  }
+
+  .toasts {
+    top: calc(var(--safe-t) + 104px);
+  }
+
+  /* Overlaid rather than in the flow: at 390px tall there is no row to spare,
+     and it is kept to the left half so it never reaches the skill arc. */
+  .objective {
+    position: absolute;
+    top: calc(var(--safe-t) + 48px);
+    left: 12px;
+    width: 44%;
+    margin: 0;
+    padding: 6px 8px 6px 10px;
+  }
+
+  /* Left to flex, the place card ran nearly the whole 915px and turned the
+     name of where you are into a banner. */
+  .place {
+    flex: 0 1 auto;
+    max-width: 240px;
+  }
+
+  .place span {
+    display: none;
+  }
+
+  /* One row along the bottom-left, under the left thumb but not in its way -
+     the orbs and the carry count are readouts and take no presses. */
+  .orbwrap {
+    left: 12px;
+    bottom: calc(var(--safe-b) + 8px);
+    grid-template-columns: auto auto auto;
+    grid-template-areas: 'orbs carry menu';
+    align-items: center;
+    gap: 8px;
+  }
+
+  .orb {
+    width: 42px;
+    height: 42px;
+    padding: 4px;
+  }
+
+  .nav-btn {
+    padding: 7px 11px;
+  }
+
+  .action.attack {
+    width: 74px;
+    height: 74px;
+    bottom: calc(var(--safe-b) + 10px);
+  }
+
+  .action.pull {
+    right: 98px;
+    bottom: calc(var(--safe-b) + 12px);
+    width: 48px;
+    height: 48px;
+  }
+
+  /*
+   * The arc lies down here. Stacked, three skills ran 162px tall - 39% of a
+   * 412px screen, and the bottom one sat on the attack button. As a row they
+   * cost 50px of height and run along the free width a landscape screen has
+   * plenty of, which is also where a mobile MMO puts them.
+   */
+  .skillarc {
+    flex-direction: row-reverse;
+    align-items: flex-end;
+    bottom: calc(var(--safe-b) + 96px);
+    gap: 8px;
+  }
+
+  .skillarc .skill {
+    width: 50px;
+    height: 50px;
+  }
+
+  .skillarc .skill:nth-child(2),
+  .skillarc .skill:nth-child(3),
+  .skillarc .skill:nth-child(4) {
+    margin-right: 0;
+  }
+
+  /* A slight stagger so the row still reads as an arc rather than a toolbar. */
+  .skillarc .skill:nth-child(2) {
+    margin-bottom: 14px;
+  }
+
+  .skillarc .skill:nth-child(3) {
+    margin-bottom: 22px;
+  }
+
+  .skillarc .skill:nth-child(4) {
+    margin-bottom: 26px;
+  }
+
+  .sheet {
+    max-height: 94vh;
+  }
+
+  .tcard h1 {
+    font-size: 34px;
+  }
+
+  .tblurb {
+    margin-top: 8px;
+  }
+
+  .tactions {
+    flex-direction: row;
+    margin-top: 14px;
+  }
+
+  .tbtn {
+    flex: 1;
+    min-height: 50px;
+  }
+}
+
+/* ------------------------------------------------------------- waking scene
+ * The run opens on black and fades up onto the Coliseum. The world is held
+ * still underneath it, so this layer is the only thing that can strand a
+ * player: it is always tappable, and z-ordered under the title screen so a
+ * mistimed scene can never cover the menu that escapes it.
+ */
+
+/* The line sits in the lower third rather than dead centre: centred, it landed
+   squarely on the character you are meant to be watching wake up. */
+.opening {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: calc(var(--safe-t) + 24px) 28px calc(var(--safe-b) + 92px);
+  z-index: 18;
+  cursor: pointer;
+}
+
+.opening[hidden] {
+  display: none;
+}
+
+/* Painted as its own layer rather than as the parent's background, so the text
+   sits at full strength over a world that is still coming up out of black. */
+.oscrim {
+  position: absolute;
+  inset: 0;
+  background: #05070b;
+  pointer-events: none;
+}
+
+.oline {
+  position: relative;
+  margin: 0;
+  max-width: 19em;
+  text-align: center;
+  font-size: 19px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #f2ecdf;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
+.oskip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-b) + 22px);
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(242, 236, 223, 0.42);
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+/*
+ * The HUD is not part of the scene. It fades in behind the last line rather
+ * than being there to greet someone who has just woken up with no memory.
+ * `#ui > *` sets pointer-events, so this has to outrank it - hence the id.
+ */
+#ui > .topbar,
+#ui > .objective,
+#ui > .orbwrap,
+#ui > .action-wrap,
+#ui > .toasts {
+  transition: opacity 0.6s ease;
+}
+
+#ui.waking > *:not(.opening):not(.title) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oskip,
+  #ui > .topbar,
+  #ui > .objective,
+  #ui > .orbwrap,
+  #ui > .action-wrap,
+  #ui > .toasts {
+    transition: none;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .opening {
+    padding-bottom: calc(var(--safe-b) + 54px);
+  }
+
+  .oline {
+    font-size: 17px;
+  }
+
+  .oskip {
+    bottom: calc(var(--safe-b) + 14px);
+  }
+}

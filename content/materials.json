@@ -1,0 +1,171 @@
+{
+  "$comment": "The eighteen materials, verbatim from GDD section 5.2 - names, element pairs and owning biome are canon and must not be edited without a canon change. Materials belong to their biome and cannot be scattered outside it, not even by the developer: build-content.mjs fails on a spawn entry that places a material in the wrong biome, because getting this wrong would quietly destroy the reason to travel. Elements are what a material is made of; alchemy consumes these, crafting consumes the material itself.",
+  "materials": [
+    {
+      "id": "heartwood_burl",
+      "name": "Heartwood Burl",
+      "biome": "plains_forest",
+      "elements": ["sporel", "terrix"],
+      "shape": "lump",
+      "color": "#8a5f34",
+      "description": "A knot of overgrown grain, heavy for its size. Grows where the forest has healed over something."
+    },
+    {
+      "id": "riverglass",
+      "name": "Riverglass",
+      "biome": "plains_forest",
+      "elements": ["vossen", "solvane"],
+      "shape": "shard",
+      "color": "#a8d8e8",
+      "description": "Water-worn until it stopped being sand. Holds light the way still water does."
+    },
+    {
+      "id": "ashcap_fungus",
+      "name": "Ashcap Fungus",
+      "biome": "plains_forest",
+      "elements": ["sporel", "cindral"],
+      "shape": "cap",
+      "color": "#d8734a",
+      "description": "Fruits on scorched ground and keeps the heat in its cap. Warm to hold, long after the burn."
+    },
+    {
+      "id": "ironvine",
+      "name": "Ironvine",
+      "biome": "plains_forest",
+      "elements": ["ferrune", "sporel"],
+      "shape": "coil",
+      "color": "#6a8f4a",
+      "description": "Draws metal up out of the soil and lays it down along its length. Cuts badly and binds well."
+    },
+    {
+      "id": "stormpetal",
+      "name": "Stormpetal",
+      "biome": "plains_forest",
+      "elements": ["aeryl", "arcen"],
+      "shape": "bloom",
+      "color": "#b07cf0",
+      "description": "Opens before weather arrives. Carries a charge that lifts the hair on your arm through the gauntlet."
+    },
+    {
+      "id": "loamstone",
+      "name": "Loamstone",
+      "biome": "plains_forest",
+      "elements": ["terrix", "vossen"],
+      "shape": "rock",
+      "color": "#9a7a52",
+      "description": "Compacted riverbed, still damp at the core. Crumbles along the seams where the water ran."
+    },
+
+    {
+      "id": "rimeshard",
+      "name": "Rimeshard",
+      "biome": "snowy_mountain",
+      "elements": ["glacite", "aeryl"],
+      "shape": "gem",
+      "color": "#cfe9f5",
+      "description": "Frozen out of moving air rather than standing water, so it grows in the direction the wind came from."
+    },
+    {
+      "id": "coldiron_ore",
+      "name": "Coldiron Ore",
+      "biome": "snowy_mountain",
+      "elements": ["ferrune", "glacite"],
+      "shape": "ore",
+      "color": "#8fa8bf",
+      "description": "Ore that never warms in the hand. The mountain's only generous seam, and it is generous by accident."
+    },
+    {
+      "id": "peakmoss",
+      "name": "Peakmoss",
+      "biome": "snowy_mountain",
+      "elements": ["sporel", "glacite"],
+      "shape": "moss",
+      "color": "#7fa88a",
+      "description": "Grows above where anything should. Survives by giving up on being warm."
+    },
+
+    {
+      "id": "sunfused_glass",
+      "name": "Sunfused Glass",
+      "biome": "desert",
+      "elements": ["solvane", "cindral"],
+      "shape": "plate",
+      "color": "#f5d76e",
+      "description": "Sand struck hot enough to stop being sand. Lies in sheets where the light pooled."
+    },
+    {
+      "id": "dustbloom",
+      "name": "Dustbloom",
+      "biome": "desert",
+      "elements": ["terrix", "aeryl"],
+      "shape": "dust",
+      "color": "#d8b070",
+      "description": "Not a plant. A standing column of fines the air refuses to put down."
+    },
+    {
+      "id": "thermal_salt",
+      "name": "Thermal Salt",
+      "biome": "desert",
+      "elements": ["cindral", "vossen"],
+      "shape": "brick",
+      "color": "#e8c8a8",
+      "description": "Crusts over where water reached the surface and lost. Holds the day's heat into the night."
+    },
+
+    {
+      "id": "bogiron_nodule",
+      "name": "Bogiron Nodule",
+      "biome": "wetland",
+      "elements": ["ferrune", "vossen"],
+      "shape": "blob",
+      "color": "#7a5a3a",
+      "description": "Iron precipitated slowly out of standing water. Comes up wet and stays wet."
+    },
+    {
+      "id": "marshgas_bladder",
+      "name": "Marshgas Bladder",
+      "biome": "wetland",
+      "elements": ["aeryl", "sporel"],
+      "shape": "drop",
+      "color": "#a8c85a",
+      "description": "A sac of what the wetland has been breaking down. Light in the gauntlet and eager to leave it."
+    },
+    {
+      "id": "silt_pearl",
+      "name": "Silt Pearl",
+      "biome": "wetland",
+      "elements": ["vossen", "terrix"],
+      "shape": "lens",
+      "color": "#e8e0d0",
+      "description": "Silt turned over long enough to become smooth. The wetland's one tidy object."
+    },
+
+    {
+      "id": "coolant_residue",
+      "name": "Coolant Residue",
+      "biome": "data_center",
+      "elements": ["glacite", "vossen"],
+      "shape": "flask",
+      "color": "#7fd8d8",
+      "description": "Pooled under lines that are still pumping. The building is cooling something it no longer needs to."
+    },
+    {
+      "id": "capacitor_core",
+      "name": "Capacitor Core",
+      "biome": "data_center",
+      "elements": ["arcen", "ferrune"],
+      "shape": "core",
+      "color": "#b07cf0",
+      "description": "Still holding a charge it was given a long time ago. Nothing here has been told to stop."
+    },
+    {
+      "id": "dark_fiber",
+      "name": "Dark Fiber",
+      "biome": "data_center",
+      "elements": ["solvane", "umbrel"],
+      "shape": "chain",
+      "color": "#3a2a4c",
+      "description": "Laid to carry light and never lit. The only thing in the Coliseum that will let you disappear."
+    }
+  ]
+}

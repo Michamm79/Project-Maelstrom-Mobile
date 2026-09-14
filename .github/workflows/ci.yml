@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'claude/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Content builds and validates
+        run: npm run build:content
+
+      - name: Generated content is committed and up to date
+        # The bundle is checked in so Unity can read it without running Node.
+        # If it drifts from content/*.json, the two runtimes stop agreeing.
+        run: git diff --exit-code -- content/generated unity/Assets/Resources
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Chromium for the smoke test
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke test
+        run: node tools/smoke.mjs
+
+      - name: Upload smoke-test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: .verify/
+          if-no-files-found: ignore

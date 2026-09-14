@@ -1,0 +1,120 @@
+{
+  "$comment": "The Coliseum: one handcrafted, bounded world, roughly 1.5km across, from GDD section 3.1. Not five separate levels and not procedurally assembled - Plains/Forest is the permanent spawn at the centre and the four others ring it on the diagonals at equal distance, with connective forest between. Distances are in Unreal units (1uu = 1cm), kept as canon so the PC and mobile builds describe the same space; the mobile renderer scales them. Distance from spawn is the difficulty axis - nothing gates on player level, because the world is meant to create its own reason to leave the centre.",
+  "boundaryRadius": 73000,
+  "travelSeconds": {
+    "$comment": "Spawn to biome edge. Measured in the PC blockout, not a target.",
+    "walk": [
+      30,
+      35
+    ],
+    "sprint": [
+      25,
+      30
+    ]
+  },
+  "biomes": [
+    {
+      "id": "plains_forest",
+      "name": "Plains / Forest",
+      "position": "Centre",
+      "centre": {
+        "x": 0,
+        "y": 0
+      },
+      "radius": 22000,
+      "distanceFromCentre": 0,
+      "mood": "Open, bright, unthreatening. Where you always start and always return.",
+      "palette": {
+        "ground": "#2b3a24",
+        "groundAlt": "#334227",
+        "accent": "#6f9a4a",
+        "fog": "#141c10"
+      },
+      "nodeCount": 240,
+      "respawnSeconds": 18
+    },
+    {
+      "id": "snowy_mountain",
+      "name": "Snowy Mountain",
+      "position": "Upper left",
+      "centre": {
+        "x": -33941,
+        "y": -33941
+      },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Cold, vertical, lit from within. The sole source of Glacite.",
+      "palette": {
+        "ground": "#39424e",
+        "groundAlt": "#434d5a",
+        "accent": "#cfe9f5",
+        "fog": "#181d24"
+      },
+      "nodeCount": 200,
+      "respawnSeconds": 18
+    },
+    {
+      "id": "desert",
+      "name": "Desert",
+      "position": "Upper right",
+      "centre": {
+        "x": 33941,
+        "y": -33941
+      },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Exposed. Nowhere to hide, and visible from far off.",
+      "palette": {
+        "ground": "#6b5433",
+        "groundAlt": "#7a613b",
+        "accent": "#f5d76e",
+        "fog": "#241c10"
+      },
+      "nodeCount": 200,
+      "respawnSeconds": 18
+    },
+    {
+      "id": "wetland",
+      "name": "Wetland",
+      "position": "Lower left",
+      "centre": {
+        "x": -33941,
+        "y": 33941
+      },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Low visibility, slow going. Cover in every direction.",
+      "palette": {
+        "ground": "#2c3a33",
+        "groundAlt": "#33433a",
+        "accent": "#8fae6a",
+        "fog": "#121a16"
+      },
+      "nodeCount": 200,
+      "respawnSeconds": 18
+    },
+    {
+      "id": "data_center",
+      "name": "Abandoned Data-Center",
+      "position": "Lower right",
+      "centre": {
+        "x": 33941,
+        "y": 33941
+      },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Neon light and coolant fog. Still running, with growth creeping through it. The sole source of Umbrel.",
+      "palette": {
+        "ground": "#241f33",
+        "groundAlt": "#2b2540",
+        "accent": "#7fd8d8",
+        "fog": "#0e0b16"
+      },
+      "nodeCount": 200,
+      "respawnSeconds": 18
+    }
+  ],
+  "unitsPerPixel": 12,
+  "$scale_comment": "Canon distances are Unreal units (1uu = 1cm) so the PC and mobile builds describe the same space. The mobile renderer divides by this to get screen units. At 12, the gauntlet's base 600uu pull reads as a 50px radius - comfortable for a thumb - and spawn to biome edge comes out at roughly 32 seconds on foot, which is canon's measured 30-35.",
+  "$density_comment": "Node counts are set from the loop, not from taste: a walking player sweeps a corridor twice the pull radius wide, so counts are chosen to yield roughly one pickup every four or five seconds on foot. That makes a 30-second biome crossing worth about six materials and fills the 60-unit cap over a long expedition rather than an ordinary walk. Plains/Forest carries a little more because it holds six materials to the others' three."
+}

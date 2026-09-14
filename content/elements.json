@@ -1,0 +1,75 @@
+{
+  "$comment": "The ten elements, verbatim from the GDD section 5.1. SAFETY RULE, non-negotiable: nothing here is real chemistry - no real names, no real symbols, no real combinations, and the game must never function as a lookup for how to combine or break down real substances. Every symbol is exactly three letters, because real element symbols are one or two; the format is what stops the table being mistaken for the periodic table, and build-content.mjs rejects any symbol that is not three letters. There is deliberately no atomic number, row or column here: canon gives an element a symbol and a domain and nothing else, and a grid with numbered cells is exactly the shape the safety rule exists to avoid. Canon expects this table to grow to roughly 20-24 once the power set is decided.",
+  "elements": [
+    {
+      "id": "aeryl",
+      "name": "Aeryl",
+      "symbol": "AYL",
+      "domain": "Air, pressure, motion",
+      "color": "#9fd8e8"
+    },
+    {
+      "id": "vossen",
+      "name": "Vossen",
+      "symbol": "VSN",
+      "domain": "Fluid, cohesion",
+      "color": "#3f8fd0"
+    },
+    {
+      "id": "cindral",
+      "name": "Cindral",
+      "symbol": "CDR",
+      "domain": "Combustion, heat",
+      "color": "#f0622c"
+    },
+    {
+      "id": "glacite",
+      "name": "Glacite",
+      "symbol": "GLC",
+      "domain": "Cold, crystallization",
+      "color": "#cfe9f5"
+    },
+    {
+      "id": "ferrune",
+      "name": "Ferrune",
+      "symbol": "FRN",
+      "domain": "Metal, structure",
+      "color": "#98a4b0"
+    },
+    {
+      "id": "arcen",
+      "name": "Arcen",
+      "symbol": "ARC",
+      "domain": "Charge, conduction",
+      "color": "#b07cf0"
+    },
+    {
+      "id": "terrix",
+      "name": "Terrix",
+      "symbol": "TRX",
+      "domain": "Earth, particulate",
+      "color": "#b08040"
+    },
+    {
+      "id": "umbrel",
+      "name": "Umbrel",
+      "symbol": "UMB",
+      "domain": "Absorption, dampening, concealment",
+      "color": "#5b4a72"
+    },
+    {
+      "id": "solvane",
+      "name": "Solvane",
+      "symbol": "SVN",
+      "domain": "Radiance, revealing",
+      "color": "#f5d76e"
+    },
+    {
+      "id": "sporel",
+      "name": "Sporel",
+      "symbol": "SPR",
+      "domain": "Organic growth, decay",
+      "color": "#7fbf5a"
+    }
+  ]
+}

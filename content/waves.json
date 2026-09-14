@@ -1,0 +1,121 @@
+{
+  "$comment": "Enemy pressure, from GDD section 7.1. The unit of pressure is the bundle - three waves - not the single wave, and the shape of it matters more than the numbers: waves inside a bundle land close together so ignoring the first means the second arrives on top of it; the gap to the next bundle is timed from the END of the previous one so a struggling player is not punished; and at most one full bundle is alive at once. Timing is scheduled, composition is rolled.",
+  "$pacing_comment": "The opening is meant to be slow and exploratory. Canon spaces bundles roughly 30 minutes apart, and the production status puts ONE bundle in Milestone 1A with 'repeating bundles' and 'ambient enemies' both deferred to 1B - so the early game is not a faster cycle, it is the absence of a cycle. An earlier build ran bundles five minutes apart from Level 1 and turned the introduction into a siege. The gates below are what restore the intended shape: one bundle as the combat tutorial, then quiet while the player learns the world, and the cycle proper starting at Level 5 where the deck says the game escalates.",
+  "activePacing": "mobile",
+  "pacing": {
+    "canon": {
+      "wavesPerBundle": 3,
+      "secondsBetweenWaves": [
+        120,
+        300
+      ],
+      "secondsBetweenBundles": [
+        1800,
+        1800
+      ],
+      "secondsToClearWave": [
+        120,
+        300
+      ]
+    },
+    "mobile": {
+      "$comment": "Only the spacing WITHIN a bundle is compressed - five minutes between waves of a single fight is dead air on a phone. The gap between bundles stays long, because that gap is the exploration.",
+      "wavesPerBundle": 3,
+      "secondsBetweenWaves": [
+        60,
+        120
+      ],
+      "secondsBetweenBundles": [
+        1200,
+        1200
+      ],
+      "secondsToClearWave": [
+        60,
+        150
+      ]
+    }
+  },
+  "maxLiveWaveGroups": 3,
+  "$composition_comment": "Rolled per wave. Minotaur scarcity is the tuning knob that makes tier 2 mean anything, and the scythe-bearer is rarer still - canon is explicit that 'only a few' is what gives them weight.",
+  "composition": [
+    {
+      "bundleIndex": 0,
+      "goblin": [
+        3,
+        5
+      ],
+      "minotaur": [
+        0,
+        0
+      ],
+      "scythe_bearer": [
+        0,
+        0
+      ]
+    },
+    {
+      "bundleIndex": 1,
+      "goblin": [
+        4,
+        7
+      ],
+      "minotaur": [
+        0,
+        1
+      ],
+      "scythe_bearer": [
+        0,
+        0
+      ]
+    },
+    {
+      "bundleIndex": 2,
+      "goblin": [
+        5,
+        8
+      ],
+      "minotaur": [
+        1,
+        2
+      ],
+      "scythe_bearer": [
+        0,
+        0
+      ]
+    },
+    {
+      "bundleIndex": 3,
+      "goblin": [
+        6,
+        9
+      ],
+      "minotaur": [
+        1,
+        3
+      ],
+      "scythe_bearer": [
+        0,
+        1
+      ]
+    }
+  ],
+  "ambient": {
+    "$comment": "A separate population that persists between bundles. Never includes tier 3.",
+    "goblin": [
+      2,
+      4
+    ],
+    "minotaur": [
+      0,
+      1
+    ]
+  },
+  "$stealth_comment": "Enemies do not know where the player is; hiding or moving carefully lets exploration continue indefinitely, and the player is never required to clear a wave. During the FIRST bundle only, every enemy is shown - a tutorial affordance that then fades, because enemies not knowing where you are only matters if you do not automatically know where they are.",
+  "showEnemiesDuringFirstBundle": true,
+  "gates": {
+    "$comment": "Which parts of the pressure system exist at which level. Level 0 has no enemies at all because Level 0 is the gathering tutorial; the first bundle at Level 1 is the combat tutorial; then nothing repeats until Level 5, which the deck calls the point the game escalates.",
+    "firstBundleAtLevel": 1,
+    "repeatingBundlesFromLevel": 5,
+    "ambientFromLevel": 5
+  }
+}
