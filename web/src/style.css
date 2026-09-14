@@ -74,7 +74,8 @@ body {
  * across the whole screen width - including the thumb reaching for the stick.
  */
 #ui > .toasts,
-#ui > .action-wrap {
+#ui > .action-wrap,
+#ui > .orbwrap {
   pointer-events: none;
 }
 
@@ -290,14 +291,6 @@ button {
 }
 
 /* ---------------------------------------------------------------- orb bar */
-
-.orbbar {
-  display: grid;
-  grid-template-columns: 1fr minmax(104px, 1fr) 1fr;
-  gap: 7px;
-  align-items: stretch;
-  padding: 0 10px 8px;
-}
 
 .orbchip {
   display: flex;
@@ -1149,137 +1142,6 @@ button.ghost:disabled { opacity: .4; }
  *   26% - 84%  orb chips, then the nav glyphs
  *   84% - 100% right thumb, the action button
  */
-@media (max-height: 560px) and (orientation: landscape) {
-  .topbar {
-    padding: calc(var(--safe-t) + 5px) 10px 4px;
-    gap: 8px;
-  }
-
-  .zone-btn {
-    min-height: 34px;
-    padding: 3px 10px;
-  }
-
-  .zone-btn .name {
-    font-size: 13px;
-  }
-
-  .zone-btn .sub {
-    display: none;
-  }
-
-  .level {
-    min-width: 112px;
-    padding: 4px 10px;
-  }
-
-  .vitals {
-    margin-top: 3px;
-    padding: 0 12px;
-    max-width: 300px;
-  }
-
-  .hptext {
-    font-size: 10px;
-    min-width: 40px;
-  }
-
-  .toasts {
-    top: calc(var(--safe-t) + 52px);
-  }
-
-  /* The action button keeps its full size: it is the one control a thumb has
-     to find without looking. */
-  .action-wrap {
-    padding: 0 14px calc(var(--safe-b) + 6px);
-  }
-
-  .orbbar,
-  .nav {
-    position: absolute;
-    bottom: calc(var(--safe-b) + 8px);
-    padding: 0;
-    background: none;
-    gap: 6px;
-  }
-
-  .orbbar {
-    left: 26%;
-    width: 26%;
-    grid-template-columns: 1fr 1.15fr 1fr;
-  }
-
-  .nav {
-    left: 54%;
-    right: 16%;
-  }
-
-  .orbchip,
-  .craft,
-  .nav button {
-    min-height: 42px;
-    background: rgba(22, 28, 38, 0.94);
-  }
-
-  /* Icons only down here - there is no room for two lines of label, and the
-     bench sheet carries the full names anyway. */
-  .orbchip .onm,
-  .craft .out {
-    display: none;
-  }
-
-  .orbchip {
-    justify-content: center;
-    padding: 4px;
-  }
-
-  .craft .verb {
-    font-size: 9px;
-    letter-spacing: 0.02em;
-  }
-
-  .nav button {
-    font-size: 0;
-    gap: 0;
-  }
-
-  .nav button .ico {
-    font-size: 18px;
-  }
-
-  .sheet {
-    max-height: 94vh;
-  }
-
-  /* The banner overlaps the playfield here rather than pushing it down: at
-     390px tall there is no row to spare for it. */
-  .objective {
-    position: absolute;
-    top: calc(var(--safe-t) + 52px);
-    left: 12px;
-    width: 46%;
-    margin: 0;
-    padding: 6px 8px 6px 10px;
-  }
-
-  .tcard h1 {
-    font-size: 34px;
-  }
-
-  .tblurb {
-    margin-top: 8px;
-  }
-
-  .tactions {
-    flex-direction: row;
-    margin-top: 14px;
-  }
-
-  .tbtn {
-    flex: 1;
-    min-height: 50px;
-  }
-}
 
 /* Wide and short: the two thumbs are far apart, so use the whole width. */
 @media (min-width: 720px) and (max-height: 560px) and (orientation: landscape) {
@@ -1470,25 +1332,42 @@ button.ghost.wide {
   max-width: 40vw;
 }
 
-/* The two gauntlets, bottom-left of centre, above the menu button. */
-/* Bottom-left, clear of both thumbs: the stick lives in the left half of the
-   screen and the action column on the right, so the orbs sit above the stick
-   rather than between them. */
+/*
+ * Bottom-left, in two rows rather than one.
+ *
+ * Laid out as a single row these three ran 326px wide on a 412px screen and
+ * pushed the menu button under the skill arc, which then swallowed the press.
+ * Two rows keep the whole readout inside 206px - clear of the arc, clear of
+ * the gathering toggle - and put the one button of the three furthest from
+ * where a steering thumb rests.
+ */
 .orbwrap {
   position: absolute;
   left: 12px;
-  bottom: 108px;
-  display: flex;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    'menu menu'
+    'orbs carry';
   align-items: center;
-  gap: 10px;
-  pointer-events: none;
+  justify-items: start;
+  gap: 8px 10px;
 }
-.orbwrap > * {
+/* The orbs and the carry count report; only the menu takes a press. Leaving
+   them inert lets the floating stick be placed through them, which matters
+   because this corner is exactly where a left thumb lands. */
+.orbwrap .nav-btn {
+  grid-area: menu;
   pointer-events: auto;
 }
 .orbbar {
+  grid-area: orbs;
   display: flex;
   gap: 8px;
+}
+.carry {
+  grid-area: carry;
 }
 .orb {
   position: relative;
@@ -1696,38 +1575,6 @@ button.ghost.wide {
   opacity: 0.6;
 }
 
-@media (max-height: 560px) and (orientation: landscape) {
-  /* A short screen has no room for a tall HUD. The orbs shrink, the readied
-     combinations become one horizontal row, and everything hugs an edge so the
-     middle of the screen stays the game. */
-  .orbwrap {
-    left: 12px;
-    bottom: 6px;
-    gap: 7px;
-  }
-  .orb {
-    width: 42px;
-    height: 42px;
-    padding: 4px;
-  }
-  .castbar {
-    flex-direction: row;
-    right: auto;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 4px;
-    gap: 5px;
-  }
-  .castbar .cast {
-    padding: 3px 7px;
-  }
-  .castbar .cast span {
-    display: none;
-  }
-  .place span {
-    display: none;
-  }
-}
 
 /* The top bar is three flex children now - place, health, level - so health
    needs to claim its share or it collapses to nothing between the other two. */
@@ -1939,30 +1786,144 @@ button.ghost.wide {
   border-color: rgba(255, 255, 255, 0.14);
 }
 
+/* ------------------------------------------------------------- landscape
+ * A phone on its side has ~400px of height, and every band of HUD costs twice
+ * what the same band costs in portrait. So nothing here is merely shrunk: the
+ * left readout unstacks into one row along the bottom, the banner overlays the
+ * playfield instead of pushing it down, and the two thumb zones keep their
+ * corners. Paired with the camera's long-axis zoom, turning the phone gives
+ * the same view rotated rather than a wide slice of a vertical one.
+ */
 @media (max-height: 560px) and (orientation: landscape) {
+  .topbar {
+    padding: calc(var(--safe-t) + 5px) 10px 4px;
+    gap: 8px;
+  }
+
+  .level {
+    padding: 4px 10px;
+  }
+
+  .vitals {
+    margin-top: 3px;
+  }
+
+  .toasts {
+    top: calc(var(--safe-t) + 104px);
+  }
+
+  /* Overlaid rather than in the flow: at 390px tall there is no row to spare,
+     and it is kept to the left half so it never reaches the skill arc. */
+  .objective {
+    position: absolute;
+    top: calc(var(--safe-t) + 48px);
+    left: 12px;
+    width: 44%;
+    margin: 0;
+    padding: 6px 8px 6px 10px;
+  }
+
+  /* Left to flex, the place card ran nearly the whole 915px and turned the
+     name of where you are into a banner. */
+  .place {
+    flex: 0 1 auto;
+    max-width: 240px;
+  }
+
+  .place span {
+    display: none;
+  }
+
+  /* One row along the bottom-left, under the left thumb but not in its way -
+     the orbs and the carry count are readouts and take no presses. */
+  .orbwrap {
+    left: 12px;
+    bottom: calc(var(--safe-b) + 8px);
+    grid-template-columns: auto auto auto;
+    grid-template-areas: 'orbs carry menu';
+    align-items: center;
+    gap: 8px;
+  }
+
+  .orb {
+    width: 42px;
+    height: 42px;
+    padding: 4px;
+  }
+
+  .nav-btn {
+    padding: 7px 11px;
+  }
+
   .action.attack {
     width: 74px;
     height: 74px;
-    bottom: 10px;
+    bottom: calc(var(--safe-b) + 10px);
   }
+
   .action.pull {
     right: 98px;
-    bottom: 12px;
+    bottom: calc(var(--safe-b) + 12px);
     width: 48px;
     height: 48px;
   }
+
+  /*
+   * The arc lies down here. Stacked, three skills ran 162px tall - 39% of a
+   * 412px screen, and the bottom one sat on the attack button. As a row they
+   * cost 50px of height and run along the free width a landscape screen has
+   * plenty of, which is also where a mobile MMO puts them.
+   */
   .skillarc {
-    bottom: 92px;
-    gap: 6px;
+    flex-direction: row-reverse;
+    align-items: flex-end;
+    bottom: calc(var(--safe-b) + 96px);
+    gap: 8px;
   }
+
   .skillarc .skill {
     width: 50px;
     height: 50px;
   }
-  .skillarc .skill:nth-child(2) {
-    margin-right: 38px;
+
+  .skillarc .skill:nth-child(2),
+  .skillarc .skill:nth-child(3),
+  .skillarc .skill:nth-child(4) {
+    margin-right: 0;
   }
+
+  /* A slight stagger so the row still reads as an arc rather than a toolbar. */
+  .skillarc .skill:nth-child(2) {
+    margin-bottom: 14px;
+  }
+
   .skillarc .skill:nth-child(3) {
-    margin-right: 66px;
+    margin-bottom: 22px;
+  }
+
+  .skillarc .skill:nth-child(4) {
+    margin-bottom: 26px;
+  }
+
+  .sheet {
+    max-height: 94vh;
+  }
+
+  .tcard h1 {
+    font-size: 34px;
+  }
+
+  .tblurb {
+    margin-top: 8px;
+  }
+
+  .tactions {
+    flex-direction: row;
+    margin-top: 14px;
+  }
+
+  .tbtn {
+    flex: 1;
+    min-height: 50px;
   }
 }

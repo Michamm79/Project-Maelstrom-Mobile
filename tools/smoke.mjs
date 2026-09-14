@@ -264,15 +264,16 @@ check(
   'it is one menu holding both disciplines',
   (await page.locator('.sheet .tabs button').allTextContents()).join(',') === 'Craft,Alchemy',
 );
-check(
-  'it says the world does not stop',
-  /does not stop/i.test((await page.locator('.sheet .note').textContent()) ?? ''),
-);
-
 // GDD 6.1 has the world keep running here; the author asked for a pause, so the
 // flag in content decides and this checks whichever is configured rather than
 // asserting one of them behind the other's back.
 const pauses = await peek(() => window.maelstrom.world.content.progression.pauseWithMenu === true);
+const note = (await page.locator('.sheet .note').textContent()) ?? '';
+check(
+  'the note matches what the menu actually does',
+  pauses ? /paused/i.test(note) : /does not stop/i.test(note),
+  note,
+);
 const movedWhileOpen = await peek(async () => {
   const g = window.maelstrom;
   const before = g.world.time;
@@ -419,23 +420,86 @@ const farmed = await peek(() => {
 });
 check('the same material cannot be farmed for XP', farmed === 0, `${farmed} xp from 200 repeats`);
 
-// ---------------------------------------------------------------- landscape
+// ---------------------------------------------------------------- orientation
 
-await page.setViewportSize({ width: 844, height: 390 });
-await page.waitForTimeout(400);
-const budget = await peek(() => {
-  const h = window.innerHeight;
-  let worst = 0;
-  for (const sel of ['.topbar', '.orbwrap', '.castbar']) {
-    const el = document.querySelector(sel);
-    if (!el) continue;
-    const r = el.getBoundingClientRect();
-    worst = Math.max(worst, r.height / h);
-  }
-  return worst;
-});
-check('no HUD strip eats a third of a landscape screen', budget < 0.34, `${Math.round(budget * 100)}%`);
-await page.screenshot({ path: join(SHOTS, '05-landscape.png') });
+/*
+ * Both orientations, measured rather than eyeballed. Two separate faults
+ * reached a phone before this ran: the readout and the menu button overlapped
+ * the skill arc, and the camera drew one world unit per CSS pixel, so turning
+ * the phone kept the same span across the short side while the HUD's fixed
+ * height ate half of it.
+ */
+const HUD = [
+  '.place',
+  '.vitals',
+  '.level',
+  '.objective',
+  '.orbwrap',
+  '.orb',
+  '.carry',
+  '.nav-btn',
+  '.action.pull',
+  '.action.attack',
+  '.skillarc .skill',
+];
+const spans = {};
+
+for (const [label, width, height] of [
+  ['portrait', 412, 915],
+  ['landscape', 915, 412],
+]) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(400);
+  const seen = await page.evaluate((selectors) => {
+    const boxes = [];
+    for (const sel of selectors) {
+      for (const el of document.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) boxes.push({ sel, r, el });
+      }
+    }
+
+    const overlaps = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        // Nesting is not collision: an orb inside its own wrapper is fine.
+        if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (w > 2 && h > 2) overlaps.push(`${a.sel} x ${b.sel} (${Math.round(w)}x${Math.round(h)})`);
+      }
+    }
+
+    let strip = 0;
+    for (const sel of ['.topbar', '.orbwrap', '.skillarc']) {
+      const el = document.querySelector(sel);
+      if (el) strip = Math.max(strip, el.getBoundingClientRect().height / window.innerHeight);
+    }
+
+    const view = window.maelstrom.renderer.view;
+    return { overlaps, strip, view: { w: Math.round(view.width), h: Math.round(view.height) } };
+  }, HUD);
+
+  check(`${label}: no two HUD controls overlap`, seen.overlaps.length === 0, seen.overlaps.join('; '));
+  check(
+    `${label}: no HUD strip eats a third of the screen`,
+    seen.strip < 0.34,
+    `${Math.round(seen.strip * 100)}%`,
+  );
+  spans[label] = seen.view;
+  await page.screenshot({ path: join(SHOTS, `05-${label}.png`) });
+}
+
+// The point of the long-axis zoom: turning the phone is a rotation, not a
+// different game. The two views should be each other transposed.
+check(
+  'turning the phone shows the same view rotated',
+  Math.abs(spans.portrait.w - spans.landscape.h) <= 2 && Math.abs(spans.portrait.h - spans.landscape.w) <= 2,
+  `portrait ${spans.portrait.w}x${spans.portrait.h}, landscape ${spans.landscape.w}x${spans.landscape.h}`,
+);
+
 await page.setViewportSize({ width: 412, height: 915 });
 await page.waitForTimeout(300);
 

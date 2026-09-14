@@ -24,6 +24,23 @@ const SPRITE_SCALE = 2;
 /** The connective terrain between the regions. Canon: forest, not a void. */
 const BETWEEN = { ground: '#232f22', groundAlt: '#293626', fog: '#0f150e' };
 
+/**
+ * How much world the *longer* screen axis shows, in world units.
+ *
+ * The camera used to draw one world unit per CSS pixel, which meant the amount
+ * of world on screen was whatever the device happened to be. Turning a phone
+ * sideways then kept 412 units across the short side while the HUD's height
+ * stayed fixed in pixels, so the same bar that cost a fifth of a portrait
+ * screen cost half a landscape one and the playfield became a letterbox.
+ *
+ * Anchoring the zoom to the longer axis makes the rotation symmetric: the same
+ * view, turned. It is purely presentational - the simulation is all in world
+ * units, so nothing about reach, speed or spawn density changes with it.
+ */
+const LONG_SPAN = 700;
+const ZOOM_MIN = 0.9;
+const ZOOM_MAX = 2.2;
+
 interface Floater {
   x: number;
   y: number;
@@ -51,9 +68,11 @@ export class Renderer {
   private width = 0;
   private height = 0;
   private dpr = 1;
+  private zoom = 1;
 
   private readonly sheet = new Image();
   private sheetReady = false;
+  private readonly boxWatcher: ResizeObserver;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -69,6 +88,33 @@ export class Renderer {
     this.sheet.src = alchemistSheet;
 
     this.resize();
+
+    /*
+     * Watch the canvas box, because nothing else did.
+     *
+     * The only resize path was a guard in draw() comparing `canvas.width` to
+     * `this.width * this.dpr` - two values resize() always writes together, so
+     * it could never be false and resize() never ran again after construction.
+     * Turning a phone therefore left the backing store portrait-shaped while
+     * CSS stretched it across the landscape box: the art really was set for
+     * vertical and then squashed sideways.
+     *
+     * A ResizeObserver catches the rotation, a window resize, a soft keyboard
+     * and a move to a display with a different pixel ratio, without reading
+     * layout on every frame.
+     */
+    this.boxWatcher = new ResizeObserver(() => this.resize());
+    this.boxWatcher.observe(canvas);
+    window.addEventListener('orientationchange', this.onViewportChange);
+  }
+
+  private readonly onViewportChange = (): void => {
+    this.resize();
+  };
+
+  dispose(): void {
+    this.boxWatcher.disconnect();
+    window.removeEventListener('orientationchange', this.onViewportChange);
   }
 
   resize(): void {
@@ -79,6 +125,7 @@ export class Renderer {
     this.height = Math.max(1, Math.round(rect.height));
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
+    this.zoom = clamp(Math.max(this.width, this.height) / LONG_SPAN, ZOOM_MIN, ZOOM_MAX);
   }
 
   addFloater(x: number, y: number, text: string, color: string, life = 1.25): void {
@@ -96,8 +143,6 @@ export class Renderer {
   }
 
   draw(world: World, state: RenderState, input?: InputController): void {
-    if (this.canvas.width !== Math.round(this.width * this.dpr)) this.resize();
-
     const ctx = this.ctx;
     ctx.save();
     ctx.scale(this.dpr, this.dpr);
@@ -111,7 +156,14 @@ export class Renderer {
     ctx.fillRect(0, 0, this.width, this.height);
 
     ctx.save();
-    ctx.translate(Math.round(this.width / 2 - camera.x), Math.round(this.height / 2 - camera.y));
+    // Rounded in CSS pixels rather than world units: at any zoom but 1 a world
+    // space round lands the camera between device pixels and the ground
+    // checker shimmers as you walk.
+    ctx.scale(this.zoom, this.zoom);
+    ctx.translate(
+      Math.round(this.width / 2 - camera.x * this.zoom) / this.zoom,
+      Math.round(this.height / 2 - camera.y * this.zoom) / this.zoom,
+    );
 
     this.drawGround(world, camera);
     this.drawProps(world, camera);
@@ -129,13 +181,21 @@ export class Renderer {
 
   // ---------------------------------------------------------------- ground
 
+  /** The world rectangle on screen. In world units, so it tracks the zoom. */
   private visible(camera: { x: number; y: number }, margin: number) {
+    const halfW = this.width / (2 * this.zoom);
+    const halfH = this.height / (2 * this.zoom);
     return {
-      left: camera.x - this.width / 2 - margin,
-      right: camera.x + this.width / 2 + margin,
-      top: camera.y - this.height / 2 - margin,
-      bottom: camera.y + this.height / 2 + margin,
+      left: camera.x - halfW - margin,
+      right: camera.x + halfW + margin,
+      top: camera.y - halfH - margin,
+      bottom: camera.y + halfH + margin,
     };
+  }
+
+  /** World units currently on screen, for tests and the orientation probe. */
+  get view(): { width: number; height: number; zoom: number } {
+    return { width: this.width / this.zoom, height: this.height / this.zoom, zoom: this.zoom };
   }
 
   private drawGround(world: World, camera: { x: number; y: number }): void {
@@ -365,7 +425,7 @@ export class Renderer {
     const dx = x - world.player.x;
     const dy = y - world.player.y;
     const angle = Math.atan2(dy, dx);
-    const radius = Math.min(this.width, this.height) * 0.42;
+    const radius = (Math.min(this.width, this.height) / this.zoom) * 0.42;
 
     ctx.save();
     ctx.translate(world.player.x + Math.cos(angle) * radius, world.player.y + Math.sin(angle) * radius);

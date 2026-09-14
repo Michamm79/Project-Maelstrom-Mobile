@@ -242,9 +242,10 @@ export class Ui {
       this.tabs.append(button);
     }
 
-    // Canon: the world keeps running while this is open, and the player should
-    // be told that rather than discovering it.
-    const warn = el('p', 'note', 'The world does not stop while this is open.');
+    // The world is held while this is open, so the note has to say so: it read
+    // the other way round for as long as the menu did not pause, and a line
+    // that contradicts what the game does teaches the wrong lesson twice.
+    const warn = el('p', 'note', 'The world is paused while this is open.');
 
     this.sheet.append(header, this.tabs, warn, this.sheetBody);
     this.sheet.hidden = true;
