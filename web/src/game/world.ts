@@ -117,6 +117,32 @@ export interface BiomeDisc {
   mood: string;
 }
 
+/** The player as they wake: one definition, so reset() cannot drift from it. */
+function freshPlayer(combat: Content['progression']['combat']): Player {
+  return {
+    x: 0,
+    y: 0,
+    hp: combat.maxHp,
+    maxHp: combat.maxHp,
+    invulnerable: 0,
+    sinceHit: combat.regenDelaySeconds,
+    dead: false,
+    respawnAt: 0,
+    facing: -Math.PI / 2,
+    moving: false,
+    bob: 0,
+    attackAnim: 0,
+    attackCooldown: 0,
+    combo: 0,
+    comboTimer: 0,
+    comboTargetId: -1,
+    facing4: 'down',
+    mirrored: false,
+    frame: 0,
+    travelled: 0,
+  };
+}
+
 export class World {
   readonly nodes: WorldNode[] = [];
   readonly props: Prop[] = [];
@@ -135,7 +161,6 @@ export class World {
 
   constructor(private readonly content: Content) {
     const upp = content.unitsPerPixel;
-    const rng = new Rng(hashString('coliseum'));
 
     this.boundaryRadius = content.coliseum.boundaryRadius / upp;
     for (const b of content.biomes) {
@@ -150,32 +175,40 @@ export class World {
       });
     }
 
-    const combat = content.progression.combat;
-    this.player = {
-      x: 0,
-      y: 0,
-      hp: combat.maxHp,
-      maxHp: combat.maxHp,
-      invulnerable: 0,
-      sinceHit: combat.regenDelaySeconds,
-      dead: false,
-      respawnAt: 0,
-      facing: -Math.PI / 2,
-      moving: false,
-      bob: 0,
-      attackAnim: 0,
-      attackCooldown: 0,
-      combo: 0,
-      comboTimer: 0,
-      comboTargetId: -1,
-      facing4: 'down',
-      mirrored: false,
-      frame: 0,
-      travelled: 0,
-    };
+    this.player = freshPlayer(content.progression.combat);
+    this.populate();
+  }
 
+  /**
+   * Everything the world generates, from the same seed every time.
+   *
+   * Split out of the constructor so reset() can re-run it in the same order:
+   * props and nodes draw from one stream, so regenerating only the nodes would
+   * give a restarted run a different Coliseum from the one a fresh load gives.
+   */
+  private populate(): void {
+    const rng = new Rng(hashString('coliseum'));
     this.generateProps(rng);
     this.generateNodes(rng);
+  }
+
+  /**
+   * Put the world back to how it opens.
+   *
+   * Starting over used to clear localStorage and nothing else, so the live
+   * objects carried straight into the new run: the same standing position, the
+   * same nodes already taken, the same corpses on the ground.
+   */
+  reset(): void {
+    this.nodes.length = 0;
+    this.props.length = 0;
+    this.enemies.length = 0;
+    this.events.length = 0;
+    this.absorbed.length = 0;
+    this.elapsed = 0;
+    this.nextEnemyId = 0;
+    Object.assign(this.player, freshPlayer(this.content.progression.combat));
+    this.populate();
   }
 
   // ---------------------------------------------------------------- geography

@@ -131,6 +131,15 @@
       "hint": "Gust, Torrent and Emberlash. Someone else made them. At Level 2 you get the workshop."
     }
   ],
+  "opening": {
+    "fadeSeconds": 2.4,
+    "lineSeconds": 2.8,
+    "lines": [
+      "You wake.",
+      "Two half-orbs hang above your hands. They were not there before.",
+      "Nobody explains why. Only what to do, and where to go."
+    ]
+  },
   "elements": [
     {
       "id": "aeryl",

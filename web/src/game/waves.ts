@@ -25,6 +25,8 @@ import type { World } from './world';
  */
 type Phase = 'idle' | 'between-bundles' | 'in-bundle' | 'quiet';
 
+const WAVE_SEED = 0x5eed1234;
+
 export class WaveDirector {
   private phase: Phase = 'idle';
   private level = 0;
@@ -36,13 +38,31 @@ export class WaveDirector {
   private clearedPending = 0;
   private ambientSpawned = false;
 
-  private readonly rng = new Rng(0x5eed1234);
+  private rng = new Rng(WAVE_SEED);
   private readonly messages: string[] = [];
 
   constructor(
     private readonly content: Content,
     private readonly world: World,
   ) {}
+
+  /**
+   * Back to before anything was armed, seed included, so a restarted run gets
+   * the same first bundle a fresh load would.
+   */
+  reset(): void {
+    this.phase = 'idle';
+    this.level = 0;
+    this.timer = 0;
+    this.bundleIndex = -1;
+    this.waveInBundle = 0;
+    this.liveGroups = 0;
+    this.cleared = 0;
+    this.clearedPending = 0;
+    this.ambientSpawned = false;
+    this.messages.length = 0;
+    this.rng = new Rng(WAVE_SEED);
+  }
 
   /**
    * Canon puts no enemies in the world at all until the player reaches Level 1.

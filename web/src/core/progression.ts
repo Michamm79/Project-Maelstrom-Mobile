@@ -75,6 +75,19 @@ export class Progression {
     return amount;
   }
 
+  /**
+   * Record a novelty as already paid without paying for it.
+   *
+   * Waking somewhere is not visiting it. The spawn biome was being run through
+   * award() to keep it from paying out later, which marked it seen *and* banked
+   * its 80 XP - so a brand new run opened at 80 of the 150 needed for Level 1,
+   * and the warning that Level 1 triggers fired while the guide was still on
+   * "watch the orbs fill", two cards before it tells you to craft.
+   */
+  markSeen(kind: NoveltyKind, key: string): void {
+    this.seen.add(`${kind}:${key}`);
+  }
+
   hasSeen(kind: NoveltyKind, key: string): boolean {
     return this.seen.has(`${kind}:${key}`);
   }

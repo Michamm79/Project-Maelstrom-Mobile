@@ -1927,3 +1927,107 @@ button.ghost.wide {
     min-height: 50px;
   }
 }
+
+/* ------------------------------------------------------------- waking scene
+ * The run opens on black and fades up onto the Coliseum. The world is held
+ * still underneath it, so this layer is the only thing that can strand a
+ * player: it is always tappable, and z-ordered under the title screen so a
+ * mistimed scene can never cover the menu that escapes it.
+ */
+
+/* The line sits in the lower third rather than dead centre: centred, it landed
+   squarely on the character you are meant to be watching wake up. */
+.opening {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: calc(var(--safe-t) + 24px) 28px calc(var(--safe-b) + 92px);
+  z-index: 18;
+  cursor: pointer;
+}
+
+.opening[hidden] {
+  display: none;
+}
+
+/* Painted as its own layer rather than as the parent's background, so the text
+   sits at full strength over a world that is still coming up out of black. */
+.oscrim {
+  position: absolute;
+  inset: 0;
+  background: #05070b;
+  pointer-events: none;
+}
+
+.oline {
+  position: relative;
+  margin: 0;
+  max-width: 19em;
+  text-align: center;
+  font-size: 19px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #f2ecdf;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
+.oskip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-b) + 22px);
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(242, 236, 223, 0.42);
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+/*
+ * The HUD is not part of the scene. It fades in behind the last line rather
+ * than being there to greet someone who has just woken up with no memory.
+ * `#ui > *` sets pointer-events, so this has to outrank it - hence the id.
+ */
+#ui > .topbar,
+#ui > .objective,
+#ui > .orbwrap,
+#ui > .action-wrap,
+#ui > .toasts {
+  transition: opacity 0.6s ease;
+}
+
+#ui.waking > *:not(.opening):not(.title) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oskip,
+  #ui > .topbar,
+  #ui > .objective,
+  #ui > .orbwrap,
+  #ui > .action-wrap,
+  #ui > .toasts {
+    transition: none;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .opening {
+    padding-bottom: calc(var(--safe-b) + 54px);
+  }
+
+  .oline {
+    font-size: 17px;
+  }
+
+  .oskip {
+    bottom: calc(var(--safe-b) + 14px);
+  }
+}

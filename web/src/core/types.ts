@@ -197,10 +197,22 @@ export interface TutorialStep {
   hint: string;
 }
 
+/**
+ * The waking scene: black, then a fade up onto the Coliseum under a few lines
+ * of text, before the first guide card. Durations are content because the pace
+ * of the opening is an authored decision, not a constant in the renderer.
+ */
+export interface OpeningScript {
+  fadeSeconds: number;
+  lineSeconds: number;
+  lines: readonly string[];
+}
+
 export interface ContentBundle {
   version: number;
   progression: ProgressionConfig;
   tutorial: readonly TutorialStep[];
+  opening: OpeningScript;
   elements: readonly ElementDef[];
   materials: readonly MaterialDef[];
   biomes: readonly BiomeDef[];

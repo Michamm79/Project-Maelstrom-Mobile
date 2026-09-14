@@ -81,3 +81,60 @@ describe('advanceTutorial', () => {
     expect(advanceTutorial(steps, 0, nudge)).toBe(0);
   });
 });
+
+/**
+ * The guide and the level curve have to agree.
+ *
+ * Reaching Level 1 is what arms the wave director, and the guide's `warning`
+ * card is the one that explains it - so Level 1 must not arrive before the
+ * cards that come first. It used to, because the spawn biome was banking 80 XP
+ * at the start of every run: three distinct materials then tipped the player
+ * into Level 1 during "watch the orbs fill", two cards before the game had said
+ * anything about crafting, and the warning landed on a player mid-sentence.
+ */
+describe('the opening levels in step with the guide', () => {
+  const xp = content.progression.xp;
+  const levelOneAt = content.progression.xpTable[1] ?? Infinity;
+
+  it('does not reach Level 1 on the materials the carry card asks for', () => {
+    // `carry` completes at three distinct materials held.
+    expect(xp.firstMaterial * 3).toBeLessThan(levelOneAt);
+  });
+
+  it('reaches Level 1 by the time the craft card is done', () => {
+    expect(xp.firstMaterial * 3 + xp.firstCraft).toBeGreaterThanOrEqual(levelOneAt);
+  });
+
+  it('puts the warning card after the craft card, where Level 1 lands', () => {
+    const ids = content.tutorial.map((s) => s.id);
+    expect(ids.indexOf('warning')).toBeGreaterThan(ids.indexOf('craft'));
+  });
+
+  it('can be finished without leaving the spawn biome', () => {
+    const local = content.materials.filter((m) => m.biome === content.spawnBiome.id);
+    // Every card up to the warning is satisfied by local material alone.
+    expect(local.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/**
+ * The waking scene holds the world while it plays, which makes a bad duration a
+ * soft lock rather than a cosmetic problem. The build validates these too; this
+ * is the same guard from the side that reads them.
+ */
+describe('the waking scene', () => {
+  it('has lines to show', () => {
+    expect(content.opening.lines.length).toBeGreaterThan(0);
+    for (const line of content.opening.lines) expect(line.trim()).not.toBe('');
+  });
+
+  it('withholds why, as canon requires', () => {
+    const text = content.opening.lines.join(' ');
+    expect(text).toMatch(/nobody explains|no memory|not there before/i);
+  });
+
+  it('is over quickly enough that it never reads as a hang', () => {
+    expect(content.opening.fadeSeconds).toBeGreaterThan(0);
+    expect(content.opening.lineSeconds * content.opening.lines.length).toBeLessThanOrEqual(15);
+  });
+});

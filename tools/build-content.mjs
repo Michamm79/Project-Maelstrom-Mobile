@@ -44,7 +44,9 @@ const crafting = read('content/crafting.json');
 const alchemy = read('content/alchemy.json').combinations;
 const enemyTiers = read('content/enemies.json').tiers;
 const waves = read('content/waves.json');
-const tutorial = read('content/tutorial.json').steps;
+const tutorialFile = read('content/tutorial.json');
+const tutorial = tutorialFile.steps;
+const opening = tutorialFile.opening;
 const progression = read('content/progression.json');
 
 // ---------------------------------------------------------------- elements
@@ -284,6 +286,25 @@ for (const id of ruleIds) {
   if (!stepIds.has(id)) warn(`tutorial rule "${id}" has no step in content/tutorial.json and will never run`);
 }
 
+// The waking scene. It holds the game before the player has any control, so a
+// missing or runaway duration is a soft lock rather than a cosmetic problem.
+if (!opening) fail('content/tutorial.json has no opening scene');
+else {
+  if (!Array.isArray(opening.lines) || opening.lines.length === 0) fail('the opening scene has no lines');
+  else if (opening.lines.some((line) => typeof line !== 'string' || line.trim() === '')) {
+    fail('every opening line must be non-empty text');
+  }
+  for (const key of ['fadeSeconds', 'lineSeconds']) {
+    const value = opening[key];
+    if (typeof value !== 'number' || !(value > 0)) fail(`the opening scene needs a positive ${key}`);
+    else if (value > 6) fail(`opening ${key} is ${value}s - long enough to read as a hang`);
+  }
+  // Canon opens slow, but the whole scene still has to be shorter than the
+  // patience of someone who just pressed Begin.
+  const total = (opening.lineSeconds ?? 0) * (opening.lines?.length ?? 0);
+  if (total > 15) fail(`the opening scene runs ${total.toFixed(1)}s before the player may move`);
+}
+
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -302,6 +323,11 @@ const bundle = {
   version: 2,
   progression: { ...progression, xpTable },
   tutorial,
+  opening: {
+    fadeSeconds: opening.fadeSeconds,
+    lineSeconds: opening.lineSeconds,
+    lines: opening.lines,
+  },
   elements,
   materials: materials.map((m) => ({
     id: m.id,

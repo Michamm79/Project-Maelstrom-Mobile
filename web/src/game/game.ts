@@ -23,6 +23,7 @@ import { Ui } from './ui';
 import { InputController } from './input';
 import { TitleScreen } from './title';
 import { WaveDirector } from './waves';
+import { OpeningScene } from './opening';
 import type { CombinationId, RecipeId } from '../core/types';
 
 export class Game {
@@ -31,6 +32,7 @@ export class Game {
   private readonly ui: Ui;
   private readonly input: InputController;
   private readonly title: TitleScreen;
+  private readonly opening: OpeningScene;
   private readonly waves: WaveDirector;
 
   private readonly inventory = new Inventory(content as never);
@@ -56,7 +58,10 @@ export class Game {
   private sinceSave = 0;
   private currentBiome = '';
 
-  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    private readonly uiRoot: HTMLElement,
+  ) {
     this.world = new World(content);
     this.renderer = new Renderer(canvas, content);
     this.waves = new WaveDirector(content, this.world);
@@ -72,10 +77,13 @@ export class Game {
     this.input = new InputController(canvas);
     this.ui.setPullActive(this.pulling);
 
+    this.opening = new OpeningScene(uiRoot);
+
     this.title = new TitleScreen(uiRoot, {
       onContinue: () => this.resume(),
       onNewGame: (guided: boolean) => {
         clearSave();
+        this.resetRun();
         this.begin(guided);
       },
     });
@@ -91,7 +99,8 @@ export class Game {
     // not a visit, and paying for it put the player at Level 1 before they had
     // pressed Begin - which armed the wave director and filled the world with
     // enemies during what is meant to be an undisturbed gathering tutorial.
-    this.progression.award('firstBiome', content.spawnBiome.id);
+    // markSeen, not award: this suppresses the payout, it does not collect it.
+    this.progression.markSeen('firstBiome', content.spawnBiome.id);
 
     this.ui.bind(this.hudState());
     // currentBiome is deliberately left empty: refreshPlace() skips when the
@@ -143,7 +152,52 @@ export class Game {
     this.guided = guided;
     this.tutorialStep = guided ? 0 : -1;
     this.title.hide();
-    this.syncObjective();
+
+    // The waking scene comes before the first card, and holds the world while
+    // it plays. It runs for whichever opening was chosen: skipping the guide
+    // skips the instruction, not the fiction.
+    this.uiRoot.classList.add('waking');
+    this.opening.play(content.opening, () => {
+      this.uiRoot.classList.remove('waking');
+      this.syncObjective();
+    });
+  }
+
+  /**
+   * Every piece of run state, put back to its opening condition.
+   *
+   * "Start over" used to call clearSave() and nothing else. That emptied
+   * localStorage, but the live systems were untouched and the next autosave -
+   * five seconds later - wrote the old run straight back: same level, same
+   * upgrades, same pack, same standing position. Worse, XP is novelty-only, so
+   * a new run that inherited the old `seen` set could never earn most of it
+   * again. Anything holding run state needs a line here.
+   */
+  private resetRun(): void {
+    this.inventory.load({ counts: [] });
+    // After the inventory, which clears the upgrades that crafting re-derives.
+    this.crafting.load([], this.inventory);
+    this.progression.load(undefined);
+    this.world.reset();
+    this.waves.reset();
+
+    this.cooldowns.clear();
+    this.selected = null;
+    this.castQueued = false;
+    this.pulling = true;
+    this.playtimeMs = 0;
+    this.sinceSave = 0;
+    this.currentBiome = '';
+    Object.assign(this.tutorialProgress, emptyProgress());
+
+    // Waking at the spawn is not a visit, exactly as in the constructor.
+    this.progression.markSeen('firstBiome', content.spawnBiome.id);
+
+    this.ui.setPullActive(this.pulling);
+    this.ui.setCombo(0);
+    this.ui.setCooldowns(this.cooldowns);
+    this.ui.refresh(this.hudState());
+    this.refreshPlace();
   }
 
   private resume(): void {
@@ -318,6 +372,14 @@ export class Game {
   };
 
   private step(dt: number): void {
+    // The waking scene holds the world: canon has the player come round before
+    // anything asks anything of them, and a wave timer ticking under a fade is
+    // the opposite of that.
+    if (this.opening.active) {
+      this.opening.update(dt);
+      return;
+    }
+
     // GDD 6.1 has the world keep running while the menu is open, reasoning that
     // a pause "would have erased wave pressure in exactly the moment it should
     // bite". The author asked for a pause instead, so this honours that - and

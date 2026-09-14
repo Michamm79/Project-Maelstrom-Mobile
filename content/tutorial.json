@@ -1,5 +1,15 @@
 {
   "$comment": "The opening guide, following GDD section 8.1: Level 0 teaches gathering with no enemies in the world at all, then reaching Level 1 triggers an unmistakable warning and the first wave bundle, which is where combat is taught. Canon is explicit that the tutorial says what to do and where to go and deliberately withholds why. Text lives here; the rule that completes each step lives in web/src/core/tutorial.ts, keyed by id, and the build fails if the two disagree.",
+  "opening": {
+    "$comment": "The waking scene, GDD section 8.1: the run opens on black and fades up onto the Coliseum before the first guide card. Canon has the player wake with no memory and no explanation, so these lines say what is true and nothing about why. Seconds are per line; the fade runs underneath the first of them. It is skippable with a tap and plays only at the start of a new run, never on Continue.",
+    "fadeSeconds": 2.4,
+    "lineSeconds": 2.8,
+    "lines": [
+      "You wake.",
+      "Two half-orbs hang above your hands. They were not there before.",
+      "Nobody explains why. Only what to do, and where to go."
+    ]
+  },
   "steps": [
     {
       "id": "move",

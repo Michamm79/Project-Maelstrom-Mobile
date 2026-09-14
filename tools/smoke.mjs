@@ -95,7 +95,52 @@ check(
 await page.locator('.title .tbtn.primary').click();
 await page.waitForTimeout(400);
 check('choosing a start dismisses the title', !(await page.locator('.title').isVisible()));
+
+// ------------------------------------------------------------ waking scene
+
+check('a new run wakes up before it starts', await page.locator('.opening').isVisible());
+check(
+  'it opens on a line, not on instructions',
+  ((await page.locator('.oline').textContent()) ?? '').trim().length > 0,
+  (await page.locator('.oline').textContent()) ?? '',
+);
+const hudOpacity = await peek(() => {
+  const hud = document.querySelector('#ui > .action-wrap');
+  return hud ? parseFloat(getComputedStyle(hud).opacity) : 1;
+});
+check('the HUD is not there to greet you', hudOpacity < 0.05, `opacity ${hudOpacity}`);
+
+// The scene holds the world: a wave timer running under a fade would be the
+// opposite of coming round somewhere before anything asks anything of you.
+const heldDuring = await peek(async () => {
+  const g = window.maelstrom;
+  const before = g.world.time;
+  await new Promise((r) => setTimeout(r, 400));
+  return g.world.time - before;
+});
+check('the world is held while it plays', heldDuring === 0, `${heldDuring.toFixed(2)}s advanced`);
+await page.screenshot({ path: join(SHOTS, '00b-waking.png') });
+
+// Skippable, because it is the one layer that can strand a player.
+await page.locator('.opening').dispatchEvent('pointerdown');
+await page.waitForTimeout(400);
+check('a tap skips it', !(await page.locator('.opening').isVisible()));
+check('the world runs once it is over', await peek(async () => {
+  const g = window.maelstrom;
+  const before = g.world.time;
+  await new Promise((r) => setTimeout(r, 300));
+  return g.world.time - before > 0.1;
+}));
+check('the HUD comes back', await peek(() => {
+  const hud = document.querySelector('#ui > .action-wrap');
+  return hud ? getComputedStyle(hud).opacity !== '0' : false;
+}));
 check('the guide shows its first objective', await page.locator('.objective').isVisible());
+check(
+  'and it is the first card, not a later one',
+  /find your feet/i.test((await page.locator('.objective').textContent()) ?? ''),
+  (await page.locator('.objective b').textContent()) ?? '',
+);
 
 // ---------------------------------------------------------------- the world
 
@@ -385,6 +430,25 @@ check(
   melee.combo > 0 && melee.steps[melee.steps.length - 1] > melee.steps[0],
   `${melee.steps.join(' -> ')} at combo ${melee.combo}`,
 );
+// Alchemy opens at a level, so reach it on purpose rather than on whatever XP
+// the run happened to accumulate - which is how this check quietly depended on
+// the spawn biome wrongly paying out 80 XP at the start of every run.
+const unlocked = await peek(() => {
+  const g = window.maelstrom;
+  const want = g.world.content.progression.alchemyUnlockLevel;
+  // Distinct keys, because novelty XP is paid once per key by design.
+  for (let i = 0; g.progression.level < want && i < 200; i++) {
+    g.progression.award('firstMaterial', `probe-${i}`);
+  }
+  g.ui.refresh(g.hudState());
+  return { level: g.progression.level, want };
+});
+await page.waitForTimeout(200);
+check(
+  'reaching the alchemy level opens the skills',
+  unlocked.level >= unlocked.want,
+  `level ${unlocked.level} of ${unlocked.want}`,
+);
 check('the skills sit as buttons beside the attack', (await page.locator('.skillarc .skill').count()) > 0);
 
 const enemyBefore = await peek(() => {
@@ -589,6 +653,75 @@ check(
 check('the gauntlet upgrades come back with it', afterReload.capacity === 100, `capacity ${afterReload.capacity}`);
 
 await page.screenshot({ path: join(SHOTS, '06-after-reload.png') });
+
+// ---------------------------------------------------------------- starting over
+
+/*
+ * "Start over" used to call clearSave() and nothing else. localStorage emptied,
+ * but every live system kept the old run and the next autosave wrote it back
+ * five seconds later: same level, same upgrades, same pack, same standing
+ * position. Because XP is novelty-only, the new run could then never earn most
+ * of it again. So this walks the real buttons rather than calling a method.
+ */
+const beforeRestart = await peek(() => {
+  const g = window.maelstrom;
+  g.world.player.x = 900;
+  g.world.player.y = -450;
+  return {
+    xp: g.progression.xp,
+    capacity: g.inventory.capacity,
+    pullRadius: g.inventory.pullRadius,
+    built: g.crafting.toJSON().length,
+    used: g.inventory.used,
+  };
+});
+check(
+  'there is a run worth erasing',
+  beforeRestart.xp > 0 && beforeRestart.built > 0 && beforeRestart.used > 0,
+  JSON.stringify(beforeRestart),
+);
+
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(700);
+await page.locator('.title .tbtn', { hasText: 'Start over' }).click();
+await page.waitForTimeout(250);
+await page.locator('.title .tbtn.danger').click();
+await page.waitForTimeout(600);
+
+const afterRestart = await peek(() => {
+  const g = window.maelstrom;
+  return {
+    xp: g.progression.xp,
+    capacity: g.inventory.capacity,
+    pullRadius: g.inventory.pullRadius,
+    built: g.crafting.toJSON().length,
+    used: g.inventory.used,
+    seen: g.progression.toJSON().seen.length,
+    at: `${Math.round(g.world.player.x)},${Math.round(g.world.player.y)}`,
+    taken: g.world.nodes.filter((n) => !n.available).length,
+    playtimeMs: Math.round(g.playtimeMs),
+    base: g.world.content.crafting.baseStats,
+  };
+});
+check('starting over clears the XP', afterRestart.xp === 0, `${beforeRestart.xp} -> ${afterRestart.xp}`);
+check('starting over empties the pack', afterRestart.used === 0, `${beforeRestart.used} -> ${afterRestart.used}`);
+check(
+  'starting over takes back the gauntlet upgrades',
+  afterRestart.built === 0 &&
+    afterRestart.capacity === afterRestart.base.carryCapacity &&
+    afterRestart.pullRadius === afterRestart.base.pullRadius,
+  JSON.stringify(afterRestart),
+);
+check('starting over puts you back where you woke', afterRestart.at === '0,0', afterRestart.at);
+check('starting over restocks the world', afterRestart.taken === 0, `${afterRestart.taken} nodes still taken`);
+check('starting over resets the clock', afterRestart.playtimeMs < 10000, `${afterRestart.playtimeMs}ms`);
+// One marker survives by design: the spawn biome, recorded as seen so waking
+// there never pays out as a visit. It carries no XP, which the first check above
+// is what proves.
+check('only the spawn marker survives', afterRestart.seen === 1, `${afterRestart.seen} novelty keys`);
+check('and it wakes up again', await page.locator('.opening').isVisible());
+await page.locator('.opening').dispatchEvent('pointerdown');
+await page.waitForTimeout(300);
 
 // ---------------------------------------------------------------- the end
 

@@ -20,6 +20,7 @@ import type {
   MaterialDef,
   MaterialId,
   ProgressionConfig,
+  OpeningScript,
   TutorialStep,
   WavesDef,
 } from './types';
@@ -37,6 +38,8 @@ export class Content {
   readonly enemies: readonly EnemyDef[] = bundle.enemies;
   readonly waves: WavesDef = bundle.waves;
   readonly tutorial: readonly TutorialStep[] = bundle.tutorial;
+  /** The waking scene that plays before the first guide card. */
+  readonly opening: OpeningScript = bundle.opening;
   /** Unreal units per screen unit; canon distances are stored in uu. */
   readonly unitsPerPixel: number = bundle.unitsPerPixel ?? 12;
 
