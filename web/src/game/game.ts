@@ -326,6 +326,18 @@ export class Game {
   };
 
   private step(dt: number): void {
+    // GDD 6.1 has the world keep running while the menu is open, reasoning that
+    // a pause "would have erased wave pressure in exactly the moment it should
+    // bite". The author asked for a pause instead, so this honours that - and
+    // the pull is suspended with it, since a menu that kept gathering for you
+    // would be a stranger answer than either.
+    if (content.progression.pauseWithMenu && this.ui.sheetOpen) {
+      this.pulling = false;
+      this.castQueued = false;
+      this.world.updatePull(dt, false, 0, content.progression.player.pullSeconds, 0);
+      return;
+    }
+
     const player = content.progression.player;
     const move = this.input.read();
     const wasMoving = Math.hypot(move.x, move.y) > 0.01;

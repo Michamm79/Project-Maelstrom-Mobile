@@ -56,5 +56,7 @@
     "regenPerSecond": 1.5,
     "regenDelaySeconds": 6,
     "respawnSeconds": 3
-  }
+  },
+  "$pause_comment": "GDD section 6.1 says the menu does NOT pause the world, reasoning that a pause 'would have erased wave pressure in exactly the moment it should bite'. The author has since asked for a pause, so it is on - kept as a flag rather than hard-coded, because canon and the build disagree here and the disagreement should be visible rather than buried.",
+  "pauseWithMenu": true
 }

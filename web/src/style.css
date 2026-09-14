@@ -1776,3 +1776,36 @@ button.ghost.wide {
 .topbar .level {
   flex: 0 0 auto;
 }
+
+/* The menu holds both disciplines the game is named for, so the button says
+   what it opens and carries a count of what can actually be done in there. */
+.nav-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-btn.ready {
+  border-color: rgba(159, 216, 232, 0.55);
+  background: rgba(40, 62, 74, 0.94);
+}
+.nav-btn .badge {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 16px;
+  padding: 3px 4px;
+  border-radius: 999px;
+  text-align: center;
+  color: #10202a;
+  background: #9fd8e8;
+}
+.row-item.on {
+  border-color: rgba(224, 160, 210, 0.7);
+  background: rgba(58, 30, 52, 0.55);
+}
+/* Whole-row tap target, so readying a combination is not a 40px button hunt. */
+.sheet .row-item {
+  cursor: pointer;
+}

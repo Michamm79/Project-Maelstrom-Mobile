@@ -153,6 +153,32 @@ describe('wave pressure', () => {
     expect(content.activePacing.wavesPerBundle).toBe(3);
   });
 
+  it('keeps the opening slow: one bundle, then quiet until the game escalates', () => {
+    // The deck puts the escalation at Level 5, and canon's production status
+    // defers BOTH repeating bundles and the ambient population past the first
+    // milestone. An earlier build ran bundles five minutes apart from Level 1
+    // and turned the exploratory opening into a siege.
+    const gates = content.waves.gates;
+    expect(gates.firstBundleAtLevel).toBe(1);
+    expect(gates.repeatingBundlesFromLevel).toBe(content.progression.classLevel);
+    expect(gates.ambientFromLevel).toBeGreaterThanOrEqual(gates.repeatingBundlesFromLevel);
+  });
+
+  it('leaves a long gap between bundles once the cycle does start', () => {
+    // Canon says roughly thirty minutes. Compressing this is what made the
+    // early game relentless, so the floor is asserted rather than trusted.
+    const gap = content.activePacing.secondsBetweenBundles[0] ?? 0;
+    expect(gap).toBeGreaterThanOrEqual(1200);
+  });
+
+  it('compresses only the spacing inside a bundle', () => {
+    // Five minutes between waves of a single fight is dead air on a phone; the
+    // gap BETWEEN bundles is the exploration and must not be touched.
+    const waveGap = content.activePacing.secondsBetweenWaves[0] ?? 0;
+    const bundleGap = content.activePacing.secondsBetweenBundles[0] ?? 0;
+    expect(waveGap).toBeLessThan(bundleGap / 4);
+  });
+
   it('caps live groups at exactly one full bundle', () => {
     expect(content.waves.maxLiveWaveGroups).toBe(3);
   });

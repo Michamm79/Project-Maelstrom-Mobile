@@ -266,15 +266,27 @@ check(
   /does not stop/i.test((await page.locator('.sheet .note').textContent()) ?? ''),
 );
 
+// GDD 6.1 has the world keep running here; the author asked for a pause, so the
+// flag in content decides and this checks whichever is configured rather than
+// asserting one of them behind the other's back.
+const pauses = await peek(() => window.maelstrom.world.content.progression.pauseWithMenu === true);
 const movedWhileOpen = await peek(async () => {
   const g = window.maelstrom;
   const before = g.world.time;
   await new Promise((r) => setTimeout(r, 350));
   return g.world.time - before;
 });
-check('the world keeps running while the menu is open', movedWhileOpen > 0.1, `${movedWhileOpen.toFixed(2)}s`);
+check(
+  pauses ? 'the menu pauses the world' : 'the world keeps running while the menu is open',
+  pauses ? movedWhileOpen === 0 : movedWhileOpen > 0.1,
+  `${movedWhileOpen.toFixed(2)}s advanced`,
+);
 
 check('crafting lists the four gauntlet upgrades', (await page.locator('.sheet .row-item').count()) === 4);
+check(
+  'the menu button says what it opens',
+  /transmute/i.test((await page.locator('.nav-btn').textContent()) ?? ''),
+);
 await page.screenshot({ path: join(SHOTS, '03-craft.png') });
 
 // Hand over exactly what one recipe costs and check it lands.

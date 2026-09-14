@@ -18,10 +18,16 @@ import { Rng } from '../core/rng';
 import type { Content } from '../core/content';
 import type { World } from './world';
 
-type Phase = 'idle' | 'between-bundles' | 'in-bundle';
+/**
+ * `quiet` is the long exploratory stretch after the first bundle: the cycle has
+ * not started yet, and nothing is scheduled. It leaves only when the player
+ * reaches the level where canon says the game escalates.
+ */
+type Phase = 'idle' | 'between-bundles' | 'in-bundle' | 'quiet';
 
 export class WaveDirector {
   private phase: Phase = 'idle';
+  private level = 0;
   private timer = 0;
   private bundleIndex = -1;
   private waveInBundle = 0;
@@ -85,8 +91,9 @@ export class WaveDirector {
   }
 
   update(dt: number, level: number): void {
-    if (level >= 1) this.arm();
+    if (level >= this.gates.firstBundleAtLevel) this.arm();
     if (this.phase === 'idle') return;
+    this.level = level;
 
     const alive = this.world.enemies.filter((e) => !e.dead).length;
     if (this.liveGroups > 0 && alive === 0) {
@@ -95,6 +102,15 @@ export class WaveDirector {
       this.liveGroups = 0;
       // The break starts now, not when the bundle began.
       if (this.waveInBundle >= this.pacing.wavesPerBundle) this.endBundle();
+    }
+
+    // Leaving the quiet stretch is a level event, not a timer.
+    if (this.phase === 'quiet') {
+      if (level < this.gates.repeatingBundlesFromLevel) return;
+      this.phase = 'between-bundles';
+      this.timer = this.roll(this.pacing.secondsBetweenBundles);
+      if (level >= this.gates.ambientFromLevel) this.spawnAmbientOnce();
+      return;
     }
 
     this.timer -= dt;
@@ -106,6 +122,10 @@ export class WaveDirector {
 
   private get pacing() {
     return this.content.activePacing;
+  }
+
+  private get gates() {
+    return this.content.waves.gates;
   }
 
   private roll(range: readonly number[]): number {
@@ -133,12 +153,23 @@ export class WaveDirector {
 
   private endBundle(): void {
     this.phase = 'between-bundles';
+
+    // The opening is one bundle, then quiet. Canon's production status defers
+    // BOTH repeating bundles and the ambient population to a later milestone,
+    // and the deck puts the escalation at Level 5 - so until then, finishing
+    // the first bundle hands the world back to the player rather than starting
+    // a countdown to the next siege.
+    if (this.level < this.gates.repeatingBundlesFromLevel) {
+      this.phase = 'quiet';
+      this.timer = Number.POSITIVE_INFINITY;
+      this.messages.push('Quiet again. Whatever that was, it has stopped looking.');
+      return;
+    }
+
     this.timer = this.roll(this.pacing.secondsBetweenBundles);
     // Canon calls the ambient population "a separate population that persists
-    // BETWEEN bundles" - so it arrives once the first bundle is done, not
-    // alongside it. Spawning both at once turned the combat tutorial into a
-    // nine-enemy ambush.
-    this.spawnAmbientOnce();
+    // BETWEEN bundles", so it arrives once a bundle is done, not alongside one.
+    if (this.level >= this.gates.ambientFromLevel) this.spawnAmbientOnce();
   }
 
   private nextWave(): void {

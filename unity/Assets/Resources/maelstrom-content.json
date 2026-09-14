@@ -61,6 +61,8 @@
       "regenDelaySeconds": 6,
       "respawnSeconds": 3
     },
+    "$pause_comment": "GDD section 6.1 says the menu does NOT pause the world, reasoning that a pause 'would have erased wave pressure in exactly the moment it should bite'. The author has since asked for a pause, so it is on - kept as a flag rather than hard-coded, because canon and the build disagree here and the disagreement should be visible rather than buried.",
+    "pauseWithMenu": true,
     "xpTable": [
       0,
       150,
@@ -747,8 +749,8 @@
     }
   ],
   "waves": {
-    "$comment": "Enemy pressure, from GDD section 7.1. The bundle - three waves - is the unit of pressure, not the single wave. Timing is scheduled; composition is procedural: which enemies, where they enter and how many are rolled, but WHEN they arrive is a design knob rather than a random one. The hard cap of three live wave-groups is exactly one full bundle, so ignoring a whole bundle puts the player at maximum pressure with the next one inbound.",
-    "$pacing_comment": "The canon pacing is tuned for a PC session. On a phone, a 30-minute gap between bundles means most players would finish a session without ever meeting one, so 'mobile' is active by default and compresses the schedule while keeping every ratio canon holds meaningful - three waves to a bundle, the gap timed from the END of the previous bundle so a struggling player is not punished, and one bundle live at a time. Switch activePacing to 'canon' to play the PC timings.",
+    "$comment": "Enemy pressure, from GDD section 7.1. The unit of pressure is the bundle - three waves - not the single wave, and the shape of it matters more than the numbers: waves inside a bundle land close together so ignoring the first means the second arrives on top of it; the gap to the next bundle is timed from the END of the previous one so a struggling player is not punished; and at most one full bundle is alive at once. Timing is scheduled, composition is rolled.",
+    "$pacing_comment": "The opening is meant to be slow and exploratory. Canon spaces bundles roughly 30 minutes apart, and the production status puts ONE bundle in Milestone 1A with 'repeating bundles' and 'ambient enemies' both deferred to 1B - so the early game is not a faster cycle, it is the absence of a cycle. An earlier build ran bundles five minutes apart from Level 1 and turned the introduction into a siege. The gates below are what restore the intended shape: one bundle as the combat tutorial, then quiet while the player learns the world, and the cycle proper starting at Level 5 where the deck says the game escalates.",
     "activePacing": "mobile",
     "pacing": {
       "canon": {
@@ -767,18 +769,19 @@
         ]
       },
       "mobile": {
+        "$comment": "Only the spacing WITHIN a bundle is compressed - five minutes between waves of a single fight is dead air on a phone. The gap between bundles stays long, because that gap is the exploration.",
         "wavesPerBundle": 3,
         "secondsBetweenWaves": [
-          35,
-          70
+          60,
+          120
         ],
         "secondsBetweenBundles": [
-          300,
-          300
+          1200,
+          1200
         ],
         "secondsToClearWave": [
-          30,
-          75
+          60,
+          150
         ]
       }
     },
@@ -858,6 +861,12 @@
       ]
     },
     "$stealth_comment": "Enemies do not know where the player is; hiding or moving carefully lets exploration continue indefinitely, and the player is never required to clear a wave. During the FIRST bundle only, every enemy is shown - a tutorial affordance that then fades, because enemies not knowing where you are only matters if you do not automatically know where they are.",
-    "showEnemiesDuringFirstBundle": true
+    "showEnemiesDuringFirstBundle": true,
+    "gates": {
+      "$comment": "Which parts of the pressure system exist at which level. Level 0 has no enemies at all because Level 0 is the gathering tutorial; the first bundle at Level 1 is the combat tutorial; then nothing repeats until Level 5, which the deck calls the point the game escalates.",
+      "firstBundleAtLevel": 1,
+      "repeatingBundlesFromLevel": 5,
+      "ambientFromLevel": 5
+    }
   }
 }

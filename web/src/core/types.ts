@@ -128,9 +128,17 @@ export interface WavePacing {
   secondsToClearWave: readonly number[];
 }
 
+/** Which parts of the pressure system exist at which level. */
+export interface WaveGates {
+  firstBundleAtLevel: number;
+  repeatingBundlesFromLevel: number;
+  ambientFromLevel: number;
+}
+
 export interface WavesDef {
   activePacing: string;
   pacing: Readonly<Record<string, WavePacing>>;
+  gates: WaveGates;
   maxLiveWaveGroups: number;
   composition: readonly Readonly<Record<string, number | readonly number[]>>[];
   ambient: Readonly<Record<string, readonly number[]>>;
@@ -140,6 +148,8 @@ export interface WavesDef {
 export interface ProgressionConfig {
   alchemyUnlockLevel: number;
   classLevel: number;
+  /** Canon says the menu does not pause; the author asked for it to. */
+  pauseWithMenu: boolean;
   /** Novelty only. There is deliberately no per-unit gather award. */
   xp: {
     firstMaterial: number;

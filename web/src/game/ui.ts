@@ -95,6 +95,8 @@ export class Ui {
   };
   private readonly carry = el('div', 'carry');
   private readonly menuBtn = el('button', 'nav-btn');
+  /** Counts what can be made or cast right now, so the menu is worth opening. */
+  private readonly menuBadge = el('i', 'badge');
   private readonly sheet = el('div', 'sheet');
   private readonly sheetBody = el('div', 'body');
   private readonly tabs = el('div', 'tabs');
@@ -143,7 +145,8 @@ export class Ui {
     for (const hand of ['left', 'right'] as const) this.orbBar.append(this.orbs[hand]);
     const wrap = el('div', 'orbwrap');
 
-    this.menuBtn.textContent = 'Menu';
+    this.menuBtn.append(el('span', 'label', 'Transmute'), this.menuBadge);
+    this.menuBadge.hidden = true;
     onPress(this.menuBtn, () => this.toggleSheet());
 
     wrap.append(this.orbBar, this.carry, this.menuBtn);
@@ -197,7 +200,23 @@ export class Ui {
     this.renderOrbs(state);
     this.renderLevel(state);
     this.renderCastBar(state);
+    this.renderMenuBadge(state);
     if (this.open) this.renderSheet();
+  }
+
+  /**
+   * How many things are actually doable in the menu right now. Without this the
+   * player has no reason to open it, and the two systems the game is named for
+   * stay invisible behind a button labelled with a noun.
+   */
+  private renderMenuBadge(state: HudState): void {
+    const level = state.progression.level;
+    const ready =
+      state.crafting.outlooks(state.inventory).filter((o) => o.can).length +
+      state.alchemy.outlooks(state.inventory, level).filter((o) => o.can).length;
+    this.menuBadge.textContent = String(ready);
+    this.menuBadge.hidden = ready === 0;
+    this.menuBtn.classList.toggle('ready', ready > 0);
   }
 
   /** Called every frame, so it only touches the DOM when a number changed. */
@@ -316,7 +335,10 @@ export class Ui {
   }
 
   private renderCraft(state: HudState): void {
-    const rows = state.crafting.outlooks(state.inventory);
+    // What you can make now, then what you cannot, then what is already built.
+    // A menu that does not pause has to answer "what can I do" at a glance.
+    const rank = (o: { can: boolean; built: boolean }) => (o.built ? 2 : o.can ? 0 : 1);
+    const rows = [...state.crafting.outlooks(state.inventory)].sort((a, b) => rank(a) - rank(b));
     for (const outlook of rows) {
       const row = el('div', 'row-item');
       row.classList.toggle('done', outlook.built);
@@ -408,9 +430,21 @@ export class Ui {
       if (!outlook.unlocked) {
         row.append(el('span', 'tag', `Locked until level ${this.content.progression.alchemyUnlockLevel}`));
       } else {
-        const button = el('button', 'go', state.selected === outlook.combination.id ? 'Ready' : 'Ready this');
-        onPress(button, () => this.hooks.onSelectCombination(outlook.combination.id));
+        const readied = state.selected === outlook.combination.id;
+        row.classList.toggle('on', readied);
+        const button = el('button', 'go', readied ? 'Readied' : 'Ready this');
+        button.disabled = readied;
+        if (!outlook.can) {
+          row.append(
+            el('span', 'tag', `Short of ${Object.keys(outlook.shortfall)
+              .map((id) => this.content.element(id).name)
+              .join(' and ')}`),
+          );
+        }
         row.append(button);
+        // The whole row is the target: a 40px button is a poor tap area when
+        // the world may be moving behind the menu.
+        onPress(row, () => this.hooks.onSelectCombination(outlook.combination.id));
       }
       this.sheetBody.append(row);
     }
