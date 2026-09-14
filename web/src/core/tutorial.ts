@@ -13,14 +13,25 @@ export interface TutorialProgress {
   /** World units walked since the guide began. */
   travelled: number;
   gathered: number;
-  orbsFilled: number;
-  transmuted: number;
-  enemiesHit: number;
-  benchOpened: number;
+  /** Pulls that landed while the player was actually moving. */
+  gatheredMoving: number;
+  /** Distinct materials held - the orbs are a display of this. */
+  distinctHeld: number;
+  crafted: number;
+  warned: boolean;
+  combinationsUsed: number;
 }
 
 export function emptyProgress(): TutorialProgress {
-  return { travelled: 0, gathered: 0, orbsFilled: 0, transmuted: 0, enemiesHit: 0, benchOpened: 0 };
+  return {
+    travelled: 0,
+    gathered: 0,
+    gatheredMoving: 0,
+    distinctHeld: 0,
+    crafted: 0,
+    warned: false,
+    combinationsUsed: 0,
+  };
 }
 
 /**
@@ -31,11 +42,15 @@ const MOVE_DISTANCE = 140;
 
 export const TUTORIAL_RULES: Record<string, (p: TutorialProgress) => boolean> = {
   move: (p) => p.travelled >= MOVE_DISTANCE,
-  gather: (p) => p.gathered >= 1,
-  fill: (p) => p.orbsFilled >= 2,
-  transmute: (p) => p.transmuted >= 1,
-  fight: (p) => p.enemiesHit >= 1,
-  bench: (p) => p.benchOpened >= 1,
+  pull: (p) => p.gathered >= 1,
+  // Canon's load-bearing rule: the pull has to work without stopping. The guide
+  // asks for it explicitly rather than hoping the player discovers it, because
+  // a player who learns to stop for every node has learned the wrong game.
+  pull_moving: (p) => p.gatheredMoving >= 2,
+  carry: (p) => p.distinctHeld >= 3,
+  craft: (p) => p.crafted >= 1,
+  warning: (p) => p.warned,
+  combine: (p) => p.combinationsUsed >= 1,
 };
 
 /** True once the step index is past the end of the script. */

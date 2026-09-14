@@ -50,17 +50,18 @@ describe('advanceTutorial', () => {
     const progress: TutorialProgress = {
       travelled: 9000,
       gathered: 6,
-      orbsFilled: 2,
-      transmuted: 3,
-      enemiesHit: 4,
-      benchOpened: 2,
+      gatheredMoving: 4,
+      distinctHeld: 5,
+      crafted: 3,
+      warned: true,
+      combinationsUsed: 4,
     };
     expect(advanceTutorial(steps, 0, progress)).toBe(steps.length);
   });
 
   it('stops at the first unmet rule rather than running to the end', () => {
     const progress: TutorialProgress = { ...emptyProgress(), travelled: 9000, gathered: 1 };
-    // move and gather are done; fill (two orbs) is not.
+    // move and pull are done; pulling while walking is not.
     expect(advanceTutorial(steps, 0, progress)).toBe(2);
   });
 

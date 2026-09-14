@@ -1,137 +1,106 @@
 /**
  * localStorage persistence.
  *
- * Loading is defensive on purpose: this is a game whose content file will keep
+ * Loading is defensive on purpose: this is a game whose content file keeps
  * changing under an existing save, so anything the current bundle no longer
  * defines is dropped rather than allowed to crash the run.
+ *
+ * The version bumped to 2 with the rebuild onto the GDD. A v1 save describes
+ * orb slots and a transmutation tree that no longer exist, so it is discarded
+ * rather than migrated - there is nothing in it that maps onto the canon model.
  */
 import type { Content } from './content';
-import { createInitialState, type GameState } from './orbContainer';
-import { levelForXp } from './progression';
-import type { Hand, MaterialId } from './types';
+import type { Inventory } from './inventory';
+import type { Crafting } from './crafting';
+import type { Progression } from './progression';
+import type { MaterialId } from './types';
 
-const STORAGE_KEY = 'maelstrom.save.v1';
-const SAVE_VERSION = 1;
+const STORAGE_KEY = 'maelstrom.save.v2';
+const SAVE_VERSION = 2;
 
-interface SavedState {
+export interface SaveBundle {
+  inventory: Inventory;
+  crafting: Crafting;
+  progression: Progression;
+}
+
+export interface SavedRun {
   version: number;
-  level: number;
-  xp: number;
-  zoneId: string;
-  orbs: { left: MaterialId | null; right: MaterialId | null };
-  elementPool: Record<string, number>;
-  inventory: Record<string, number>;
-  discovered: string[];
-  seenMaterials: string[];
-  stats: { gathered: number; transmuted: number; alchemized: number; decomposed: number; slain: number; deaths: number };
-  vitals: { hp: number; maxHp: number };
+  inventory: { counts: [MaterialId, number][] };
+  crafted: string[];
+  progression: { xp: number; seen: string[] };
+  player: { x: number; y: number; hp: number };
   started: boolean;
   tutorialStep: number;
   playtimeMs: number;
 }
 
-export function serialize(state: GameState): SavedState {
+export interface RunState {
+  player: { x: number; y: number; hp: number };
+  started: boolean;
+  tutorialStep: number;
+  playtimeMs: number;
+}
+
+export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
   return {
     version: SAVE_VERSION,
-    level: state.level,
-    xp: state.xp,
-    zoneId: state.zoneId,
-    orbs: { left: state.orbs.left, right: state.orbs.right },
-    elementPool: { ...state.elementPool },
-    inventory: { ...state.inventory },
-    discovered: [...state.discovered],
-    seenMaterials: [...state.seenMaterials],
-    stats: { ...state.stats },
-    vitals: { ...state.vitals },
-    started: state.started,
-    tutorialStep: state.tutorialStep,
-    playtimeMs: Math.round(state.playtimeMs),
+    inventory: bundle.inventory.toJSON(),
+    crafted: bundle.crafting.toJSON(),
+    progression: bundle.progression.toJSON(),
+    player: { ...run.player },
+    started: run.started,
+    tutorialStep: run.tutorialStep,
+    playtimeMs: Math.round(run.playtimeMs),
   };
 }
 
-export function deserialize(content: Content, raw: unknown): GameState | null {
+/**
+ * Rehydrate into the live systems. Returns the run-level state, or null when
+ * the payload is unusable - in which case the caller starts a new run rather
+ * than half-restoring one.
+ */
+export function deserialize(content: Content, bundle: SaveBundle, raw: unknown): RunState | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const saved = raw as Partial<SavedState>;
+  const saved = raw as Partial<SavedRun>;
   if (saved.version !== SAVE_VERSION) return null;
 
-  const state = createInitialState(content);
-  const knownRecipes = new Set<string>([
-    ...content.transmutation.map((r) => r.id),
-    ...content.alchemy.map((r) => r.id),
-  ]);
-  const knownElements = new Set(content.elements.map((e) => e.id));
+  bundle.inventory.load(saved.inventory ?? { counts: [] });
+  // Crafting re-derives the gauntlet upgrades from what was built, so it has to
+  // load after the inventory has cleared its own.
+  bundle.crafting.load(saved.crafted, bundle.inventory);
+  bundle.progression.load(saved.progression);
 
-  state.xp = numberOr(saved.xp, 0);
-  state.level = Math.min(
-    content.progression.maxLevel,
-    Math.max(numberOr(saved.level, 1), levelForXp(content.progression, state.xp)),
-  );
-
-  // A zone can be removed, renamed, or (after a rebalance) gated above the
-  // player's level. Any of those falls back to the first zone rather than
-  // stranding the save.
-  if (typeof saved.zoneId === 'string') {
-    const zone = content.zones.find((z) => z.id === saved.zoneId);
-    if (zone && zone.requiredLevel <= state.level) state.zoneId = zone.id;
-  }
-
-  for (const hand of ['left', 'right'] as Hand[]) {
-    const material = saved.orbs?.[hand];
-    if (typeof material === 'string' && content.hasMaterial(material)) state.orbs[hand] = material;
-  }
-
-  for (const [element, count] of Object.entries(saved.elementPool ?? {})) {
-    if (knownElements.has(element) && numberOr(count, 0) > 0) {
-      state.elementPool[element] = Math.floor(count as number);
-    }
-  }
-
-  for (const [material, count] of Object.entries(saved.inventory ?? {})) {
-    if (content.hasMaterial(material) && numberOr(count, 0) > 0) {
-      state.inventory[material] = Math.floor(count as number);
-    }
-  }
-
-  for (const id of saved.discovered ?? []) if (knownRecipes.has(id)) state.discovered.add(id);
-  for (const id of saved.seenMaterials ?? []) if (content.hasMaterial(id)) state.seenMaterials.add(id);
-
-  state.stats = {
-    gathered: numberOr(saved.stats?.gathered, 0),
-    transmuted: numberOr(saved.stats?.transmuted, 0),
-    alchemized: numberOr(saved.stats?.alchemized, 0),
-    decomposed: numberOr(saved.stats?.decomposed, 0),
-    slain: numberOr(saved.stats?.slain, 0),
-    deaths: numberOr(saved.stats?.deaths, 0),
-  };
-
-  // Clamp to the current max: a rebalance that lowers maxHp must not leave a
-  // save reporting more health than the bar can show.
   const maxHp = content.progression.combat.maxHp;
-  state.vitals = {
-    maxHp,
-    hp: Math.min(maxHp, Math.max(1, numberOr(saved.vitals?.hp, maxHp))),
+  return {
+    player: {
+      x: Number.isFinite(saved.player?.x) ? (saved.player?.x as number) : 0,
+      y: Number.isFinite(saved.player?.y) ? (saved.player?.y as number) : 0,
+      hp: clamp(saved.player?.hp ?? maxHp, 1, maxHp),
+    },
+    started: saved.started === true,
+    tutorialStep: Math.max(0, Math.trunc(saved.tutorialStep ?? 0)),
+    playtimeMs: Math.max(0, saved.playtimeMs ?? 0),
   };
-  state.started = saved.started === true;
-  state.tutorialStep = numberOr(saved.tutorialStep, -1);
-  state.playtimeMs = numberOr(saved.playtimeMs, 0);
-
-  return state;
 }
 
-export function save(state: GameState): void {
+function clamp(value: number, min: number, max: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : max;
+}
+
+export function save(bundle: SaveBundle, run: RunState): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize(state)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize(bundle, run)));
   } catch {
-    // Private browsing, a full quota, or storage disabled entirely. Losing the
-    // save is bad; taking the running game down with it is worse.
+    // A full or blocked store is not worth interrupting play for.
   }
 }
 
-export function load(content: Content): GameState | null {
+export function load(content: Content, bundle: SaveBundle): RunState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return deserialize(content, JSON.parse(raw));
+    return deserialize(content, bundle, JSON.parse(raw));
   } catch {
     return null;
   }
@@ -140,11 +109,18 @@ export function load(content: Content): GameState | null {
 export function clearSave(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    // The v1 key described a model that no longer exists; clear it too so a
+    // returning player is not carrying dead bytes around forever.
+    localStorage.removeItem('maelstrom.save.v1');
   } catch {
-    // Nothing useful to do if storage is unavailable.
+    // Nothing to do.
   }
 }
 
-function numberOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+export function hasSave(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
 }

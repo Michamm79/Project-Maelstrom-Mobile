@@ -1,104 +1,75 @@
 {
-  "$comment": "Invented elements. SAFETY RULE, non-negotiable per the GDD: nothing here is real chemistry - no real names, no real symbols, no real combinations. Every symbol is exactly three letters, because real element symbols are one or two; the format is what stops the table being mistaken for the periodic table. build-content.mjs rejects any symbol that is not three letters.",
+  "$comment": "The ten elements, verbatim from the GDD section 5.1. SAFETY RULE, non-negotiable: nothing here is real chemistry - no real names, no real symbols, no real combinations, and the game must never function as a lookup for how to combine or break down real substances. Every symbol is exactly three letters, because real element symbols are one or two; the format is what stops the table being mistaken for the periodic table, and build-content.mjs rejects any symbol that is not three letters. There is deliberately no atomic number, row or column here: canon gives an element a symbol and a domain and nothing else, and a grid with numbered cells is exactly the shape the safety rule exists to avoid. Canon expects this table to grow to roughly 20-24 once the power set is decided.",
   "elements": [
     {
-      "id": "pyron",
-      "name": "Pyron",
-      "description": "Fire-essence. The appetite for change; everything Pyron touches becomes something else, whether it wanted to or not.",
-      "color": "#ff6b35",
-      "symbol": "PYR",
-      "number": 1,
-      "group": "Primal",
-      "row": 1,
-      "col": 1
+      "id": "aeryl",
+      "name": "Aeryl",
+      "symbol": "AYL",
+      "domain": "Air, pressure, motion",
+      "color": "#9fd8e8"
     },
     {
-      "id": "aqualis",
-      "name": "Aqualis",
-      "description": "Water-essence. The universal solvent of form. Alchemists call it the patient element.",
-      "color": "#38bdf8",
-      "symbol": "AQL",
-      "number": 2,
-      "group": "Primal",
-      "row": 1,
-      "col": 2
+      "id": "vossen",
+      "name": "Vossen",
+      "symbol": "VSN",
+      "domain": "Fluid, cohesion",
+      "color": "#3f8fd0"
     },
     {
-      "id": "terran",
-      "name": "Terran",
-      "description": "Earth-essence. Mass, weight, permanence. The stubborn floor beneath every other element.",
-      "color": "#b07a45",
-      "symbol": "TRN",
-      "number": 3,
-      "group": "Primal",
-      "row": 1,
-      "col": 3
+      "id": "cindral",
+      "name": "Cindral",
+      "symbol": "CDR",
+      "domain": "Combustion, heat",
+      "color": "#f0622c"
     },
     {
-      "id": "zephyr",
-      "name": "Zephyr",
-      "description": "Air-essence. Motion and breath. Refuses to be stored for long; escapes any vessel eventually.",
-      "color": "#a5d8ec",
-      "symbol": "ZEP",
-      "number": 4,
-      "group": "Primal",
-      "row": 1,
-      "col": 4
+      "id": "glacite",
+      "name": "Glacite",
+      "symbol": "GLC",
+      "domain": "Cold, crystallization",
+      "color": "#cfe9f5"
     },
     {
-      "id": "verdant",
-      "name": "Verdant",
-      "description": "Life-essence. Growth, mending, and the quiet insistence of things that want to keep existing.",
-      "color": "#4ade80",
-      "symbol": "VRD",
-      "number": 6,
-      "group": "Vital",
-      "row": 2,
-      "col": 1
+      "id": "ferrune",
+      "name": "Ferrune",
+      "symbol": "FRN",
+      "domain": "Metal, structure",
+      "color": "#98a4b0"
     },
     {
-      "id": "ferric",
-      "name": "Ferric",
-      "description": "Binding-essence. Structure, edge, and the will to hold a shape under load.",
-      "color": "#9aa8bd",
-      "symbol": "FRC",
-      "number": 7,
-      "group": "Vital",
-      "row": 2,
-      "col": 2
+      "id": "arcen",
+      "name": "Arcen",
+      "symbol": "ARC",
+      "domain": "Charge, conduction",
+      "color": "#b07cf0"
     },
     {
-      "id": "lumis",
-      "name": "Lumis",
-      "description": "Light-essence. Clarity and revelation. Shows a thing as it is, which is not always a kindness.",
-      "color": "#fde047",
-      "symbol": "LUM",
-      "number": 8,
-      "group": "Radiant",
-      "row": 3,
-      "col": 1
+      "id": "terrix",
+      "name": "Terrix",
+      "symbol": "TRX",
+      "domain": "Earth, particulate",
+      "color": "#b08040"
     },
     {
-      "id": "umbral",
-      "name": "Umbral",
-      "description": "Shadow-essence. Concealment and the space between. Not evil, merely unlit.",
-      "color": "#8b7cd8",
+      "id": "umbrel",
+      "name": "Umbrel",
       "symbol": "UMB",
-      "number": 9,
-      "group": "Radiant",
-      "row": 3,
-      "col": 2
+      "domain": "Absorption, dampening, concealment",
+      "color": "#5b4a72"
     },
     {
-      "id": "aether",
-      "name": "Aether",
-      "description": "Void-essence. The maelstrom itself, ground fine enough to hold. Every alchemist's last ingredient.",
-      "color": "#f0abfc",
-      "symbol": "AET",
-      "number": 5,
-      "group": "Void",
-      "row": 1,
-      "col": 6
+      "id": "solvane",
+      "name": "Solvane",
+      "symbol": "SVN",
+      "domain": "Radiance, revealing",
+      "color": "#f5d76e"
+    },
+    {
+      "id": "sporel",
+      "name": "Sporel",
+      "symbol": "SPR",
+      "domain": "Organic growth, decay",
+      "color": "#7fbf5a"
     }
   ]
 }

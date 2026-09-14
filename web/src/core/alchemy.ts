@@ -1,97 +1,92 @@
 /**
- * Port of AlchemySystem.cs.
+ * Alchemy: elements in, combat abilities out.
  *
- * Alchemy is the harder of the two systems, exactly as the original describes:
- * instead of matching two inputs, it asks whether the player's element pool
- * *contains* everything a recipe requires, and returns every recipe that passes -
- * because one pool usually satisfies several recipes, and that choice is the
- * menu the UI is meant to present.
- */
-import type { Content } from './content';
-import type { AlchemyRecipe, Composition, ElementId } from './types';
-
-export type ElementPool = Record<ElementId, number>;
-
-/** Does the pool hold enough of every element the recipe requires? */
-export function canFulfill(recipe: AlchemyRecipe, pool: Readonly<ElementPool>): boolean {
-  for (const [element, needed] of Object.entries(recipe.requires)) {
-    if ((pool[element] ?? 0) < needed) return false;
-  }
-  return true;
-}
-
-/**
- * How short the pool is for each element, for recipes the player can't afford yet.
- * Showing the gap ("need 2 more Aether") is far more useful than hiding the recipe.
- */
-export function shortfall(recipe: AlchemyRecipe, pool: Readonly<ElementPool>): Composition {
-  const missing: Record<ElementId, number> = {};
-  for (const [element, needed] of Object.entries(recipe.requires)) {
-    const gap = needed - (pool[element] ?? 0);
-    if (gap > 0) missing[element] = gap;
-  }
-  return missing;
-}
-
-/** Every recipe the player can perform right now, given their pool and level. */
-export function findAvailableRecipes(
-  content: Content,
-  pool: Readonly<ElementPool>,
-  playerLevel = Number.MAX_SAFE_INTEGER,
-): readonly AlchemyRecipe[] {
-  return content.alchemy.filter((r) => r.requiredLevel <= playerLevel && canFulfill(r, pool));
-}
-
-/** Every recipe unlocked by level, affordable or not - the alchemy menu's full list. */
-export function knownRecipes(content: Content, playerLevel: number): readonly AlchemyRecipe[] {
-  return content.alchemy.filter((r) => r.requiredLevel <= playerLevel);
-}
-
-/**
- * Find the recipe a hand-built selection of elements *exactly* matches.
+ * GDD section 6.2. Deliberately separate from crafting because it consumes a
+ * different layer - crafting spends the material, alchemy spends what is inside
+ * it. Locked until Level 2 but visible before, "so the player knows something is
+ * coming"; at Level 1 they carry two or three fixed combinations someone else
+ * made, which is what they fight the first wave bundle with.
  *
- * Exact rather than "contains", which `findAvailableRecipes` uses: that one asks
- * "what could my pool afford?", this one asks "what did the player deliberately
- * mix?". If it merely had to contain the requirements, dumping every element in
- * would fire whichever recipe happened to be listed first, and experimenting
- * would stop meaning anything.
+ *   "Level 1 hands you a couple of tools someone else made.
+ *    Level 2 gives you the workshop."
  */
-export function findRecipeForSelection(
-  content: Content,
-  selection: Readonly<Composition>,
-  playerLevel = Number.MAX_SAFE_INTEGER,
-): AlchemyRecipe | null {
-  const picked = Object.entries(selection).filter(([, qty]) => qty > 0);
-  if (picked.length === 0) return null;
+import type { AlchemyCombination, CombinationId, ContentBundle } from './types';
+import type { Inventory } from './inventory';
 
-  for (const recipe of content.alchemy) {
-    if (recipe.requiredLevel > playerLevel) continue;
+export type CastBlock = 'locked' | 'missing-elements';
 
-    const required = Object.entries(recipe.requires);
-    if (required.length !== picked.length) continue;
-    if (required.every(([element, qty]) => (selection[element] ?? 0) === qty)) return recipe;
-  }
-  return null;
+export interface CombinationOutlook {
+  combination: AlchemyCombination;
+  /** What is still needed, by element id. Empty when castable. */
+  shortfall: Record<string, number>;
+  /** Available at the player's level: tutorial combos are, before Level 2. */
+  unlocked: boolean;
+  can: boolean;
+  blockedBy: CastBlock | null;
 }
 
-/** Total element count in a selection, for the UI's running tally. */
-export function selectionSize(selection: Readonly<Composition>): number {
-  let total = 0;
-  for (const qty of Object.values(selection)) total += Math.max(0, qty);
-  return total;
-}
+export class Alchemy {
+  constructor(private readonly content: ContentBundle) {}
 
-/**
- * Consume a recipe's elements from the pool. Mutates the pool in place and
- * returns false without touching it if the pool can't cover the cost.
- */
-export function consumeElements(recipe: AlchemyRecipe, pool: ElementPool): boolean {
-  if (!canFulfill(recipe, pool)) return false;
-
-  for (const [element, needed] of Object.entries(recipe.requires)) {
-    const remaining = (pool[element] ?? 0) - needed;
-    if (remaining > 0) pool[element] = remaining;
-    else delete pool[element];
+  combinations(): readonly AlchemyCombination[] {
+    return this.content.alchemy;
   }
-  return true;
+
+  /** The menu itself is visible from the first minute; this is whether it responds. */
+  menuInteractive(level: number): boolean {
+    return level >= this.content.progression.alchemyUnlockLevel;
+  }
+
+  /**
+   * A tutorial combination works from Level 1 because it was handed over rather
+   * than discovered. Everything else waits for the workshop at Level 2.
+   */
+  unlocked(combination: AlchemyCombination, level: number): boolean {
+    if (combination.tutorial) return level >= 1;
+    return this.menuInteractive(level);
+  }
+
+  outlook(combination: AlchemyCombination, inventory: Inventory, level: number): CombinationOutlook {
+    const pool = inventory.elementPool();
+    const shortfall: Record<string, number> = {};
+    for (const [id, qty] of Object.entries(combination.elements)) {
+      const missing = qty - (pool[id] ?? 0);
+      if (missing > 0) shortfall[id] = missing;
+    }
+    const unlocked = this.unlocked(combination, level);
+    const affordable = Object.keys(shortfall).length === 0;
+    const can = unlocked && affordable;
+    const blockedBy: CastBlock | null = !unlocked ? 'locked' : affordable ? null : 'missing-elements';
+    return { combination, shortfall, unlocked, can, blockedBy };
+  }
+
+  outlooks(inventory: Inventory, level: number): CombinationOutlook[] {
+    return this.combinations().map((c) => this.outlook(c, inventory, level));
+  }
+
+  /**
+   * Spend the elements for one cast. Elements live inside materials, so paying
+   * for a cast consumes the materials that carried them - cheapest first, so a
+   * player is never quietly charged a rare material for a common element.
+   */
+  cast(id: CombinationId, inventory: Inventory, level: number): AlchemyCombination | null {
+    const combination = this.content.alchemy.find((c) => c.id === id);
+    if (!combination) return null;
+    if (!this.outlook(combination, inventory, level).can) return null;
+
+    for (const [element, qty] of Object.entries(combination.elements)) {
+      let owed = qty;
+      const carriers = inventory
+        .stacks()
+        .filter((s) => this.content.materials.find((m) => m.id === s.material)?.elements.includes(element))
+        // Spend from the biggest stack first: it is the one the player is least
+        // likely to be saving for a craft.
+        .sort((a, b) => b.quantity - a.quantity);
+      for (const stack of carriers) {
+        if (owed <= 0) break;
+        owed -= inventory.remove(stack.material, Math.min(owed, stack.quantity));
+      }
+    }
+    return combination;
+  }
 }

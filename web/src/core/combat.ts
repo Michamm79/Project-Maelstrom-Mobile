@@ -1,99 +1,76 @@
 /**
- * Combat rules, kept free of rendering and of the world so they can be reasoned
- * about and tested directly.
+ * Combat resolution.
  *
- * The central design decision: there is no equip slot. Damage is the base plus
- * the strongest weapon you happen to be carrying, which makes the tech tree
- * itself the combat progression. Crafting an Iron Sword is the upgrade - there
- * is no second step where you remember to equip it.
+ * Canon has no weapon items and no melee swing: every offensive option is an
+ * alchemical combination, so what gets resolved here is an ability landing on
+ * whatever is in its shape. The previous build had a weapon-damage model taken
+ * from the Unity prototype; there is nothing in the GDD for it to implement.
  */
-import type { Content } from './content';
-import type { CombatConfig, MaterialId } from './types';
+import type { AlchemyCombination } from './types';
 
-export interface Attacker {
-  x: number;
-  y: number;
-  /** Facing in radians. */
-  facing: number;
-}
-
-export interface Damageable {
+export interface Hittable {
   x: number;
   y: number;
   hp: number;
+  dead: boolean;
 }
 
-/** The best weapon in a set of carried materials, or null when unarmed. */
-export function bestWeapon(
-  content: Content,
-  carried: Iterable<MaterialId>,
-): { material: MaterialId; damage: number } | null {
-  let best: { material: MaterialId; damage: number } | null = null;
-
-  for (const id of carried) {
-    if (!content.hasMaterial(id)) continue;
-    const damage = content.material(id).damage;
-    if (damage === undefined) continue;
-    if (!best || damage > best.damage) best = { material: id, damage };
-  }
-  return best;
-}
-
-/** Total damage per swing: base plus the best carried weapon. */
-export function playerDamage(content: Content, carried: Iterable<MaterialId>): number {
-  return content.progression.combat.baseDamage + (bestWeapon(content, carried)?.damage ?? 0);
+export interface AbilityHit<T extends Hittable> {
+  target: T;
+  damage: number;
+  /** Unit vector the hit pushes along. */
+  pushX: number;
+  pushY: number;
 }
 
 /**
- * Is the target inside the swing? Range plus an arc in front of the attacker,
- * rather than a plain circle - swinging away from something should miss it.
+ * Who an ability catches, given where the player is and which way they face.
+ *
+ *   shove / burst - everything inside a radius, no aiming required
+ *   beam          - everything within range inside a forward cone
+ *
+ * A beam is the only shape that can miss, and it is deliberately generous:
+ * canon's whole gathering rule is that the player never has to aim precisely,
+ * and an ability that demanded it would sit badly against that.
  */
-export function inSwing(
-  attacker: Attacker,
-  target: { x: number; y: number },
-  config: CombatConfig,
-): boolean {
-  const dx = target.x - attacker.x;
-  const dy = target.y - attacker.y;
-  if (Math.hypot(dx, dy) > config.attackRange) return false;
+const BEAM_HALF_ANGLE = Math.PI / 5;
 
-  const toTarget = Math.atan2(dy, dx);
-  return Math.abs(angleDelta(toTarget, attacker.facing)) <= config.attackArc;
+export function abilityTargets<T extends Hittable>(
+  combination: AlchemyCombination,
+  originX: number,
+  originY: number,
+  facing: number,
+  candidates: readonly T[],
+): AbilityHit<T>[] {
+  const { kind, damage, radius, range } = combination.effect;
+  const reach = kind === 'beam' ? (range ?? 0) : (radius ?? 0);
+  const hits: AbilityHit<T>[] = [];
+
+  for (const target of candidates) {
+    if (target.dead) continue;
+    const dx = target.x - originX;
+    const dy = target.y - originY;
+    const distance = Math.hypot(dx, dy);
+    if (distance > reach) continue;
+
+    if (kind === 'beam' && distance > 1) {
+      let delta = Math.atan2(dy, dx) - facing;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      if (Math.abs(delta) > BEAM_HALF_ANGLE) continue;
+    }
+
+    const length = distance > 0.001 ? distance : 1;
+    hits.push({ target, damage, pushX: dx / length, pushY: dy / length });
+  }
+  return hits;
 }
 
-/** Smallest signed difference between two angles, in (-PI, PI]. */
-export function angleDelta(a: number, b: number): number {
-  let d = (a - b) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d <= -Math.PI) d += Math.PI * 2;
-  return d;
-}
-
-/** Apply damage, clamping at zero. Returns whether this blow was lethal. */
-export function applyDamage(target: Damageable, amount: number): boolean {
-  if (amount <= 0) return false;
+/** Apply damage and report whether this was the killing blow. */
+export function applyDamage(target: Hittable, amount: number): boolean {
+  if (target.dead) return false;
   target.hp = Math.max(0, target.hp - amount);
-  return target.hp === 0;
-}
-
-/** Which drops a defeated enemy yields, given a roll source. */
-export function rollDrops(
-  drops: readonly { material: MaterialId; chance: number }[],
-  roll: () => number,
-): MaterialId[] {
-  const out: MaterialId[] = [];
-  for (const drop of drops) {
-    if (roll() < drop.chance) out.push(drop.material);
-  }
-  return out;
-}
-
-/**
- * How long until health starts coming back, and how fast.
- * Regen is deliberately generous: in a crafting game, dying should cost time,
- * not the materials you walked across three regions to collect.
- */
-export function regenFor(config: CombatConfig, secondsSinceHit: number, dt: number): number {
-  if (secondsSinceHit < config.regenDelaySeconds) return 0;
-  return config.regenPerSecond * dt;
+  if (target.hp > 0) return false;
+  target.dead = true;
+  return true;
 }

@@ -2,14 +2,23 @@
 /**
  * Content build step for Project Maelstrom Mobile.
  *
- * Reads the hand-authored JSON in content/, validates the whole graph, derives
- * everything that can be derived, and emits one bundle consumed by BOTH runtimes:
+ * Reads the hand-authored JSON in content/, validates it against the GDD's
+ * non-negotiable rules, and emits one bundle consumed by BOTH runtimes:
  *
- *   content/generated/maelstrom-content.json   -> imported by the web game
+ *   content/generated/maelstrom-content.json      -> imported by the web game
  *   unity/Assets/Resources/maelstrom-content.json -> loaded by ContentDatabase.cs
  *
- * Deriving here (rather than in each runtime) is the whole point: the web build
- * and the Unity build cannot disagree about what a Void Blade is made of.
+ * The validations here are not style checks. Three of them protect design
+ * decisions canon states cannot be broken:
+ *
+ *   1. Every element symbol is three letters, so the table can never be
+ *      mistaken for the periodic table (safety rule, GDD section 5).
+ *   2. A material may only spawn in its own biome, "not even by the developer",
+ *      because scattering a material outside its region quietly destroys the
+ *      reason to travel (section 5.3).
+ *   3. Plains/Forest yields exactly eight of the ten elements; Glacite is
+ *      mountain-only and Umbrel is Data-Center-only. That gating IS the world's
+ *      reason to leave the centre, and it is asserted rather than assumed.
  *
  * Run: npm run build:content   (or: node tools/build-content.mjs)
  */
@@ -28,205 +37,241 @@ const warn = (msg) => warnings.push(msg);
 // ---------------------------------------------------------------- load
 
 const elements = read('content/elements.json').elements;
-const gathered = read('content/materials.gathered.json').materials;
-const crafted = read('content/materials.crafted.json').materials;
-const alchemized = read('content/materials.alchemized.json').materials;
-const transmutation = read('content/transmutation.json').recipes;
-const alchemy = read('content/alchemy.json').recipes;
-const zones = read('content/zones.json').zones;
-const enemies = read('content/enemies.json').enemies;
+const materials = read('content/materials.json').materials;
+const biomesFile = read('content/biomes.json');
+const biomes = biomesFile.biomes;
+const crafting = read('content/crafting.json');
+const alchemy = read('content/alchemy.json').combinations;
+const enemyTiers = read('content/enemies.json').tiers;
+const waves = read('content/waves.json');
 const tutorial = read('content/tutorial.json').steps;
 const progression = read('content/progression.json');
 
-const elementIds = new Set(elements.map((e) => e.id));
+// ---------------------------------------------------------------- elements
 
-// The alchemy table is laid out from this data, so a duplicate symbol or an
-// overlapping cell would silently hide an element behind another one.
+const elementIds = new Set();
 const seenSymbols = new Map();
-const seenNumbers = new Map();
-const seenCells = new Map();
+
 for (const e of elements) {
-  for (const field of ['symbol', 'number', 'group', 'row', 'col']) {
-    if (e[field] === undefined) fail(`element "${e.id}" is missing "${field}"`);
+  for (const field of ['id', 'name', 'symbol', 'domain', 'color']) {
+    if (!e[field]) fail(`element "${e.id ?? '?'}" is missing "${field}"`);
   }
+  if (elementIds.has(e.id)) fail(`duplicate element id "${e.id}"`);
+  elementIds.add(e.id);
+
   // SAFETY RULE from the GDD, stated there as non-negotiable: the alchemy table
-  // must never be mistakable for the periodic table, and must never read as a
-  // lookup for combining real substances. Every real element symbol is one or
-  // two letters, so requiring exactly three is what enforces it - the format
-  // makes a collision impossible rather than relying on a blocklist anyone can
-  // forget to update. This check exists because the table shipped with two
-  // letter symbols including "Fe", which is iron.
+  // must never be mistakable for the periodic table, and the game must never
+  // read as a lookup for combining real substances. Every real element symbol is
+  // one or two letters, so requiring exactly three makes a collision impossible
+  // rather than relying on a blocklist someone can forget to update. This check
+  // exists because an earlier table shipped two-letter symbols including "Fe".
   if (!/^[A-Z]{3}$/.test(String(e.symbol))) {
     fail(
       `element "${e.id}" has symbol "${e.symbol}" - symbols must be exactly three ` +
         'uppercase letters, so the table cannot be mistaken for the periodic table',
     );
   }
-  if (seenSymbols.has(e.symbol)) fail(`elements "${seenSymbols.get(e.symbol)}" and "${e.id}" share the symbol "${e.symbol}"`);
+  if (seenSymbols.has(e.symbol)) {
+    fail(`elements "${seenSymbols.get(e.symbol)}" and "${e.id}" share the symbol "${e.symbol}"`);
+  }
   seenSymbols.set(e.symbol, e.id);
-
-  if (seenNumbers.has(e.number)) fail(`elements "${seenNumbers.get(e.number)}" and "${e.id}" share number ${e.number}`);
-  seenNumbers.set(e.number, e.id);
-
-  const cell = `${e.row},${e.col}`;
-  if (seenCells.has(cell)) fail(`elements "${seenCells.get(cell)}" and "${e.id}" both sit at row ${e.row} col ${e.col}`);
-  seenCells.set(cell, e.id);
 }
 
-// ---------------------------------------------------------------- index materials
+// ---------------------------------------------------------------- biomes
 
-const materials = new Map();
-const addMaterials = (list, source) => {
-  for (const m of list) {
-    if (materials.has(m.id)) fail(`duplicate material id "${m.id}"`);
-    materials.set(m.id, { ...m, source, tags: m.tags ?? [] });
+const biomeIds = new Set();
+for (const b of biomes) {
+  if (biomeIds.has(b.id)) fail(`duplicate biome id "${b.id}"`);
+  biomeIds.add(b.id);
+  if (!b.centre || typeof b.centre.x !== 'number' || typeof b.centre.y !== 'number') {
+    fail(`biome "${b.id}" is missing a numeric centre`);
   }
-};
-addMaterials(gathered, 'gathered');
-addMaterials(crafted, 'transmuted');
-addMaterials(alchemized, 'alchemized');
-
-const requireMaterial = (id, where) => {
-  if (!materials.has(id)) fail(`${where} references unknown material "${id}"`);
-  return materials.get(id);
-};
-
-// ---------------------------------------------------------------- validate references
-
-for (const m of gathered) {
-  const total = Object.entries(m.composition ?? {});
-  if (total.length === 0) fail(`gathered material "${m.id}" has no elementComposition`);
-  for (const [el, qty] of total) {
-    if (!elementIds.has(el)) fail(`material "${m.id}" references unknown element "${el}"`);
-    if (!Number.isInteger(qty) || qty <= 0) fail(`material "${m.id}" has bad quantity for "${el}": ${qty}`);
+  if (Math.hypot(b.centre.x, b.centre.y) + b.radius > biomesFile.boundaryRadius) {
+    fail(`biome "${b.id}" extends past the Coliseum boundary`);
   }
 }
+if (!biomeIds.has('plains_forest')) fail('there is no "plains_forest" biome, and canon makes it the permanent spawn');
 
-const producedBy = new Map(); // materialId -> recipe that makes it
+// ---------------------------------------------------------------- materials
 
-for (const r of transmutation) {
-  requireMaterial(r.a, `transmutation "${r.id}".a`);
-  requireMaterial(r.b, `transmutation "${r.id}".b`);
-  requireMaterial(r.result, `transmutation "${r.id}".result`);
-  if (producedBy.has(r.result)) fail(`material "${r.result}" is produced by two recipes (${producedBy.get(r.result).id}, ${r.id})`);
-  producedBy.set(r.result, { kind: 'transmutation', ...r });
-}
+const materialIds = new Set();
+const byBiome = new Map([...biomeIds].map((id) => [id, []]));
+const elementSources = new Map();
 
-for (const r of alchemy) {
-  requireMaterial(r.result, `alchemy "${r.id}".result`);
-  for (const [el, qty] of Object.entries(r.requires)) {
-    if (!elementIds.has(el)) fail(`alchemy "${r.id}" requires unknown element "${el}"`);
-    if (!Number.isInteger(qty) || qty <= 0) fail(`alchemy "${r.id}" has bad quantity for "${el}": ${qty}`);
-  }
-  if (producedBy.has(r.result)) fail(`material "${r.result}" is produced by two recipes (${producedBy.get(r.result).id}, ${r.id})`);
-  producedBy.set(r.result, { kind: 'alchemy', ...r });
-}
+// Shapes are drawn procedurally; an unknown key would silently fall back to a
+// rock, so a typo would ship as "every ore looks like a stone".
+const iconSource = readFileSync(join(ROOT, 'web/src/game/icons.ts'), 'utf8');
+const knownShapes = new Set([...iconSource.matchAll(/^\s{2}([a-z][a-zA-Z0-9]*):\s*\(ctx/gm)].map((m) => m[1]));
+if (knownShapes.size < 10) fail('could not read the shape list out of web/src/game/icons.ts');
 
-// Every non-gathered material must actually be obtainable, or it is dead content.
-for (const m of materials.values()) {
-  if (m.source !== 'gathered' && !producedBy.has(m.id)) fail(`material "${m.id}" has no recipe that produces it`);
-}
+for (const m of materials) {
+  if (materialIds.has(m.id)) fail(`duplicate material id "${m.id}"`);
+  materialIds.add(m.id);
 
-// A recipe pair must be unique regardless of order - FindRecipe returns the first match,
-// so a duplicate pair would silently shadow the later recipe.
-const seenPairs = new Map();
-for (const r of transmutation) {
-  const key = [r.a, r.b].sort().join('+');
-  if (seenPairs.has(key)) fail(`transmutation pair ${key} is claimed by both "${seenPairs.get(key)}" and "${r.id}" - the second is unreachable`);
-  seenPairs.set(key, r.id);
-}
+  if (!biomeIds.has(m.biome)) fail(`material "${m.id}" belongs to unknown biome "${m.biome}"`);
+  else byBiome.get(m.biome).push(m.id);
 
-// ---------------------------------------------------------------- derive composition + tier
-
-const YIELD = progression.decompositionYield ?? 1;
-const composition = new Map();
-const tier = new Map();
-const resolving = new Set();
-
-const applyYield = (sum) => {
-  const out = {};
-  for (const [el, qty] of Object.entries(sum)) {
-    const scaled = Math.max(1, Math.round(qty * YIELD));
-    if (scaled > 0) out[el] = scaled;
-  }
-  return out;
-};
-
-function resolve_(id) {
-  if (composition.has(id)) return composition.get(id);
-  if (resolving.has(id)) {
-    fail(`recipe cycle detected at material "${id}" - it is (transitively) an ingredient of itself`);
-    composition.set(id, {});
-    tier.set(id, 0);
-    return {};
-  }
-  resolving.add(id);
-
-  const mat = materials.get(id);
-  let comp;
-  let t;
-
-  if (!mat) {
-    comp = {};
-    t = 0;
-  } else if (mat.source === 'gathered') {
-    comp = { ...mat.composition };
-    t = 0;
+  if (!Array.isArray(m.elements) || m.elements.length !== 2) {
+    fail(`material "${m.id}" must list exactly two elements - canon gives every material a pair`);
   } else {
-    const recipe = producedBy.get(id);
-    if (recipe.kind === 'alchemy') {
-      comp = applyYield(recipe.requires);
-      t = 1;
-    } else {
-      const sum = {};
-      let maxTier = 0;
-      for (const input of [recipe.a, recipe.b]) {
-        const inputComp = resolve_(input);
-        maxTier = Math.max(maxTier, tier.get(input) ?? 0);
-        for (const [el, qty] of Object.entries(inputComp)) sum[el] = (sum[el] ?? 0) + qty;
+    for (const el of m.elements) {
+      if (!elementIds.has(el)) fail(`material "${m.id}" references unknown element "${el}"`);
+      else {
+        if (!elementSources.has(el)) elementSources.set(el, []);
+        elementSources.get(el).push(m.id);
       }
-      comp = applyYield(sum);
-      t = maxTier + 1;
+    }
+    if (m.elements[0] === m.elements[1]) fail(`material "${m.id}" lists "${m.elements[0]}" twice`);
+  }
+
+  if (!knownShapes.has(m.shape)) fail(`material "${m.id}" uses unknown shape "${m.shape}"`);
+  if (!/^#[0-9a-fA-F]{6}$/.test(String(m.color))) fail(`material "${m.id}" has a malformed colour "${m.color}"`);
+}
+
+for (const e of elements) {
+  if (!elementSources.has(e.id)) {
+    fail(`element "${e.id}" is in no material - it can never enter the pool, so nothing needing it is craftable`);
+  }
+}
+
+// ---------------------------------------------------------------- the gating
+
+// Canon section 5.3, stated as the thing that makes travel matter. Asserted
+// rather than assumed: an innocent-looking material edit could otherwise hand
+// the player cold or concealment at the spawn point and silently remove every
+// reason to walk anywhere.
+const elementsOf = (biome) => new Set((byBiome.get(biome) ?? []).flatMap((id) => materials.find((m) => m.id === id).elements));
+
+const spawnElements = elementsOf('plains_forest');
+if (spawnElements.size !== 8) {
+  fail(
+    `Plains/Forest yields ${spawnElements.size} of the ten elements; canon fixes it at 8, ` +
+      'with exactly Glacite and Umbrel withheld',
+  );
+}
+// Canon contradicts itself here and the softer reading is the one encoded.
+// Section 5.3 says "Glacite (cold) - Snowy Mountain only", but section 5.2 puts
+// Coolant Residue (GLC.VSN) in the Data-Center. What section 5.3 is actually
+// establishing is what the SPAWN withholds - you leave the centre for cold and
+// for concealment - and that reading keeps both passages true. It also matches
+// canon describing Umbrel as "one material, Dark Fiber" while never saying that
+// of Glacite, and section 13 asking only whether Umbrel stays single-sourced.
+// So: assert the gate at the spawn, and assert Umbrel's exclusivity, which
+// canon does state unambiguously.
+for (const element of ['glacite', 'umbrel']) {
+  if ((elementSources.get(element) ?? []).some((id) => materials.find((m) => m.id === id).biome === 'plains_forest')) {
+    fail(`"${element}" is obtainable at the spawn; canon withholds exactly Glacite and Umbrel from Plains/Forest, and that gate is the world's only reason to leave the centre`);
+  }
+}
+const umbrelSources = elementSources.get('umbrel') ?? [];
+if (umbrelSources.some((id) => materials.find((m) => m.id === id).biome !== 'data_center')) {
+  fail('concealment exists only in the Data-Center, but Umbrel is carried outside it');
+}
+if (!(elementSources.get('glacite') ?? []).some((id) => materials.find((m) => m.id === id).biome === 'snowy_mountain')) {
+  fail('the Snowy Mountain carries no Glacite, and canon names it as the source of cold');
+}
+
+if (umbrelSources.length !== 1) {
+  warn('Umbrel has more than one source; canon single-sources it through Dark Fiber, though section 13 leaves that open');
+}
+
+// ---------------------------------------------------------------- crafting
+
+const statNames = new Set(Object.keys(crafting.baseStats ?? {}));
+const craftIds = new Set();
+for (const r of crafting.recipes) {
+  if (craftIds.has(r.id)) fail(`duplicate crafting recipe id "${r.id}"`);
+  craftIds.add(r.id);
+  const cost = Object.entries(r.cost ?? {});
+  if (!cost.length) fail(`crafting recipe "${r.id}" costs nothing`);
+  for (const [id, qty] of cost) {
+    if (!materialIds.has(id)) fail(`crafting recipe "${r.id}" needs unknown material "${id}"`);
+    if (!Number.isInteger(qty) || qty <= 0) fail(`crafting recipe "${r.id}" asks for ${qty} x ${id}`);
+  }
+  if (!statNames.has(r.effect?.stat)) {
+    fail(`crafting recipe "${r.id}" upgrades unknown stat "${r.effect?.stat}"`);
+  }
+  if (!(r.effect?.amount > 0)) fail(`crafting recipe "${r.id}" upgrades nothing`);
+}
+
+// ---------------------------------------------------------------- alchemy
+
+const alchemyIds = new Set();
+for (const c of alchemy) {
+  if (alchemyIds.has(c.id)) fail(`duplicate alchemy combination id "${c.id}"`);
+  alchemyIds.add(c.id);
+  const required = Object.entries(c.elements ?? {});
+  if (!required.length) fail(`alchemy combination "${c.id}" requires no elements`);
+  for (const [el, qty] of required) {
+    if (!elementIds.has(el)) fail(`alchemy combination "${c.id}" requires unknown element "${el}"`);
+    if (!Number.isInteger(qty) || qty <= 0) fail(`alchemy combination "${c.id}" asks for ${qty} x ${el}`);
+  }
+  // Canon: the tutorial combinations are all craftable from Plains/Forest
+  // material alone, "so the tutorial requires no travel". A tutorial that sends
+  // the player to the mountain before they have been taught to fight is a
+  // tutorial that cannot be completed.
+  if (c.tutorial) {
+    const unreachable = Object.keys(c.elements).filter((el) => !spawnElements.has(el));
+    if (unreachable.length) {
+      fail(
+        `tutorial combination "${c.id}" needs ${unreachable.join(', ')}, which Plains/Forest does not yield - ` +
+          'the tutorial must require no travel',
+      );
     }
   }
-
-  resolving.delete(id);
-  composition.set(id, comp);
-  tier.set(id, t);
-  return comp;
+  if (!(c.effect?.damage >= 0)) fail(`alchemy combination "${c.id}" has no effect damage`);
 }
+if (![...alchemy].some((c) => c.tutorial)) fail('no alchemy combination is marked as a tutorial combination');
 
-for (const id of materials.keys()) resolve_(id);
-
-// ---------------------------------------------------------------- enemies
+// ---------------------------------------------------------------- enemies & waves
 
 const enemyIds = new Set();
-for (const e of enemies) {
+const tiersSeen = new Set();
+for (const e of enemyTiers) {
   if (enemyIds.has(e.id)) fail(`duplicate enemy id "${e.id}"`);
   enemyIds.add(e.id);
+  if (![1, 2, 3].includes(e.tier)) fail(`enemy "${e.id}" has tier ${e.tier}; canon defines exactly three`);
+  if (tiersSeen.has(e.tier)) fail(`two enemies both claim tier ${e.tier}`);
+  tiersSeen.add(e.tier);
+  if (!knownShapes.has(e.shape)) fail(`enemy "${e.id}" uses unknown shape "${e.shape}"`);
+  if (!(e.hp > 0) || !(e.damage > 0)) fail(`enemy "${e.id}" has no health or no damage`);
+  // An enemy that attacks from beyond the distance it closes to can never land
+  // a hit, and reads in play as an enemy that is broken rather than passive.
+  if (e.attackRange > e.aggroRadius) fail(`enemy "${e.id}" attacks from beyond the range it approaches to`);
+  if ('drops' in e) fail(`enemy "${e.id}" has a drop table; materials come from the world, not from kills`);
+}
+if (tiersSeen.size !== 3) fail(`canon defines three enemy tiers; found ${tiersSeen.size}`);
 
-  if (!(e.hp > 0)) fail(`enemy "${e.id}" has non-positive hp`);
-  if (!(e.damage > 0)) fail(`enemy "${e.id}" has non-positive damage`);
-  if (!(e.attackRange > 0)) fail(`enemy "${e.id}" has non-positive attackRange`);
-  // An enemy that can hit from beyond the distance it will approach to would be
-  // unfightable: it attacks from outside its own chase behaviour.
-  if (e.attackRange > e.aggroRadius) fail(`enemy "${e.id}" attacks from beyond its aggro radius`);
-
-  for (const drop of e.drops ?? []) {
-    requireMaterial(drop.material, `enemy "${e.id}" drop`);
-    if (!(drop.chance > 0 && drop.chance <= 1)) fail(`enemy "${e.id}" drop "${drop.material}" has chance outside (0,1]`);
+const pacing = waves.pacing?.[waves.activePacing];
+if (!pacing) fail(`waves.activePacing is "${waves.activePacing}", which has no entry in waves.pacing`);
+else if (pacing.wavesPerBundle !== 3) fail('a bundle is three waves; that is what makes it the unit of pressure');
+if (waves.maxLiveWaveGroups !== 3) {
+  fail('maxLiveWaveGroups must be 3 - the cap is exactly one full bundle, which is the point of it');
+}
+for (const row of waves.composition) {
+  for (const key of Object.keys(row)) {
+    if (key === 'bundleIndex' || key.startsWith('$')) continue;
+    if (!enemyIds.has(key)) fail(`wave composition references unknown enemy "${key}"`);
   }
+}
+
+// ---------------------------------------------------------------- progression
+
+if (progression.alchemyUnlockLevel !== 2) {
+  fail(`alchemy unlocks at level ${progression.alchemyUnlockLevel}; canon moved it to 2 and says so explicitly`);
+}
+if (progression.xp?.gather !== undefined) {
+  fail('progression.xp.gather exists - XP is novelty, not volume, and per-unit gathering rewards farming one node');
 }
 
 // ---------------------------------------------------------------- tutorial
 
 // Each step is completed by a rule in web/src/core/tutorial.ts keyed by id. If
-// the two drift apart the guide silently stalls on a step nothing can finish,
-// so read the rule names back out of the source and require an exact match.
+// a step has no rule it can never complete and the guide stalls forever.
 const ruleSource = readFileSync(join(ROOT, 'web/src/core/tutorial.ts'), 'utf8');
 const ruleBlock = ruleSource.match(/TUTORIAL_RULES[^{]*\{([\s\S]*?)\n\};/);
 if (!ruleBlock) fail('could not find TUTORIAL_RULES in web/src/core/tutorial.ts');
-const ruleIds = new Set([...ruleBlock[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]));
+const ruleIds = new Set([...(ruleBlock?.[1] ?? '').matchAll(/^\s{2}([a-z_]+):/gm)].map((m) => m[1]));
 
 const stepIds = new Set();
 for (const step of tutorial) {
@@ -239,99 +284,6 @@ for (const id of ruleIds) {
   if (!stepIds.has(id)) warn(`tutorial rule "${id}" has no step in content/tutorial.json and will never run`);
 }
 
-// Weapons need a damage value or they are decoration; anything with a damage
-// value that is not a weapon is a content mistake.
-for (const m of crafted) {
-  const isWeapon = (m.tags ?? []).includes('Weapon');
-  if (isWeapon && m.damage === undefined && !(m.tags ?? []).includes('Consumable')) {
-    warn(`weapon "${m.id}" has no damage value, so carrying it does nothing`);
-  }
-  if (m.damage !== undefined && !isWeapon) fail(`material "${m.id}" has damage but is not tagged Weapon`);
-}
-
-// ---------------------------------------------------------------- zone / gating sanity
-
-const gatherableIds = new Set();
-const firstZoneFor = new Map(); // materialId -> lowest zone level that spawns it
-
-for (const z of zones) {
-  if (!z.spawns?.length) fail(`zone "${z.id}" spawns nothing`);
-  let weightTotal = 0;
-  for (const s of z.spawns) {
-    const m = requireMaterial(s.material, `zone "${z.id}"`);
-    if (m && m.source !== 'gathered') fail(`zone "${z.id}" spawns "${s.material}", which is craft-only - only gathered materials can appear in the world`);
-    if (!(s.weight > 0)) fail(`zone "${z.id}" spawn "${s.material}" has non-positive weight`);
-    weightTotal += s.weight;
-    gatherableIds.add(s.material);
-    const prev = firstZoneFor.get(s.material);
-    if (prev === undefined || z.requiredLevel < prev) firstZoneFor.set(s.material, z.requiredLevel);
-  }
-  if (weightTotal <= 0) fail(`zone "${z.id}" has zero total spawn weight`);
-
-  for (const id of z.enemies ?? []) {
-    if (!enemyIds.has(id)) fail(`zone "${z.id}" spawns unknown enemy "${id}"`);
-  }
-  if (z.enemies?.length && !(z.enemyCount > 0)) fail(`zone "${z.id}" lists enemies but spawns none`);
-}
-
-for (const m of gathered) {
-  if (!gatherableIds.has(m.id)) warn(`gathered material "${m.id}" never spawns in any zone - it is unobtainable`);
-}
-
-// Earliest level at which a material can actually be held.
-const availableAt = new Map();
-function earliest(id) {
-  if (availableAt.has(id)) return availableAt.get(id);
-  availableAt.set(id, Infinity); // cycle guard; cycles are already reported above
-  const mat = materials.get(id);
-  let lvl;
-  if (!mat) lvl = Infinity;
-  else if (mat.source === 'gathered') lvl = firstZoneFor.get(id) ?? Infinity;
-  else {
-    const r = producedBy.get(id);
-    lvl = r.kind === 'alchemy'
-      ? Math.max(r.requiredLevel, progression.alchemyUnlockLevel)
-      : Math.max(r.requiredLevel, earliest(r.a), earliest(r.b));
-  }
-  availableAt.set(id, lvl);
-  return lvl;
-}
-for (const id of materials.keys()) earliest(id);
-
-for (const r of transmutation) {
-  const gate = Math.max(earliest(r.a), earliest(r.b));
-  if (gate > r.requiredLevel) {
-    warn(`transmutation "${r.id}" unlocks at level ${r.requiredLevel} but its inputs are not obtainable until level ${gate} - the recipe will look available before it is`);
-  }
-}
-
-// Every element an alchemy recipe wants must be reachable by decomposing something.
-const elementSources = new Map();
-for (const id of materials.keys()) {
-  for (const el of Object.keys(composition.get(id) ?? {})) {
-    if (!elementSources.has(el)) elementSources.set(el, []);
-    elementSources.get(el).push(id);
-  }
-}
-for (const e of elements) {
-  if (!elementSources.has(e.id)) warn(`element "${e.id}" is in no material's composition - it can never enter the pool`);
-}
-for (const r of alchemy) {
-  for (const el of Object.keys(r.requires)) {
-    if (!elementSources.has(el)) fail(`alchemy "${r.id}" requires "${el}", which no material decomposes into`);
-  }
-}
-
-// ---------------------------------------------------------------- level curve
-
-const { base, exponent } = progression.levelCurve;
-const xpTable = [0];
-let cumulative = 0;
-for (let lvl = 1; lvl < progression.maxLevel; lvl++) {
-  cumulative += Math.round((base * Math.pow(lvl, exponent)) / 5) * 5;
-  xpTable.push(cumulative);
-}
-
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -341,53 +293,49 @@ if (errors.length) {
   process.exit(1);
 }
 
+const xpTable = [0];
+for (const step of progression.levelCurve.thresholds) xpTable.push(xpTable[xpTable.length - 1] + step);
+
 const bundle = {
   generated: true,
   note: 'GENERATED FILE - do not edit. Source of truth is content/*.json; run npm run build:content.',
-  version: 1,
+  version: 2,
   progression: { ...progression, xpTable },
   tutorial,
   elements,
-  materials: [...materials.values()].map((m) => ({
+  materials: materials.map((m) => ({
     id: m.id,
     name: m.name,
     description: m.description,
-    tags: m.tags,
+    biome: m.biome,
+    elements: m.elements,
     shape: m.shape,
     color: m.color,
-    source: m.source,
-    tier: tier.get(m.id),
-    availableAtLevel: Number.isFinite(availableAt.get(m.id)) ? availableAt.get(m.id) : null,
-    composition: composition.get(m.id),
-    // Weapons only. Omitted entirely rather than defaulted, so "not a weapon"
-    // and "a weapon that does nothing" stay distinguishable.
-    ...(m.damage !== undefined ? { damage: m.damage } : {}),
   })),
-  transmutation,
+  biomes: biomes.map((b) => ({ ...b, materials: byBiome.get(b.id) })),
+  coliseum: { boundaryRadius: biomesFile.boundaryRadius, travelSeconds: biomesFile.travelSeconds },
+  crafting,
   alchemy,
-  zones,
-  enemies,
+  enemies: enemyTiers,
+  waves,
 };
 
 /**
  * Unity's JsonUtility cannot deserialize a dictionary-shaped object, so the
- * Unity copy of the bundle flattens every element map into an array of
- * {element, quantity} pairs - which is exactly the shape of ElementQuantity in
- * MaterialSO.cs. Same data, same build step, no second source of truth.
+ * Unity copy flattens every id-to-quantity map into an array of pairs. Same
+ * data, same build step, no second source of truth.
  */
-const toPairs = (record) =>
-  Object.entries(record ?? {}).map(([element, quantity]) => ({ element, quantity }));
+const toPairs = (record, keyName) =>
+  Object.entries(record ?? {}).map(([key, quantity]) => ({ [keyName]: key, quantity }));
 
 const unityBundle = {
   ...bundle,
-  note: bundle.note + ' Unity variant: element maps are flattened to {element,quantity} arrays for JsonUtility.',
-  materials: bundle.materials.map((m) => ({
-    ...m,
-    // JsonUtility has no nullable int; unreachable reads as 0 rather than null.
-    availableAtLevel: m.availableAtLevel ?? 0,
-    composition: toPairs(m.composition),
-  })),
-  alchemy: bundle.alchemy.map(({ requires, ...rest }) => ({ ...rest, requiredElements: toPairs(requires) })),
+  note: bundle.note + ' Unity variant: id-to-quantity maps are flattened to arrays for JsonUtility.',
+  crafting: {
+    ...crafting,
+    recipes: crafting.recipes.map(({ cost, ...rest }) => ({ ...rest, cost: toPairs(cost, 'material') })),
+  },
+  alchemy: alchemy.map(({ elements: required, ...rest }) => ({ ...rest, elements: toPairs(required, 'element') })),
 };
 
 const outputs = [
@@ -402,9 +350,9 @@ for (const [rel, payload] of outputs) {
 
 for (const w of warnings) console.warn(`   ! ${w}`);
 console.log(
-  `\n  content OK - ${elements.length} elements, ${materials.size} materials, ` +
-    `${transmutation.length} transmutations, ${alchemy.length} alchemy recipes, ` +
-    `${zones.length} zones, ${enemies.length} enemies` +
+  `\n  content OK - ${elements.length} elements, ${materials.length} materials across ${biomes.length} biomes, ` +
+    `${crafting.recipes.length} crafting recipes, ${alchemy.length} alchemy combinations, ` +
+    `${enemyTiers.length} enemy tiers` +
     `${warnings.length ? ` (${warnings.length} warning(s))` : ''}`,
 );
 console.log(`  wrote:\n${outputs.map(([rel]) => `    ${rel}`).join('\n')}\n`);

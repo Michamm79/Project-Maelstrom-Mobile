@@ -1,43 +1,43 @@
 /**
- * DOM HUD: top bar, gather prompt, orb bar, nav, and the bottom sheets
- * (pack / alchemy / codex / zones / menu).
+ * The HUD and the one menu.
  *
- * Kept apart from the canvas renderer on purpose - text, scrolling lists and
- * tap targets are things the browser is already good at, and native scrolling
- * feels far better on a phone than anything hand-rolled into a canvas.
+ * Canon describes a single place where the player works with what they hold -
+ * there is no separate inventory screen, because the orbs already give the
+ * at-a-glance view. Crafting and alchemy are two tabs of that one menu.
+ *
+ * The menu does not pause the world. Enemies keep moving and waves keep
+ * arriving while it is open, which makes opening it a risk decision rather than
+ * a free action - and puts a hard requirement on this file: every row has to be
+ * readable and actionable at a glance, because a menu that demands sustained
+ * attention while the world is trying to kill you is a menu that never gets
+ * opened when it matters.
+ *
+ * Kept apart from the canvas renderer on purpose: text, scrolling lists and tap
+ * targets are things the browser is already good at.
  */
 import { drawIcon, iconPad } from './icons';
-import { findRecipeForSelection, selectionSize, shortfall } from '../core/alchemy';
-import { levelProgress, xpAtLevelStart, xpAtNextLevel } from '../core/progression';
-import { countCombinable, previewPair, type PairOutlook } from '../core/transmutation';
-import { bestWeapon, playerDamage } from '../core/combat';
 import type { Content } from '../core/content';
-import type { OrbContainer } from '../core/orbContainer';
-import type { AlchemyRecipe, ElementId, Hand, MaterialId, ZoneId } from '../core/types';
+import type { Inventory } from '../core/inventory';
+import type { Crafting } from '../core/crafting';
+import type { Alchemy } from '../core/alchemy';
+import type { Progression } from '../core/progression';
+import type { CombinationId, ElementId, Hand, MaterialId, RecipeId, TutorialStep } from '../core/types';
 
-export type ActionMode = 'attack' | 'gather' | 'idle';
-
-export interface UiCallbacks {
-  /** The single context action button: attacks if it can, otherwise gathers. */
-  onAction: () => void;
-  onSkipTutorial: () => void;
-  onReplayTutorial: () => void;
-  onBenchOpened: () => void;
-  onGather: () => void;
-  onTransmute: () => void;
-  onUnloadOrb: (hand: Hand) => void;
-  onDecomposeOrb: (hand: Hand) => void;
-  onLoadFromPack: (material: MaterialId) => void;
-  /** Bench: put a material into a specific slot, replacing what's there. */
-  onPlaceInSlot: (hand: Hand, material: MaterialId) => void;
-  onAlchemize: (recipe: AlchemyRecipe) => void;
-  /** Table: mix a hand-picked set of elements. */
-  onMixSelection: (selection: Record<ElementId, number>) => void;
-  onTravel: (zone: ZoneId) => void;
-  onReset: () => void;
+export interface HudState {
+  inventory: Inventory;
+  crafting: Crafting;
+  alchemy: Alchemy;
+  progression: Progression;
+  selected: CombinationId | null;
 }
 
-type SheetBuilder = (body: HTMLElement) => void;
+export interface UiHooks {
+  onCraft(id: RecipeId): void;
+  onSelectCombination(id: CombinationId): void;
+}
+
+type Tone = 'info' | 'good' | 'bad' | 'big';
+type Tab = 'craft' | 'alchemy';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -51,22 +51,16 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 /**
- * Activate a control on pointerdown rather than click.
+ * Fire on pointerdown, not click.
  *
- * A browser does not synthesise a `click` for a touch that is part of a
- * multi-touch sequence. With one thumb holding the joystick, a second thumb on
- * a `click`-bound button therefore did nothing at all - which is exactly the
- * "can't pick anything up while moving" report. Binding pointerdown fixes it
- * and is the right behaviour for a game button anyway: an action should fire
- * the instant the thumb lands, not on release.
- *
- * The click listener stays for keyboard activation (Enter/Space on a focused
- * button raise a click with no pointerdown before it); the timestamp guard
- * swallows the synthesised click that follows a press we already handled.
+ * A browser does not synthesise a `click` for a touch that belongs to a
+ * multi-touch sequence, so a click-bound HUD control does nothing while the
+ * other thumb is on the stick - which is exactly when these get pressed. The
+ * click handler stays as the keyboard and mouse path, guarded so a real click
+ * following a pointerdown does not fire twice.
  */
 function onPress(target: HTMLElement, handler: () => void): void {
   let lastPress = 0;
-
   target.addEventListener(
     'pointerdown',
     (event) => {
@@ -77,7 +71,6 @@ function onPress(target: HTMLElement, handler: () => void): void {
     },
     { passive: false },
   );
-
   target.addEventListener('click', (event) => {
     if (event.timeStamp - lastPress < 700) return;
     handler();
@@ -85,171 +78,352 @@ function onPress(target: HTMLElement, handler: () => void): void {
 }
 
 export class Ui {
-  private readonly actionBtn: HTMLButtonElement;
-  private readonly actionGlyph: HTMLElement;
-  private readonly actionLabel: HTMLElement;
-  private readonly objective: HTMLElement;
-  private readonly objectiveTitle: HTMLElement;
-  private readonly objectiveHint: HTMLElement;
-  private readonly hpFill: HTMLElement;
-  private readonly hpText: HTMLElement;
+  private readonly toasts = el('div', 'toasts');
+  private readonly objective = el('div', 'objective');
+  private readonly place = el('div', 'place');
+  private readonly placeName = el('b');
+  private readonly placeMood = el('span');
+  private readonly vitals = el('div', 'vitals');
+  private readonly hpFill = el('i');
+  private readonly levelChip = el('div', 'level');
+  private readonly levelText = el('b');
+  private readonly xpFill = el('i');
+  private readonly orbBar = el('div', 'orbbar');
+  private readonly orbs: Record<Hand, HTMLElement> = {
+    left: el('div', 'orb'),
+    right: el('div', 'orb'),
+  };
+  private readonly carry = el('div', 'carry');
+  private readonly menuBtn = el('button', 'nav-btn');
+  private readonly sheet = el('div', 'sheet');
+  private readonly sheetBody = el('div', 'body');
+  private readonly tabs = el('div', 'tabs');
+  private readonly castBar = el('div', 'castbar');
 
-  private readonly zoneName: HTMLElement;
-  private readonly zoneSub: HTMLElement;
-  private readonly levelNum: HTMLElement;
-  private readonly xpText: HTMLElement;
-  private readonly xpFill: HTMLElement;
-
-  private readonly orbEls: Record<Hand, { root: HTMLElement; icon: HTMLElement; name: HTMLElement }>;
-  private readonly craftBtn: HTMLButtonElement;
-  private readonly navAlchemy: HTMLButtonElement;
-
-  private readonly scrim: HTMLElement;
-  private readonly sheet: HTMLElement;
-  private readonly sheetTitle: HTMLElement;
-  private readonly sheetBody: HTMLElement;
-  private readonly toasts: HTMLElement;
-
-  private openBuilder: SheetBuilder | null = null;
-  private actionMode: ActionMode = 'idle';
-  /** Bench view preference: hide everything that cannot react right now. */
-  private benchOnlyReacting = false;
-  private shownHp = -1;
-  private shownMaxHp = -1;
-  private actionSubject: string | null = null;
-  private codexTab: 'materials' | 'transmutation' | 'alchemy' = 'materials';
-
-  /** Which bench slot the next tapped material goes into. */
-  private benchSlot: Hand = 'left';
-  /** Elements the player has dialled up on the alchemy table, not yet spent. */
-  private mix: Record<ElementId, number> = {};
+  private tab: Tab = 'craft';
+  private open = false;
+  private state: HudState | null = null;
+  private lastHp = -1;
 
   constructor(
-    root: HTMLElement,
+    private readonly root: HTMLElement,
     private readonly content: Content,
-    private readonly callbacks: UiCallbacks,
+    private readonly hooks: UiHooks,
   ) {
-    root.innerHTML = '';
+    this.buildTopBar();
+    this.buildOrbs();
+    this.buildCastBar();
+    this.buildSheet();
+    this.root.append(this.toasts);
+  }
 
-    // -------------------------------------------------------------- top bar
-    const topbar = el('div', 'topbar');
-    topbar.dataset.ui = '';
+  // ---------------------------------------------------------------- chrome
 
-    const zoneBtn = el('button', 'zone-btn');
-    this.zoneName = el('span', 'name');
-    this.zoneSub = el('span', 'sub');
-    zoneBtn.append(this.zoneName, this.zoneSub);
-    zoneBtn.addEventListener('click', () => this.openZones());
+  private buildTopBar(): void {
+    const bar = el('div', 'topbar');
 
-    const level = el('div', 'level');
+    this.place.append(this.placeName, this.placeMood);
+
+    const hp = el('div', 'hpbar');
+    hp.append(this.hpFill);
+    this.vitals.append(hp);
+
+    const xp = el('div', 'xpbar');
+    xp.append(this.xpFill);
     const levelRow = el('div', 'row');
-    this.levelNum = el('b', undefined, 'Lv 1');
-    this.xpText = el('span', undefined, '0 / 0');
-    levelRow.append(this.levelNum, this.xpText);
-    const xpbar = el('div', 'xpbar');
-    this.xpFill = el('i');
-    xpbar.append(this.xpFill);
-    level.append(levelRow, xpbar);
+    levelRow.append(this.levelText);
+    this.levelChip.append(levelRow, xp);
 
-    topbar.append(zoneBtn, level);
-
-    // -------------------------------------------------------------- vitals
-    const vitals = el('div', 'vitals');
-    vitals.dataset.ui = '';
-    this.hpFill = el('i');
-    const hpBar = el('div', 'hpbar');
-    hpBar.append(this.hpFill);
-    this.hpText = el('span', 'hptext', '');
-    vitals.append(hpBar, this.hpText);
-
-    // -------------------------------------------------------------- guide banner
-    this.objective = el('div', 'objective');
-    this.objective.dataset.ui = '';
+    bar.append(this.place, this.vitals, this.levelChip);
+    this.root.append(bar, this.objective);
     this.objective.hidden = true;
-    this.objectiveTitle = el('b');
-    this.objectiveHint = el('span');
-    const skipGuide = el('button', 'oskip', 'Skip');
-    skipGuide.setAttribute('aria-label', 'Skip the guide');
-    skipGuide.addEventListener('click', () => this.callbacks.onSkipTutorial());
-    const objectiveText = el('div', 'otext');
-    objectiveText.append(this.objectiveTitle, this.objectiveHint);
-    this.objective.append(objectiveText, skipGuide);
+  }
 
-    // -------------------------------------------------------------- action button
-    const actionWrap = el('div', 'action-wrap');
-    actionWrap.dataset.ui = '';
-    this.actionBtn = el('button', 'action');
-    this.actionGlyph = el('span', 'aglyph', '');
-    this.actionLabel = el('span', 'alabel', '');
-    this.actionBtn.append(this.actionGlyph, this.actionLabel);
-    onPress(this.actionBtn, () => this.callbacks.onAction());
-    actionWrap.append(this.actionBtn);
+  private buildOrbs(): void {
+    for (const hand of ['left', 'right'] as const) this.orbBar.append(this.orbs[hand]);
+    const wrap = el('div', 'orbwrap');
 
-    // -------------------------------------------------------------- orb bar
-    const orbbar = el('div', 'orbbar');
-    orbbar.dataset.ui = '';
-    this.orbEls = {
-      left: this.buildOrbChip('left'),
-      right: this.buildOrbChip('right'),
-    };
+    this.menuBtn.textContent = 'Menu';
+    onPress(this.menuBtn, () => this.toggleSheet());
 
-    this.craftBtn = el('button', 'craft');
-    onPress(this.craftBtn, () => this.callbacks.onTransmute());
-    orbbar.append(this.orbEls.left.root, this.craftBtn, this.orbEls.right.root);
+    wrap.append(this.orbBar, this.carry, this.menuBtn);
+    this.root.append(wrap);
+  }
 
-    // -------------------------------------------------------------- nav
-    const nav = el('div', 'nav');
-    nav.dataset.ui = '';
-    const navPack = this.buildNav('Bench', '▤', () => this.openBench());
-    this.navAlchemy = this.buildNav('Alchemy', '⚗', () => this.openAlchemy());
-    const navCodex = this.buildNav('Codex', '☷', () => this.openCodex());
-    const navMenu = this.buildNav('Menu', '≡', () => this.openMenu());
-    nav.append(navPack, this.navAlchemy, navCodex, navMenu);
+  /** The two or three combinations the player actually has, as one row of buttons. */
+  private buildCastBar(): void {
+    this.root.append(this.castBar);
+  }
 
-    // -------------------------------------------------------------- sheets
-    this.scrim = el('div', 'scrim');
-    this.scrim.dataset.ui = '';
-    this.scrim.addEventListener('click', () => this.closeSheet());
-
-    this.sheet = el('div', 'sheet');
-    this.sheet.dataset.ui = '';
+  private buildSheet(): void {
+    // A real <header>, because the sheet CSS already styles `.sheet header`.
     const header = el('header');
-    this.sheetTitle = el('h2', undefined, '');
-    const close = el('button', 'close', '✕');
-    close.setAttribute('aria-label', 'Close');
-    close.addEventListener('click', () => this.closeSheet());
-    header.append(this.sheetTitle, close);
-    this.sheetBody = el('div', 'body');
-    this.sheet.append(header, this.sheetBody);
+    header.append(el('h2', undefined, 'Gauntlets'));
+    const close = el('button', 'close', '×');
+    onPress(close, () => this.closeSheet());
+    header.append(close);
 
-    this.toasts = el('div', 'toasts');
+    for (const [id, label] of [
+      ['craft', 'Craft'],
+      ['alchemy', 'Alchemy'],
+    ] as const) {
+      const button = el('button', undefined, label);
+      button.dataset.tab = id;
+      onPress(button, () => {
+        this.tab = id;
+        this.renderSheet();
+      });
+      this.tabs.append(button);
+    }
 
-    root.append(topbar, vitals, this.objective, this.toasts, actionWrap, orbbar, nav, this.scrim, this.sheet);
+    // Canon: the world keeps running while this is open, and the player should
+    // be told that rather than discovering it.
+    const warn = el('p', 'note', 'The world does not stop while this is open.');
+
+    this.sheet.append(header, this.tabs, warn, this.sheetBody);
+    this.sheet.hidden = true;
+    this.root.append(this.sheet);
   }
 
-  private buildNav(label: string, icon: string, onClick: () => void): HTMLButtonElement {
-    const button = el('button');
-    button.append(el('span', 'ico', icon), el('span', undefined, label));
-    onPress(button, onClick);
-    return button;
+  // ---------------------------------------------------------------- state in
+
+  bind(state: HudState): void {
+    this.state = state;
+    this.refresh(state);
   }
+
+  refresh(state: HudState): void {
+    this.state = state;
+    this.renderOrbs(state);
+    this.renderLevel(state);
+    this.renderCastBar(state);
+    if (this.open) this.renderSheet();
+  }
+
+  /** Called every frame, so it only touches the DOM when a number changed. */
+  setVitals(hp: number, maxHp: number): void {
+    const rounded = Math.ceil(hp);
+    if (rounded === this.lastHp) return;
+    this.lastHp = rounded;
+    this.hpFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`;
+    this.vitals.classList.toggle('hurt', hp / maxHp < 0.35);
+  }
+
+  setPlace(name: string, mood: string): void {
+    if (this.placeName.textContent === name) return;
+    this.placeName.textContent = name;
+    this.placeMood.textContent = mood;
+  }
+
+  setObjective(step: TutorialStep | null): void {
+    this.objective.hidden = step === null;
+    if (!step) return;
+    this.objective.replaceChildren(el('b', undefined, step.title), el('span', undefined, step.hint));
+  }
+
+  // ---------------------------------------------------------------- orbs
 
   /**
-   * A compact orb chip. The unload and decompose actions moved into the bench:
-   * on a landscape phone the old card plus its two small buttons took a third of the
-   * screen, and both actions already have room in the sheet.
+   * Canon: miniatures of held materials float and swirl inside the gauntlets,
+   * reflecting real amounts - collect a little, see a little. The orbs are a
+   * readout of the inventory and nothing is ever loaded into them.
    */
-  private buildOrbChip(hand: Hand) {
-    const root = el('button', 'orbchip');
-    const icon = el('span', 'oicon');
-    const name = el('span', 'onm', 'empty');
-    root.title = hand === 'left' ? 'Left orb' : 'Right orb';
-    root.append(icon, name);
-    onPress(root, () => {
-      this.benchSlot = hand;
-      this.openBench();
-    });
-    return { root, icon, name };
+  private renderOrbs(state: HudState): void {
+    for (const hand of ['left', 'right'] as const) {
+      const host = this.orbs[hand];
+      const held = state.inventory.orbView(hand);
+      host.replaceChildren();
+
+      const fill = el('i', 'fill');
+      fill.style.height = `${state.inventory.fillFraction * 100}%`;
+      host.append(fill);
+
+      // Cap what is drawn: past a handful the orb reads as "a lot" anyway, and
+      // sixty little canvases a frame is not worth the truth.
+      for (const stack of held.slice(0, 6)) {
+        const mote = el('span', 'mote');
+        mote.append(this.icon(stack.material, 18));
+        if (stack.quantity > 1) mote.append(el('em', undefined, String(stack.quantity)));
+        host.append(mote);
+      }
+    }
+
+    const { used, capacity } = state.inventory;
+    this.carry.textContent = `${used} / ${capacity}`;
+    this.carry.classList.toggle('full', state.inventory.full);
+  }
+
+  private renderLevel(state: HudState): void {
+    this.levelText.textContent = `Lv ${state.progression.level}`;
+    this.xpFill.style.width = `${state.progression.levelProgress * 100}%`;
+  }
+
+  // ---------------------------------------------------------------- casting
+
+  private renderCastBar(state: HudState): void {
+    const level = state.progression.level;
+    const available = state.alchemy
+      .outlooks(state.inventory, level)
+      .filter((o) => o.unlocked);
+
+    this.castBar.replaceChildren();
+    for (const outlook of available) {
+      const button = el('button', 'cast');
+      button.classList.toggle('on', state.selected === outlook.combination.id);
+      button.classList.toggle('short', !outlook.can);
+      button.append(el('b', undefined, outlook.combination.name));
+      button.append(el('span', undefined, this.elementLine(outlook.combination.elements)));
+      onPress(button, () => this.hooks.onSelectCombination(outlook.combination.id));
+      this.castBar.append(button);
+    }
+  }
+
+  private elementLine(elements: Record<string, number>): string {
+    return Object.entries(elements)
+      .map(([id, n]) => `${this.content.element(id).symbol}×${n}`)
+      .join(' ');
+  }
+
+  // ---------------------------------------------------------------- the menu
+
+  get sheetOpen(): boolean {
+    return this.open;
+  }
+
+  toggleSheet(): void {
+    this.open = !this.open;
+    this.sheet.hidden = !this.open;
+    this.sheet.classList.toggle('on', this.open);
+    if (this.open) this.renderSheet();
+  }
+
+  closeSheet(): void {
+    if (!this.open) return;
+    this.toggleSheet();
+  }
+
+  private renderSheet(): void {
+    const state = this.state;
+    if (!state) return;
+
+    for (const button of this.tabs.querySelectorAll('button')) {
+      button.classList.toggle('on', button.dataset.tab === this.tab);
+    }
+
+    this.sheetBody.replaceChildren();
+    if (this.tab === 'craft') this.renderCraft(state);
+    else this.renderAlchemy(state);
+  }
+
+  private renderCraft(state: HudState): void {
+    const rows = state.crafting.outlooks(state.inventory);
+    for (const outlook of rows) {
+      const row = el('div', 'row-item');
+      row.classList.toggle('done', outlook.built);
+      row.classList.toggle('short', !outlook.can && !outlook.built);
+
+      const head = el('div', 'head');
+      head.append(el('b', undefined, outlook.recipe.name));
+      head.append(el('em', undefined, this.effectLabel(outlook.recipe.effect)));
+      row.append(head);
+
+      const cost = el('div', 'cost');
+      for (const [id, qty] of Object.entries(outlook.recipe.cost)) {
+        const have = state.inventory.count(id);
+        const chip = el('span', have >= qty ? 'chip' : 'chip miss');
+        chip.append(this.icon(id, 16));
+        chip.append(document.createTextNode(`${have}/${qty}`));
+        cost.append(chip);
+      }
+      row.append(cost);
+
+      row.append(el('p', undefined, outlook.recipe.description));
+
+      if (outlook.built) {
+        row.append(el('span', 'tag', 'Built'));
+      } else {
+        const button = el('button', 'go', 'Craft');
+        button.disabled = !outlook.can;
+        onPress(button, () => {
+          if (outlook.can) this.hooks.onCraft(outlook.recipe.id);
+        });
+        row.append(button);
+      }
+      this.sheetBody.append(row);
+    }
+  }
+
+  private effectLabel(effect: { stat: string; amount: number }): string {
+    const names: Record<string, string> = {
+      carryCapacity: 'Carry',
+      pullRadius: 'Pull radius',
+      pullSpeed: 'Pull speed',
+    };
+    return `${names[effect.stat] ?? effect.stat} +${effect.amount}`;
+  }
+
+  private renderAlchemy(state: HudState): void {
+    const level = state.progression.level;
+
+    if (!state.alchemy.menuInteractive(level)) {
+      // Visible but non-interactive before Level 2, "so the player knows
+      // something is coming". Showing a locked menu is the point; hiding it
+      // would remove the anticipation canon is explicitly buying here.
+      const locked = el('div', 'locked');
+      locked.append(el('b', undefined, 'The workshop is not open to you yet.'));
+      locked.append(
+        el(
+          'p',
+          undefined,
+          `Level ${this.content.progression.alchemyUnlockLevel} opens it. Until then you have what you were handed.`,
+        ),
+      );
+      this.sheetBody.append(locked);
+    }
+
+    const pool = state.inventory.elementPool();
+    const poolRow = el('div', 'pool');
+    for (const element of this.content.elements) {
+      const n = pool[element.id] ?? 0;
+      const chip = el('span', n > 0 ? 'chip' : 'chip miss');
+      const dot = el('i');
+      dot.style.background = element.color;
+      chip.append(dot, document.createTextNode(`${element.symbol} ${n}`));
+      chip.title = `${element.name} - ${element.domain}`;
+      poolRow.append(chip);
+    }
+    this.sheetBody.append(poolRow);
+
+    for (const outlook of state.alchemy.outlooks(state.inventory, level)) {
+      const row = el('div', 'row-item');
+      row.classList.toggle('short', !outlook.can);
+      row.classList.toggle('locked', !outlook.unlocked);
+
+      const head = el('div', 'head');
+      head.append(el('b', undefined, outlook.combination.name));
+      head.append(el('em', undefined, this.elementLine(outlook.combination.elements)));
+      row.append(head);
+      row.append(el('p', undefined, outlook.combination.description));
+
+      if (!outlook.unlocked) {
+        row.append(el('span', 'tag', `Locked until level ${this.content.progression.alchemyUnlockLevel}`));
+      } else {
+        const button = el('button', 'go', state.selected === outlook.combination.id ? 'Ready' : 'Ready this');
+        onPress(button, () => this.hooks.onSelectCombination(outlook.combination.id));
+        row.append(button);
+      }
+      this.sheetBody.append(row);
+    }
+  }
+
+  // ---------------------------------------------------------------- toasts
+
+  toast(text: string, tone: Tone = 'info'): void {
+    const node = el('div', `toast ${tone}`, text);
+    this.toasts.append(node);
+    setTimeout(() => node.classList.add('out'), tone === 'big' ? 2200 : 1500);
+    setTimeout(() => node.remove(), tone === 'big' ? 2700 : 2000);
+    while (this.toasts.childElementCount > 4) this.toasts.firstElementChild?.remove();
   }
 
   // ---------------------------------------------------------------- icons
@@ -267,769 +441,15 @@ export class Ui {
       const def = this.content.material(material);
       ctx.scale(dpr, dpr);
       ctx.translate(size / 2, size / 2);
-      // Divided by the pad so the whole composite - shadow included - lands inside
-      // the cell instead of being clipped at its edges.
+      // Divided by the pad so the whole composite - shadow included - lands
+      // inside the box instead of being clipped at its edges.
       drawIcon(ctx, def.shape, def.color, size / iconPad);
     }
     return canvas;
   }
 
-  private setIcon(host: HTMLElement, material: MaterialId | null, size: number): void {
-    host.replaceChildren(material ? this.icon(material, size) : el('span'));
-  }
-
-  private elementChip(element: string, count: number, missing = false): HTMLElement {
-    const def = this.content.element(element);
-    const chip = el('span', missing ? 'chip miss' : 'chip');
-    const dot = el('i');
-    dot.style.background = def.color;
-    chip.append(dot, document.createTextNode(`${def.name} ${count}`));
-    return chip;
-  }
-
-  // ---------------------------------------------------------------- refresh
-
-  refresh(orb: OrbContainer): void {
-    const { state } = orb;
-    const zone = this.content.zone(state.zoneId);
-    this.zoneName.textContent = zone.name;
-    this.zoneSub.textContent = zone.subtitle;
-
-    const config = this.content.progression;
-    this.levelNum.textContent = `Lv ${state.level}`;
-    const next = xpAtNextLevel(config, state.level);
-    const start = xpAtLevelStart(config, state.level);
-    this.xpText.textContent = next === null ? 'max' : `${state.xp - start} / ${next - start}`;
-    this.xpFill.style.width = `${levelProgress(config, state.xp, state.level) * 100}%`;
-
-    for (const hand of ['left', 'right'] as Hand[]) {
-      const material = orb.orb(hand);
-      const ui = this.orbEls[hand];
-      ui.root.classList.toggle('filled', material !== null);
-      this.setIcon(ui.icon, material, 30);
-      ui.name.textContent = material ? this.content.material(material).name : 'empty';
-    }
-
-    this.setVitals(orb.state.vitals.hp, orb.state.vitals.maxHp);
-
-    this.refreshCraftButton(orb);
-
-    this.navAlchemy.disabled = !orb.alchemyUnlocked;
-    const brewable = orb.alchemyUnlocked && orb.getAvailableAlchemyRecipes().length > 0;
-    this.navAlchemy.querySelector('.dot')?.remove();
-    if (brewable) this.navAlchemy.append(el('span', 'dot'));
-
-    // A sheet left open (the bench, say) must follow the state that changed under it.
-    if (this.openBuilder && this.sheet.classList.contains('on')) this.rebuildSheet();
-  }
-
-  /**
-   * Health, updated every frame. Kept apart from refresh() because that rebuilds
-   * icons and any open sheet: health changes far too often to pay for that, and
-   * before this split the bar only moved when some unrelated event forced a
-   * refresh, so it sat a hit behind the damage it was meant to show.
-   */
-  /** Show the current guide step, or pass null to clear the banner. */
-  setObjective(step: { title: string; hint: string } | null): void {
-    if (!step) {
-      this.objective.hidden = true;
-      return;
-    }
-    this.objectiveTitle.textContent = step.title;
-    this.objectiveHint.textContent = step.hint;
-    this.objective.hidden = false;
-  }
-
-  setVitals(hp: number, maxHp: number): void {
-    const shown = Math.ceil(Math.max(0, hp));
-    if (shown === this.shownHp && maxHp === this.shownMaxHp) return;
-    this.shownHp = shown;
-    this.shownMaxHp = maxHp;
-
-    const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
-    this.hpFill.style.width = `${ratio * 100}%`;
-    this.hpFill.classList.toggle('low', ratio <= 0.3);
-    this.hpText.textContent = `${shown}/${maxHp}`;
-  }
-
-  private refreshCraftButton(orb: OrbContainer): void {
-    const button = this.craftBtn;
-    button.replaceChildren();
-    button.classList.remove('ready', 'locked');
-
-    const recipe = orb.peekTransmutation();
-    if (recipe) {
-      button.classList.add('ready');
-      button.disabled = false;
-      button.append(el('span', 'verb', 'Transmute'));
-      const icon = el('span');
-      this.setIcon(icon, recipe.result, 30);
-      button.append(icon, el('span', 'out', this.content.material(recipe.result).name));
-      return;
-    }
-
-    const pair = orb.leftOrb && orb.rightOrb ? this.content.recipeByPair(orb.leftOrb, orb.rightOrb) : undefined;
-    if (pair) {
-      // A real recipe exists but is level-gated: say so rather than "no reaction",
-      // which would read as a dead end the player should stop trying.
-      button.classList.add('locked');
-      button.disabled = true;
-      button.append(el('span', 'verb', 'Locked'));
-      button.append(el('span', 'out', `needs Lv ${pair.requiredLevel}`));
-      return;
-    }
-
-    button.disabled = true;
-    button.append(el('span', 'verb', 'Transmute'));
-    button.append(
-      el('span', 'out', !orb.leftOrb || !orb.rightOrb ? 'fill both orbs' : 'no reaction'),
-    );
-  }
-
-  /** Empty the alchemy tray, after a successful mix consumes it. */
-  clearMix(): void {
-    this.mix = {};
-    if (this.sheetOpen) this.rebuildSheet();
-  }
-
-  /**
-   * Drive the one context button. Attack wins over gather whenever an enemy is
-   * in reach, so a fight is never lost to picking up a stick by mistake.
-   */
-  setAction(mode: ActionMode, subject: string | null): void {
-    if (mode === this.actionMode && subject === this.actionSubject) return;
-    this.actionMode = mode;
-    this.actionSubject = subject;
-
-    this.actionBtn.classList.toggle('attack', mode === 'attack');
-    this.actionBtn.classList.toggle('gather', mode === 'gather');
-    this.actionBtn.disabled = mode === 'idle';
-
-    if (mode === 'attack') {
-      this.actionGlyph.textContent = '⚔';
-      this.actionLabel.textContent = subject ?? 'Attack';
-      this.actionBtn.setAttribute('aria-label', `Attack ${subject ?? ''}`.trim());
-    } else if (mode === 'gather') {
-      this.actionGlyph.textContent = '✋';
-      this.actionLabel.textContent = subject ?? 'Gather';
-      this.actionBtn.setAttribute('aria-label', `Gather ${subject ?? ''}`.trim());
-    } else {
-      // Still show a real glyph when there is nothing in range: an empty circle
-      // reads as a broken button rather than an idle one.
-      this.actionGlyph.textContent = '◎';
-      this.actionLabel.textContent = 'nothing near';
-      this.actionBtn.setAttribute('aria-label', 'No action available');
-    }
-  }
-
-  // ---------------------------------------------------------------- sheets
-
-  private openSheet(title: string, build: SheetBuilder): void {
-    this.sheetTitle.textContent = title;
-    this.openBuilder = build;
-    this.sheetBody.replaceChildren();
-    build(this.sheetBody);
-    this.sheet.classList.add('on');
-    this.scrim.classList.add('on');
-    this.sheetBody.scrollTop = 0;
-  }
-
-  closeSheet(): void {
-    this.sheet.classList.remove('on');
-    this.scrim.classList.remove('on');
-    this.openBuilder = null;
-  }
-
-  /**
-   * Re-run the open sheet's builder in place, preserving scroll position.
-   * The bench and the alchemy table both hold selection state that changes on
-   * every tap, and rebuilding is simpler to keep correct than patching nodes.
-   */
-  private rebuildSheet(): void {
-    if (!this.openBuilder) return;
-    const scroll = this.sheetBody.scrollTop;
-    this.sheetBody.replaceChildren();
-    this.openBuilder(this.sheetBody);
-    this.sheetBody.scrollTop = scroll;
-  }
-
-  get sheetOpen(): boolean {
-    return this.sheet.classList.contains('on');
-  }
-
-  /** Re-run the open sheet's builder. Used after an action changes its contents. */
-  private orbRef: OrbContainer | null = null;
-
-  bind(orb: OrbContainer): void {
-    this.orbRef = orb;
-  }
-
-  private requireOrb(): OrbContainer {
-    if (!this.orbRef) throw new Error('Ui.bind(orb) was never called');
-    return this.orbRef;
-  }
-
-  /**
-   * The transmutation bench: both orb slots and everything you are carrying, in
-   * one view. Tap a slot to target it, tap a material to place it there -
-   * replacing whatever was in it, which goes back to the pack.
-   */
-  openBench(): void {
-    this.callbacks.onBenchOpened();
-    this.openSheet('Transmutation Bench', (body) => {
-      const orb = this.requireOrb();
-
-      // ---- the two slots, plus what they would make
-      const slots = el('div', 'bench');
-      for (const hand of ['left', 'right'] as Hand[]) {
-        const material = orb.orb(hand);
-        const slot = el('button', 'bslot');
-        slot.classList.toggle('sel', this.benchSlot === hand);
-        slot.classList.toggle('filled', material !== null);
-        slot.setAttribute('aria-pressed', String(this.benchSlot === hand));
-
-        const iconBox = el('span', 'bicon');
-        this.setIcon(iconBox, material, 46);
-        slot.append(
-          el('span', 'blabel', hand === 'left' ? 'Left orb' : 'Right orb'),
-          iconBox,
-          el('span', 'bname', material ? this.content.material(material).name : 'empty'),
-        );
-        slot.addEventListener('click', () => {
-          this.benchSlot = hand;
-          this.rebuildSheet();
-        });
-        slots.append(slot);
-      }
-      body.append(slots);
-
-      // ---- what you can do to the targeted slot
-      // These moved off the HUD chips: two 30px buttons per orb ate a third of a
-      // landscape screen for actions nobody takes mid-fight.
-      const selected = orb.orb(this.benchSlot);
-      const acts = el('div', 'bacts');
-      const unload = el('button', 'ghost', 'Unload to pack');
-      unload.disabled = selected === null;
-      unload.addEventListener('click', () => {
-        this.callbacks.onUnloadOrb(this.benchSlot);
-        this.rebuildSheet();
-      });
-      const decompose = el('button', 'ghost', 'Decompose');
-      decompose.disabled = selected === null;
-      decompose.addEventListener('click', () => {
-        this.callbacks.onDecomposeOrb(this.benchSlot);
-        this.rebuildSheet();
-      });
-      acts.append(unload, decompose);
-      body.append(acts);
-
-      // There is no equip slot by design - carrying the weapon is equipping it.
-      // That is invisible unless it is stated, so state it.
-      const carried = orb.carried();
-      const weapon = bestWeapon(this.content, carried);
-      const dmg = el('div', 'dmgline');
-      dmg.append(el('b', undefined, `${playerDamage(this.content, carried)} damage`));
-      dmg.append(
-        el(
-          'span',
-          undefined,
-          weapon
-            ? `bare hands + ${this.content.material(weapon.material).name} (⚔ below). Carrying a better weapon is how you equip it.`
-            : 'bare hands. Craft or carry a weapon and it counts automatically - there is no equip slot.',
-        ),
-      );
-      body.append(dmg);
-
-      // ---- result preview
-      const recipe = orb.peekTransmutation();
-      const locked =
-        !recipe && orb.leftOrb && orb.rightOrb
-          ? this.content.recipeByPair(orb.leftOrb, orb.rightOrb)
-          : undefined;
-
-      const out = el('div', 'boutcome');
-      if (recipe) {
-        out.classList.add('ok');
-        const icon = el('span');
-        this.setIcon(icon, recipe.result, 34);
-        out.append(icon);
-        const meta = el('div', 'meta');
-        meta.append(el('b', undefined, this.content.material(recipe.result).name));
-        meta.append(el('span', undefined, `+${recipe.xp} XP on discovery`));
-        out.append(meta);
-        const go = el('button', 'go', 'Transmute');
-        go.addEventListener('click', () => this.callbacks.onTransmute());
-        out.append(go);
-      } else if (locked) {
-        out.classList.add('locked');
-        out.append(el('b', undefined, `Locked — needs level ${locked.requiredLevel}`));
-      } else if (orb.leftOrb && orb.rightOrb) {
-        out.append(el('b', undefined, 'No reaction between these two.'));
-      } else {
-        out.append(el('b', undefined, 'Fill both orbs to see what they make.'));
-      }
-      body.append(out);
-
-      // ---- carried materials
-      const items = orb.packContents();
-      const otherHand = this.benchSlot === 'left' ? 'right' : 'left';
-      const partnerId = orb.orb(otherHand);
-      const reactive = countCombinable(
-        this.content,
-        items.map((i) => i.material),
-        partnerId,
-        orb.playerLevel,
-      );
-
-      let note: string;
-      if (items.length === 0) {
-        note = 'You are carrying nothing yet.';
-      } else if (partnerId === null) {
-        note = `Carrying ${items.length} kind${items.length === 1 ? '' : 's'} — tap one to place it in the ${this.benchSlot} orb.`;
-      } else {
-        const partnerName = this.content.material(partnerId).name;
-        note =
-          reactive === 0
-            ? `Nothing you are carrying reacts with ${partnerName}. Try a different pairing.`
-            : `${reactive} of ${items.length} react with ${partnerName} — those are lit up.`;
-      }
-      body.append(el('p', 'note', note));
-
-      if (items.length === 0) {
-        body.append(
-          el('div', 'empty', 'Gather materials in the world. Anything you craft lands here too.'),
-        );
-        return;
-      }
-
-      // Whatever sits in the OTHER orb is what a tapped material would react
-      // with, so that is what decides the highlighting.
-      const partner = orb.orb(this.benchSlot === 'left' ? 'right' : 'left');
-      const equipped = bestWeapon(this.content, orb.carried());
-
-      // Resolve every material's outlook once: it decides the styling, the
-      // order, and whether the filter keeps it.
-      const RANK: Record<PairOutlook, number> = { combines: 0, locked: 1, inert: 2 };
-      const rows = items.map((item) => ({
-        ...item,
-        preview: previewPair(this.content, item.material, partner, orb.playerLevel),
-      }));
-
-      // Sort reacting to the top. A pack of forty with two useful entries is
-      // otherwise a scrolling exercise, and the two that matter are below the
-      // fold exactly when you need them. Ties keep pack order, so nothing
-      // jumps around for reasons the player cannot see.
-      if (partner !== null) {
-        rows.sort((a, b) => RANK[a.preview.outlook] - RANK[b.preview.outlook]);
-      }
-
-      // The filter only means anything once there is something to react with.
-      const hidden = partner === null
-        ? 0
-        : rows.filter((r) => r.preview.outlook !== 'combines'
-            && orb.orb(this.benchSlot) !== r.material).length;
-
-      if (partner !== null && hidden > 0) {
-        const toggle = el('button', 'filterchip');
-        toggle.classList.toggle('on', this.benchOnlyReacting);
-        toggle.setAttribute('aria-pressed', String(this.benchOnlyReacting));
-        toggle.append(
-          el('span', 'box', this.benchOnlyReacting ? '✓' : ''),
-          el('span', undefined, 'Only what reacts'),
-          el('span', 'cnt', this.benchOnlyReacting ? `${hidden} hidden` : `hides ${hidden}`),
-        );
-        toggle.addEventListener('click', () => {
-          this.benchOnlyReacting = !this.benchOnlyReacting;
-          this.rebuildSheet();
-        });
-        body.append(toggle);
-      }
-
-      const visible = this.benchOnlyReacting && partner !== null
-        // Never hide what is already in the slot you are editing: vanishing
-        // your own current selection reads as a bug, not as a filter.
-        ? rows.filter((r) => r.preview.outlook === 'combines' || orb.orb(this.benchSlot) === r.material)
-        : rows;
-
-      const grid = el('div', 'grid');
-      for (const { material, count, preview } of visible) {
-        const def = this.content.material(material);
-        const cell = el('button', 'cell');
-        cell.append(this.icon(material, 38), el('span', 'nm', def.name));
-        // Only badge a stack: a lone item needs no "1" cluttering the grid.
-        if (count > 1) cell.append(el('span', 'ct', String(count)));
-        if (orb.orb(this.benchSlot) === material) cell.classList.add('here');
-
-        // The weapon actually counting toward your damage, marked where you
-        // would look for it. There is no equip slot, so this is the only way
-        // to tell which of three blades in the pack is doing the work.
-        if (equipped && equipped.material === material) {
-          const mark = el('span', 'wep', '⚔');
-          mark.title = `In use - ${equipped.damage} damage`;
-          cell.append(mark);
-        }
-
-        const { outlook, recipe } = preview;
-        if (outlook === 'inert') {
-          cell.classList.add('inert');
-          cell.title = `No reaction with ${this.content.material(partner!).name}`;
-        } else if (outlook === 'locked' && recipe) {
-          cell.classList.add('soon');
-          cell.append(el('span', 'lv', `Lv ${recipe.requiredLevel}`));
-          cell.title = `Reacts at level ${recipe.requiredLevel}`;
-        } else if (partner !== null) {
-          cell.classList.add('reacts');
-        }
-
-        // Click, not onPress: this grid scrolls, and activating on pointerdown
-        // would place a material the moment you drag to scroll past it. The
-        // multi-touch problem onPress solves does not apply in a sheet - it is
-        // modal, so you are not holding the stick while you tap here.
-        cell.addEventListener('click', () => this.callbacks.onPlaceInSlot(this.benchSlot, material));
-        grid.append(cell);
-      }
-      body.append(grid);
-    });
-  }
-
-  /**
-   * The alchemy table: every element laid out like a periodic table, those you
-   * actually hold lit up. Dial quantities to mix a combination by hand, or pick
-   * a known recipe from the list below to fill the selection in one tap.
-   */
-  openAlchemy(): void {
-    this.openSheet('Alchemy Table', (body) => {
-      const orb = this.requireOrb();
-
-      if (!orb.alchemyUnlocked) {
-        body.append(
-          el('div', 'empty', `Alchemy unlocks at level ${this.content.progression.alchemyUnlockLevel}. Break a material down with ⚗ once it does.`),
-        );
-        return;
-      }
-
-      const pool = orb.state.elementPool;
-
-      // ---- the table
-      const cols = Math.max(...this.content.elements.map((e) => e.col));
-      const rows = Math.max(...this.content.elements.map((e) => e.row));
-      const table = el('div', 'ptable');
-      table.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-
-      for (const element of this.content.elements) {
-        const held = pool[element.id] ?? 0;
-        const picked = this.mix[element.id] ?? 0;
-
-        const cell = el('button', 'pcell');
-        cell.style.gridRow = String(element.row);
-        cell.style.gridColumn = String(element.col);
-        cell.classList.toggle('has', held > 0);
-        cell.classList.toggle('picked', picked > 0);
-        cell.style.setProperty('--el', element.color);
-
-        cell.append(
-          el('span', 'pnum', String(element.number)),
-          el('span', 'psym', element.symbol),
-          el('span', 'pname', element.name),
-          el('span', 'pheld', held > 0 ? `${picked}/${held}` : '—'),
-        );
-
-        cell.disabled = held === 0;
-        cell.title = held > 0 ? `${element.name} — ${held} held` : `${element.name} — none held`;
-        cell.addEventListener('click', () => {
-          const have = pool[element.id] ?? 0;
-          const next = ((this.mix[element.id] ?? 0) + 1) % (have + 1);
-          if (next === 0) delete this.mix[element.id];
-          else this.mix[element.id] = next;
-          this.rebuildSheet();
-        });
-        table.append(cell);
-      }
-      // Fill the grid's empty cells so the stepped shape reads as deliberate.
-      for (let r = 1; r <= rows; r++) {
-        for (let c = 1; c <= cols; c++) {
-          if (this.content.elements.some((e) => e.row === r && e.col === c)) continue;
-          const gap = el('span', 'pgap');
-          gap.style.gridRow = String(r);
-          gap.style.gridColumn = String(c);
-          table.append(gap);
-        }
-      }
-      body.append(table);
-
-      // ---- the mixing tray
-      const size = selectionSize(this.mix);
-      const match = findRecipeForSelection(this.content, this.mix, orb.playerLevel);
-      const tray = el('div', 'tray');
-      tray.classList.toggle('ok', match !== null);
-
-      const chips = el('div', 'chips');
-      const entries = Object.entries(this.mix).filter(([, q]) => q > 0);
-      if (entries.length === 0) {
-        chips.append(el('span', 'trayhint', 'Tap elements above to add them. Tap again to add more, or past your total to clear.'));
-      } else {
-        for (const [element, qty] of entries) chips.append(this.elementChip(element, qty));
-      }
-      tray.append(chips);
-
-      const trayBar = el('div', 'traybar');
-      const status = el('span', 'traystatus');
-      if (size === 0) status.textContent = 'Nothing selected';
-      else if (match) status.textContent = `Forms ${this.content.material(match.result).name}`;
-      else status.textContent = `${size} element${size === 1 ? '' : 's'} — unknown combination`;
-      trayBar.append(status);
-
-      const clear = el('button', 'ghost', 'Clear');
-      clear.disabled = size === 0;
-      clear.addEventListener('click', () => {
-        this.mix = {};
-        this.rebuildSheet();
-      });
-
-      const mixBtn = el('button', 'go', 'Combine');
-      mixBtn.disabled = size === 0;
-      mixBtn.addEventListener('click', () => {
-        this.callbacks.onMixSelection({ ...this.mix });
-      });
-      trayBar.append(clear, mixBtn);
-      tray.append(trayBar);
-      body.append(tray);
-
-      // ---- known recipes
-      const known = this.content.alchemy.filter(
-        (r) => r.requiredLevel <= orb.playerLevel && orb.state.discovered.has(r.id),
-      );
-      body.append(
-        el('p', 'note', known.length === 0 ? 'No recipes discovered yet — mix and find out.' : 'Discovered recipes'),
-      );
-
-      for (const recipe of known) {
-        const affordable = orb.canAfford(recipe);
-        const row = el('div', affordable ? 'row-item' : 'row-item dim');
-        row.append(this.icon(recipe.result, 36));
-
-        const meta = el('div', 'meta');
-        meta.append(el('b', undefined, this.content.material(recipe.result).name));
-        const rchips = el('div', 'chips');
-        const missing = shortfall(recipe, pool);
-        for (const [element, count] of Object.entries(recipe.requires)) {
-          rchips.append(this.elementChip(element, count, (missing[element] ?? 0) > 0));
-        }
-        meta.append(rchips);
-        row.append(meta);
-
-        const load = el('button', 'go', 'Load');
-        load.title = 'Put this recipe into the tray';
-        load.addEventListener('click', () => {
-          this.mix = { ...recipe.requires };
-          this.rebuildSheet();
-        });
-        row.append(load);
-        body.append(row);
-      }
-    });
-  }
-
-  openZones(): void {
-    this.openSheet('Travel', (body) => {
-      const orb = this.requireOrb();
-      for (const zone of this.content.zones) {
-        const unlocked = zone.requiredLevel <= orb.playerLevel;
-        const current = zone.id === orb.state.zoneId;
-
-        const row = el('div', unlocked ? 'row-item' : 'row-item dim');
-        const meta = el('div', 'meta');
-        meta.append(el('b', undefined, zone.name));
-        meta.append(
-          el('span', undefined, unlocked ? zone.description : `Unlocks at level ${zone.requiredLevel}`),
-        );
-        row.append(meta);
-
-        const go = el('button', 'go', current ? 'Here' : 'Go');
-        go.disabled = !unlocked || current;
-        go.addEventListener('click', () => this.callbacks.onTravel(zone.id));
-        row.append(go);
-
-        body.append(row);
-      }
-    });
-  }
-
-  openCodex(): void {
-    this.openSheet('Codex', (body) => {
-      const orb = this.requireOrb();
-
-      const tabs = el('div', 'tabs');
-      tabs.style.padding = '0 0 12px';
-      const makeTab = (key: typeof this.codexTab, label: string) => {
-        const button = el('button', this.codexTab === key ? 'on' : undefined, label);
-        button.addEventListener('click', () => {
-          this.codexTab = key;
-          this.openCodex();
-        });
-        return button;
-      };
-      tabs.append(
-        makeTab('materials', 'Materials'),
-        makeTab('transmutation', 'Transmutation'),
-        makeTab('alchemy', 'Alchemy'),
-      );
-      body.append(tabs);
-
-      if (this.codexTab === 'materials') {
-        const seen = orb.state.seenMaterials;
-        body.append(el('p', 'note', `${seen.size} of ${this.content.materials.length} materials seen.`));
-        const grid = el('div', 'grid');
-        for (const material of this.content.materials) {
-          const known = seen.has(material.id);
-          const cell = el('div', known ? 'cell' : 'cell dim');
-          if (known) {
-            cell.append(this.icon(material.id, 38), el('span', 'nm', material.name));
-            const count = orb.countOf(material.id);
-            if (count > 0) cell.append(el('span', 'ct', String(count)));
-          } else {
-            cell.append(el('span', 'nm', '???'));
-            cell.style.minHeight = '68px';
-          }
-          grid.append(cell);
-        }
-        body.append(grid);
-        return;
-      }
-
-      if (this.codexTab === 'transmutation') {
-        const known = this.content.transmutation.filter((r) => orb.state.discovered.has(r.id));
-        body.append(
-          el('p', 'note', `${known.length} of ${this.content.transmutation.length} transmutations discovered.`),
-        );
-        for (const recipe of this.content.transmutation) {
-          const found = orb.state.discovered.has(recipe.id);
-          const row = el('div', found ? 'row-item' : 'row-item dim');
-          if (found) {
-            row.append(this.icon(recipe.result, 36));
-            const meta = el('div', 'meta');
-            meta.append(el('b', undefined, this.content.material(recipe.result).name));
-            meta.append(
-              el(
-                'span',
-                undefined,
-                `${this.content.material(recipe.a).name} + ${this.content.material(recipe.b).name}`,
-              ),
-            );
-            row.append(meta);
-          } else {
-            const meta = el('div', 'meta');
-            meta.append(el('b', undefined, '?????'));
-            meta.append(el('span', undefined, `unlocks at level ${recipe.requiredLevel}`));
-            row.append(meta);
-          }
-          body.append(row);
-        }
-        return;
-      }
-
-      const known = this.content.alchemy.filter((r) => orb.state.discovered.has(r.id));
-      body.append(el('p', 'note', `${known.length} of ${this.content.alchemy.length} alchemy recipes discovered.`));
-      for (const recipe of this.content.alchemy) {
-        const found = orb.state.discovered.has(recipe.id);
-        const visible = found || recipe.requiredLevel <= orb.playerLevel;
-        const row = el('div', found ? 'row-item' : 'row-item dim');
-        if (visible) {
-          row.append(this.icon(recipe.result, 36));
-          const meta = el('div', 'meta');
-          meta.append(el('b', undefined, this.content.material(recipe.result).name));
-          const chips = el('div', 'chips');
-          for (const [element, count] of Object.entries(recipe.requires)) {
-            chips.append(this.elementChip(element, count));
-          }
-          meta.append(chips);
-          row.append(meta);
-        } else {
-          const meta = el('div', 'meta');
-          meta.append(el('b', undefined, '?????'));
-          meta.append(el('span', undefined, `unlocks at level ${recipe.requiredLevel}`));
-          row.append(meta);
-        }
-        body.append(row);
-      }
-    });
-  }
-
-  openMenu(): void {
-    this.openSheet('Menu', (body) => {
-      const orb = this.requireOrb();
-      const { stats } = orb.state;
-
-      const grid = el('div', 'stat-grid');
-      const stat = (value: number, label: string) => {
-        const box = el('div', 'stat');
-        box.append(el('b', undefined, String(value)), el('span', undefined, label));
-        return box;
-      };
-      grid.append(
-        stat(stats.gathered, 'gathered'),
-        stat(stats.transmuted, 'transmuted'),
-        stat(stats.decomposed, 'decomposed'),
-        stat(stats.alchemized, 'alchemised'),
-        stat(stats.slain, 'slain'),
-        stat(stats.deaths, 'deaths'),
-      );
-      body.append(grid);
-
-      body.append(
-        el(
-          'p',
-          'note',
-          'Drag on the left of the screen to walk. The button on the right does whatever is ' +
-            'closest: it swings at an enemy in reach, otherwise it picks up what you are standing ' +
-            'by. Carrying a weapon makes you hit harder - there is no equip slot. Fill both orbs ' +
-            'to transmute. Progress saves to this device automatically.',
-        ),
-      );
-
-      const carriedNow = orb.carried();
-      const weaponNow = bestWeapon(this.content, carriedNow);
-      const dmgNow = el('div', 'dmgline');
-      dmgNow.append(el('b', undefined, `${playerDamage(this.content, carriedNow)} damage`));
-      dmgNow.append(
-        el(
-          'span',
-          undefined,
-          weaponNow
-            ? `from your ${this.content.material(weaponNow.material).name}. Weapons are never equipped - the best one you carry is the one you swing.`
-            : 'bare-handed. Weapons are never equipped: carry one and it counts automatically.',
-        ),
-      );
-      body.append(dmgNow);
-
-      const replay = el('button', 'ghost wide', 'Replay the opening guide');
-      replay.addEventListener('click', () => {
-        this.callbacks.onReplayTutorial();
-        this.closeSheet();
-      });
-      body.append(replay);
-
-      const reset = el('button', 'danger', 'Erase save and start over');
-      reset.addEventListener('click', () => {
-        if (confirm('Erase your save? This cannot be undone.')) this.callbacks.onReset();
-      });
-      body.append(reset);
-    });
-  }
-
-  // ---------------------------------------------------------------- toasts
-
-  toast(text: string, tone: 'info' | 'good' | 'bad' | 'big' = 'info'): void {
-    const node = el('div', `toast ${tone}`, text);
-    this.toasts.append(node);
-
-    // Cap the stack so a rapid burst can't fill the screen.
-    while (this.toasts.childElementCount > 3) this.toasts.firstElementChild?.remove();
-
-    window.setTimeout(() => {
-      node.style.transition = 'opacity 0.3s ease';
-      node.style.opacity = '0';
-      window.setTimeout(() => node.remove(), 320);
-    }, tone === 'big' ? 2600 : 1700);
+  /** Exposed for the codex-style lists the title screen shows. */
+  elementColor(id: ElementId): string {
+    return this.content.element(id).color;
   }
 }

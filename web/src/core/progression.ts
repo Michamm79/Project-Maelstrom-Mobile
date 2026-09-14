@@ -1,37 +1,93 @@
 /**
- * Level / XP maths. The curve itself lives in content/progression.json so it can
- * be retuned without touching either runtime.
+ * Levels and XP.
+ *
+ * GDD section 8.2: XP is novelty, not volume. It comes from first-time events -
+ * the first collection of each material, the first successful craft, the first
+ * visit to each biome - and deliberately not from per-unit gathering, which
+ * would reward farming one node and teach nothing about the variety the crafting
+ * and alchemy systems depend on.
+ *
+ * The tracker below is the whole reason that rule holds: an award is only paid
+ * the first time its key is seen.
  */
 import type { ProgressionConfig } from './types';
 
-/** Highest level whose cumulative XP requirement is met. */
-export function levelForXp(config: ProgressionConfig, xp: number): number {
-  const table = config.xpTable;
-  let level = 1;
-  for (let i = 1; i < table.length; i++) {
-    if (xp >= (table[i] ?? Infinity)) level = i + 1;
-    else break;
+export type NoveltyKind = 'firstMaterial' | 'firstCraft' | 'firstAlchemy' | 'firstBiome' | 'clearWave';
+
+export class Progression {
+  private xpTotal = 0;
+  /** Every novelty key already paid for, e.g. "firstMaterial:riverglass". */
+  private readonly seen = new Set<string>();
+
+  constructor(private readonly config: ProgressionConfig) {}
+
+  get xp(): number {
+    return this.xpTotal;
   }
-  return Math.min(level, config.maxLevel);
-}
 
-/** Cumulative XP at which `level` begins. */
-export function xpAtLevelStart(config: ProgressionConfig, level: number): number {
-  return config.xpTable[Math.max(0, level - 1)] ?? 0;
-}
+  get level(): number {
+    const table = this.config.xpTable;
+    let level = 0;
+    for (let i = 1; i < table.length; i++) {
+      if (this.xpTotal >= (table[i] ?? Infinity)) level = i;
+      else break;
+    }
+    return level;
+  }
 
-/** Cumulative XP needed for the next level, or null at max level. */
-export function xpAtNextLevel(config: ProgressionConfig, level: number): number | null {
-  if (level >= config.maxLevel) return null;
-  return config.xpTable[level] ?? null;
-}
+  get maxLevel(): number {
+    return this.config.xpTable.length - 1;
+  }
 
-/** Fractional progress through the current level, 0..1. Max level reads as full. */
-export function levelProgress(config: ProgressionConfig, xp: number, level: number): number {
-  const start = xpAtLevelStart(config, level);
-  const next = xpAtNextLevel(config, level);
-  if (next === null) return 1;
-  const span = next - start;
-  if (span <= 0) return 1;
-  return Math.min(1, Math.max(0, (xp - start) / span));
+  xpAtLevelStart(level = this.level): number {
+    return this.config.xpTable[level] ?? 0;
+  }
+
+  xpAtNextLevel(level = this.level): number | null {
+    return this.config.xpTable[level + 1] ?? null;
+  }
+
+  /** 0..1 through the current level, or 1 at the cap. */
+  get levelProgress(): number {
+    const start = this.xpAtLevelStart();
+    const next = this.xpAtNextLevel();
+    if (next === null) return 1;
+    const span = next - start;
+    return span <= 0 ? 1 : Math.min(1, (this.xpTotal - start) / span);
+  }
+
+  /**
+   * Pay the award for `kind` the first time `key` is seen, and nothing after.
+   * Returns the XP actually awarded, so a caller can tell a novelty from a
+   * repeat without asking twice.
+   */
+  award(kind: NoveltyKind, key: string): number {
+    const id = `${kind}:${key}`;
+    if (this.seen.has(id)) return 0;
+    this.seen.add(id);
+    const amount = this.config.xp[kind] ?? 0;
+    this.xpTotal += amount;
+    return amount;
+  }
+
+  hasSeen(kind: NoveltyKind, key: string): boolean {
+    return this.seen.has(`${kind}:${key}`);
+  }
+
+  /** How many distinct keys of a kind have been paid - "materials discovered". */
+  countSeen(kind: NoveltyKind): number {
+    let n = 0;
+    for (const id of this.seen) if (id.startsWith(`${kind}:`)) n += 1;
+    return n;
+  }
+
+  toJSON(): { xp: number; seen: string[] } {
+    return { xp: this.xpTotal, seen: [...this.seen] };
+  }
+
+  load(data: { xp?: number; seen?: string[] } | undefined): void {
+    this.xpTotal = Math.max(0, data?.xp ?? 0);
+    this.seen.clear();
+    for (const id of data?.seen ?? []) this.seen.add(id);
+  }
 }

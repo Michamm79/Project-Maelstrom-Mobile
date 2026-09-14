@@ -1,3055 +1,863 @@
 {
   "generated": true,
-  "note": "GENERATED FILE - do not edit. Source of truth is content/*.json; run npm run build:content. Unity variant: element maps are flattened to {element,quantity} arrays for JsonUtility.",
-  "version": 1,
+  "note": "GENERATED FILE - do not edit. Source of truth is content/*.json; run npm run build:content. Unity variant: id-to-quantity maps are flattened to arrays for JsonUtility.",
+  "version": 2,
   "progression": {
-    "$comment": "Tuning constants. Kept out of code so balance can be changed without touching either runtime.",
-    "alchemyUnlockLevel": 5,
-    "orbCount": 2,
-    "maxLevel": 25,
-    "$comment_yield": "Decomposition is lossy on purpose: breaking a crafted thing returns only this fraction of its inputs' essence (min 1 per element). Without it, composition doubles every craft tier and a late-game item would decompose into hundreds of elements.",
-    "decompositionYield": 0.6,
+    "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening; past Level 2 the cycle continues and canon's storyline does not yet advance. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu - neither is built yet.",
+    "alchemyUnlockLevel": 2,
+    "classLevel": 5,
+    "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
     "xp": {
-      "gather": 4,
-      "gatherNewMaterial": 30,
-      "repeatTransmuteFactor": 0.2,
-      "repeatAlchemyFactor": 0.25,
-      "decompose": 6
+      "firstMaterial": 30,
+      "firstCraft": 60,
+      "firstAlchemy": 60,
+      "firstBiome": 80,
+      "clearWave": 40
     },
     "levelCurve": {
-      "$comment": "XP required to advance FROM level n TO n+1 is base * n^exponent, rounded to the nearest 5.",
-      "base": 60,
-      "exponent": 1.45
+      "$comment": "XP required to advance FROM level n TO n+1. Levels 0 and 1 are short on purpose: canon puts the first wave bundle at Level 1 and the rune at Level 2, so the opening has to reach Level 2 inside one session.",
+      "thresholds": [
+        60,
+        150,
+        360,
+        640,
+        1000,
+        1450,
+        2000,
+        2650,
+        3400,
+        4250
+      ]
     },
-    "$comment_gather": "gatherRadius plus the player radius is the pickup range. At 168 px/s a radius of 34 left only ~0.56s in range walking straight over a node, and under 0.3s clipping its edge - shorter than the time it takes to see the prompt and move a thumb. gatherGraceSeconds keeps the last node gatherable briefly after you pass it, so a slightly late tap still lands.",
+    "levels": [
+      {
+        "level": 0,
+        "trigger": "Start",
+        "grants": "Gauntlets. The tutorial teaches gathering. No enemies exist yet."
+      },
+      {
+        "level": 1,
+        "trigger": "Novelty XP from the tutorial",
+        "grants": "A blatant warning, then the first wave bundle. Combat is taught here."
+      },
+      {
+        "level": 2,
+        "trigger": "Clearing all three waves",
+        "grants": "Rune, and the full alchemy menu."
+      }
+    ],
     "player": {
-      "moveSpeed": 168,
-      "gatherRadius": 42,
-      "radius": 13,
-      "gatherGraceSeconds": 0.45,
-      "gatherGraceRangeFactor": 2
+      "$comment": "Speeds in screen units per second, chosen so that spawn to biome edge lands inside canon's measured 30-35 seconds walking and 25-30 sprinting.",
+      "moveSpeed": 70,
+      "sprintSpeed": 84,
+      "radius": 11,
+      "pullSeconds": 0.45
     },
     "combat": {
-      "$comment": "Damage is base plus the best weapon carried - there is no equip slot, so the tech tree itself is the progression. Regen is generous because this is a crafting game: dying should cost time, not progress.",
+      "$comment": "No base weapon damage and no attack arc: canon has no weapon items, and every offensive option is an alchemical combination. Death is a setback, never a reset (section 3.5).",
       "maxHp": 60,
-      "baseDamage": 3,
-      "attackRange": 52,
-      "attackCooldown": 0.5,
-      "attackArc": 1.6,
-      "knockback": 26,
-      "invulnerableSeconds": 0.6,
-      "regenPerSecond": 2.5,
-      "regenDelaySeconds": 5,
-      "respawnSeconds": 2.5
+      "invulnerableSeconds": 0.7,
+      "regenPerSecond": 1.5,
+      "regenDelaySeconds": 6,
+      "respawnSeconds": 3
     },
     "xpTable": [
       0,
       60,
-      225,
-      520,
-      970,
-      1590,
-      2395,
-      3405,
-      4630,
-      6080,
-      7770,
-      9710,
-      11915,
-      14390,
-      17145,
-      20190,
-      23535,
-      27185,
-      31150,
-      35440,
-      40060,
-      45020,
-      50325,
-      55985,
-      62005
+      210,
+      570,
+      1210,
+      2210,
+      3660,
+      5660,
+      8310,
+      11710,
+      15960
     ]
   },
   "tutorial": [
     {
       "id": "move",
       "title": "Find your feet",
-      "hint": "Press and drag anywhere on the left of the screen to walk."
+      "hint": "Press and drag anywhere on the left of the screen to walk. You woke here. Nobody has told you why."
     },
     {
-      "id": "gather",
-      "title": "Take what you find",
-      "hint": "Stand next to something glowing, then press the green button on the right."
+      "id": "pull",
+      "title": "The pull",
+      "hint": "You have no tool. Hold the right button near anything and the gauntlets draw it in."
     },
     {
-      "id": "fill",
-      "title": "Fill the second orb",
-      "hint": "You carry two orbs and each holds one material. Gather another."
+      "id": "pull_moving",
+      "title": "Keep walking",
+      "hint": "The pull works at walking pace. You never have to stop, and the walk between places is where most of the gathering happens."
     },
     {
-      "id": "transmute",
-      "title": "Make something new",
-      "hint": "Press TRANSMUTE between the orbs to fuse what they hold."
+      "id": "carry",
+      "title": "What the orbs are for",
+      "hint": "The orbs show what you hold, not where it is kept. Watch them fill as you go."
     },
     {
-      "id": "fight",
-      "title": "Something else lives here",
-      "hint": "Near an enemy the button turns red. Attacking always beats gathering, so you never pick a flower mid-fight."
+      "id": "craft",
+      "title": "Make the gauntlets better",
+      "hint": "Open the menu and craft a Reinforced Weave. Everything you build first is a way to gather more."
     },
     {
-      "id": "bench",
-      "title": "The bench",
-      "hint": "Open Bench to swap what the orbs hold, unload one, or break a material down into elements."
+      "id": "warning",
+      "title": "Something has noticed",
+      "hint": "The warning is not subtle. Three waves are coming, and you are not required to clear any of them."
+    },
+    {
+      "id": "combine",
+      "title": "You were given three things",
+      "hint": "Gust, Torrent and Emberlash. Someone else made them. At Level 2 you get the workshop."
     }
   ],
   "elements": [
     {
-      "id": "pyron",
-      "name": "Pyron",
-      "description": "Fire-essence. The appetite for change; everything Pyron touches becomes something else, whether it wanted to or not.",
-      "color": "#ff6b35",
-      "symbol": "PYR",
-      "number": 1,
-      "group": "Primal",
-      "row": 1,
-      "col": 1
+      "id": "aeryl",
+      "name": "Aeryl",
+      "symbol": "AYL",
+      "domain": "Air, pressure, motion",
+      "color": "#9fd8e8"
     },
     {
-      "id": "aqualis",
-      "name": "Aqualis",
-      "description": "Water-essence. The universal solvent of form. Alchemists call it the patient element.",
-      "color": "#38bdf8",
-      "symbol": "AQL",
-      "number": 2,
-      "group": "Primal",
-      "row": 1,
-      "col": 2
+      "id": "vossen",
+      "name": "Vossen",
+      "symbol": "VSN",
+      "domain": "Fluid, cohesion",
+      "color": "#3f8fd0"
     },
     {
-      "id": "terran",
-      "name": "Terran",
-      "description": "Earth-essence. Mass, weight, permanence. The stubborn floor beneath every other element.",
-      "color": "#b07a45",
-      "symbol": "TRN",
-      "number": 3,
-      "group": "Primal",
-      "row": 1,
-      "col": 3
+      "id": "cindral",
+      "name": "Cindral",
+      "symbol": "CDR",
+      "domain": "Combustion, heat",
+      "color": "#f0622c"
     },
     {
-      "id": "zephyr",
-      "name": "Zephyr",
-      "description": "Air-essence. Motion and breath. Refuses to be stored for long; escapes any vessel eventually.",
-      "color": "#a5d8ec",
-      "symbol": "ZEP",
-      "number": 4,
-      "group": "Primal",
-      "row": 1,
-      "col": 4
+      "id": "glacite",
+      "name": "Glacite",
+      "symbol": "GLC",
+      "domain": "Cold, crystallization",
+      "color": "#cfe9f5"
     },
     {
-      "id": "verdant",
-      "name": "Verdant",
-      "description": "Life-essence. Growth, mending, and the quiet insistence of things that want to keep existing.",
-      "color": "#4ade80",
-      "symbol": "VRD",
-      "number": 6,
-      "group": "Vital",
-      "row": 2,
-      "col": 1
+      "id": "ferrune",
+      "name": "Ferrune",
+      "symbol": "FRN",
+      "domain": "Metal, structure",
+      "color": "#98a4b0"
     },
     {
-      "id": "ferric",
-      "name": "Ferric",
-      "description": "Binding-essence. Structure, edge, and the will to hold a shape under load.",
-      "color": "#9aa8bd",
-      "symbol": "FRC",
-      "number": 7,
-      "group": "Vital",
-      "row": 2,
-      "col": 2
+      "id": "arcen",
+      "name": "Arcen",
+      "symbol": "ARC",
+      "domain": "Charge, conduction",
+      "color": "#b07cf0"
     },
     {
-      "id": "lumis",
-      "name": "Lumis",
-      "description": "Light-essence. Clarity and revelation. Shows a thing as it is, which is not always a kindness.",
-      "color": "#fde047",
-      "symbol": "LUM",
-      "number": 8,
-      "group": "Radiant",
-      "row": 3,
-      "col": 1
+      "id": "terrix",
+      "name": "Terrix",
+      "symbol": "TRX",
+      "domain": "Earth, particulate",
+      "color": "#b08040"
     },
     {
-      "id": "umbral",
-      "name": "Umbral",
-      "description": "Shadow-essence. Concealment and the space between. Not evil, merely unlit.",
-      "color": "#8b7cd8",
+      "id": "umbrel",
+      "name": "Umbrel",
       "symbol": "UMB",
-      "number": 9,
-      "group": "Radiant",
-      "row": 3,
-      "col": 2
+      "domain": "Absorption, dampening, concealment",
+      "color": "#5b4a72"
     },
     {
-      "id": "aether",
-      "name": "Aether",
-      "description": "Void-essence. The maelstrom itself, ground fine enough to hold. Every alchemist's last ingredient.",
-      "color": "#f0abfc",
-      "symbol": "AET",
-      "number": 5,
-      "group": "Void",
-      "row": 1,
-      "col": 6
+      "id": "solvane",
+      "name": "Solvane",
+      "symbol": "SVN",
+      "domain": "Radiance, revealing",
+      "color": "#f5d76e"
+    },
+    {
+      "id": "sporel",
+      "name": "Sporel",
+      "symbol": "SPR",
+      "domain": "Organic growth, decay",
+      "color": "#7fbf5a"
     }
   ],
   "materials": [
     {
-      "id": "stick",
-      "name": "Stick",
-      "description": "A length of fallen branch. The humblest possible input, and the base of half of everything.",
-      "tags": [
-        "Wood",
-        "Organic"
-      ],
-      "shape": "stick",
-      "color": "#a1703c",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 2
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "stone",
-      "name": "Stone",
-      "description": "Grey river rock, cold and dense. Holds an edge badly and a grudge well.",
-      "tags": [
-        "Stone",
-        "Mineral"
-      ],
-      "shape": "rock",
-      "color": "#8d949e",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 3
-        }
-      ]
-    },
-    {
-      "id": "fiber",
-      "name": "Plant Fiber",
-      "description": "Stringy inner bark, stripped and dried. Weak alone, stubborn in numbers.",
-      "tags": [
-        "Organic",
-        "Plant"
-      ],
-      "shape": "leaf",
-      "color": "#6ba644",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 3
-        }
-      ]
-    },
-    {
-      "id": "flint",
-      "name": "Flint",
-      "description": "Dark, glassy nodule that fractures into edges. Strikes sparks against its own kind.",
-      "tags": [
-        "Stone",
-        "Mineral"
-      ],
-      "shape": "shard",
-      "color": "#5b6068",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "clay",
-      "name": "Clay",
-      "description": "Wet grey earth that remembers whatever shape you last gave it.",
-      "tags": [
-        "Earth",
-        "Mineral"
+      "id": "heartwood_burl",
+      "name": "Heartwood Burl",
+      "description": "A knot of overgrown grain, heavy for its size. Grows where the forest has healed over something.",
+      "biome": "plains_forest",
+      "elements": [
+        "sporel",
+        "terrix"
       ],
       "shape": "lump",
-      "color": "#b98963",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        }
-      ]
+      "color": "#8a5f34"
     },
     {
-      "id": "spring_water",
-      "name": "Spring Water",
-      "description": "Cold and startlingly clear. Alchemists insist the source matters. It does.",
-      "tags": [
-        "Liquid"
+      "id": "riverglass",
+      "name": "Riverglass",
+      "description": "Water-worn until it stopped being sand. Holds light the way still water does.",
+      "biome": "plains_forest",
+      "elements": [
+        "vossen",
+        "solvane"
       ],
-      "shape": "drop",
-      "color": "#4cb8e8",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "aqualis",
-          "quantity": 3
-        }
-      ]
+      "shape": "shard",
+      "color": "#a8d8e8"
     },
     {
-      "id": "glowcap",
-      "name": "Glowcap",
-      "description": "A pale fungus that keeps a soft light for hours after picking. Nobody is sure why.",
-      "tags": [
-        "Organic",
-        "Fungus"
+      "id": "ashcap_fungus",
+      "name": "Ashcap Fungus",
+      "description": "Fruits on scorched ground and keeps the heat in its cap. Warm to hold, long after the burn.",
+      "biome": "plains_forest",
+      "elements": [
+        "sporel",
+        "cindral"
       ],
       "shape": "cap",
-      "color": "#cbe86b",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 2
-        },
-        {
-          "element": "lumis",
-          "quantity": 2
-        }
-      ]
+      "color": "#d8734a"
     },
     {
-      "id": "resin",
-      "name": "Pine Resin",
-      "description": "Amber sap, tacky and sharp-smelling. Catches fire with enthusiasm.",
-      "tags": [
-        "Organic",
-        "Sticky"
+      "id": "ironvine",
+      "name": "Ironvine",
+      "description": "Draws metal up out of the soil and lays it down along its length. Cuts badly and binds well.",
+      "biome": "plains_forest",
+      "elements": [
+        "ferrune",
+        "sporel"
       ],
-      "shape": "blob",
-      "color": "#e0a13c",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 2
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
+      "shape": "coil",
+      "color": "#6a8f4a"
     },
     {
-      "id": "bone",
-      "name": "Bleached Bone",
-      "description": "Sun-whitened and hollow. Something walked here once, and stopped.",
-      "tags": [
-        "Organic",
-        "Remains"
-      ],
-      "shape": "bone",
-      "color": "#e2ddcf",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "umbral",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "gale_moss",
-      "name": "Gale Moss",
-      "description": "Grows only on the windward face of things. Twitches when the air is still.",
-      "tags": [
-        "Organic",
-        "Air"
-      ],
-      "shape": "moss",
-      "color": "#8fd6c4",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "zephyr",
-          "quantity": 3
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "coal",
-      "name": "Coal",
-      "description": "Compressed ancient forest. Burns long, dirty, and hot.",
-      "tags": [
-        "Mineral",
-        "Fuel"
-      ],
-      "shape": "rock",
-      "color": "#3a3a42",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 3
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "sand",
-      "name": "Cinder Sand",
-      "description": "Fine black grit off the flats. Gets into absolutely everything.",
-      "tags": [
-        "Earth",
-        "Mineral"
-      ],
-      "shape": "dust",
-      "color": "#a89a86",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "obsidian",
-      "name": "Obsidian",
-      "description": "Cooled too fast to become a proper rock. Edges sharper than any metal, and just as brittle.",
-      "tags": [
-        "Stone",
-        "Volcanic"
-      ],
-      "shape": "shard",
-      "color": "#2b2836",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 2
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "umbral",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "ember_bloom",
-      "name": "Ember Bloom",
-      "description": "A flower that grows in ash and runs hot to the touch. Wilts if it cools.",
-      "tags": [
-        "Organic",
-        "Fire"
+      "id": "stormpetal",
+      "name": "Stormpetal",
+      "description": "Opens before weather arrives. Carries a charge that lifts the hair on your arm through the gauntlet.",
+      "biome": "plains_forest",
+      "elements": [
+        "aeryl",
+        "arcen"
       ],
       "shape": "bloom",
-      "color": "#ff8347",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 3
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ]
+      "color": "#b07cf0"
     },
     {
-      "id": "iron_ore",
-      "name": "Iron Ore",
-      "description": "Rust-streaked rock, far heavier than it looks. Useless until something melts it.",
-      "tags": [
-        "Metal",
-        "Mineral"
+      "id": "loamstone",
+      "name": "Loamstone",
+      "description": "Compacted riverbed, still damp at the core. Crumbles along the seams where the water ran.",
+      "biome": "plains_forest",
+      "elements": [
+        "terrix",
+        "vossen"
       ],
-      "shape": "ore",
-      "color": "#9c6a4f",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 3
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        }
-      ]
+      "shape": "rock",
+      "color": "#9a7a52"
     },
     {
-      "id": "silver_ore",
-      "name": "Silver Ore",
-      "description": "Bright threads running through dull stone. Takes light well and holds a charge better.",
-      "tags": [
-        "Metal",
-        "Precious"
-      ],
-      "shape": "ore",
-      "color": "#c8cdd6",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 2
-        },
-        {
-          "element": "lumis",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "crystal_shard",
-      "name": "Crystal Shard",
-      "description": "Grown, not formed. Hums faintly when another shard comes near.",
-      "tags": [
-        "Mineral",
-        "Arcane"
+      "id": "rimeshard",
+      "name": "Rimeshard",
+      "description": "Frozen out of moving air rather than standing water, so it grows in the direction the wind came from.",
+      "biome": "snowy_mountain",
+      "elements": [
+        "glacite",
+        "aeryl"
       ],
       "shape": "gem",
-      "color": "#7dd3fc",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "lumis",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 2
-        }
-      ]
+      "color": "#cfe9f5"
     },
     {
-      "id": "voidglass",
-      "name": "Voidglass",
-      "description": "Black glass that does not reflect you. Cold in any weather.",
-      "tags": [
-        "Arcane",
-        "Volcanic"
+      "id": "coldiron_ore",
+      "name": "Coldiron Ore",
+      "description": "Ore that never warms in the hand. The mountain's only generous seam, and it is generous by accident.",
+      "biome": "snowy_mountain",
+      "elements": [
+        "ferrune",
+        "glacite"
       ],
-      "shape": "gem",
-      "color": "#4c3f6b",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 15,
-      "composition": [
-        {
-          "element": "umbral",
-          "quantity": 3
-        },
-        {
-          "element": "aether",
-          "quantity": 2
-        }
-      ]
+      "shape": "ore",
+      "color": "#8fa8bf"
     },
     {
-      "id": "aetherdust",
-      "name": "Aetherdust",
-      "description": "Scraped from the rim where the maelstrom grinds the world thin. Drifts upward if you let go.",
-      "tags": [
-        "Arcane"
+      "id": "peakmoss",
+      "name": "Peakmoss",
+      "description": "Grows above where anything should. Survives by giving up on being warm.",
+      "biome": "snowy_mountain",
+      "elements": [
+        "sporel",
+        "glacite"
+      ],
+      "shape": "moss",
+      "color": "#7fa88a"
+    },
+    {
+      "id": "sunfused_glass",
+      "name": "Sunfused Glass",
+      "description": "Sand struck hot enough to stop being sand. Lies in sheets where the light pooled.",
+      "biome": "desert",
+      "elements": [
+        "solvane",
+        "cindral"
+      ],
+      "shape": "plate",
+      "color": "#f5d76e"
+    },
+    {
+      "id": "dustbloom",
+      "name": "Dustbloom",
+      "description": "Not a plant. A standing column of fines the air refuses to put down.",
+      "biome": "desert",
+      "elements": [
+        "terrix",
+        "aeryl"
       ],
       "shape": "dust",
-      "color": "#e9a5f5",
-      "source": "gathered",
-      "tier": 0,
-      "availableAtLevel": 15,
-      "composition": [
-        {
-          "element": "aether",
-          "quantity": 4
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
+      "color": "#d8b070"
     },
     {
-      "id": "cord",
-      "name": "Cord",
-      "description": "Fiber twisted against itself until it stops being weak.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "coil",
-      "color": "#9c8348",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 4
-        }
-      ]
-    },
-    {
-      "id": "rope",
-      "name": "Rope",
-      "description": "Cord laid into cord. Will hold a person, probably.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "coil",
-      "color": "#b09256",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 2,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 5
-        }
-      ]
-    },
-    {
-      "id": "whetstone",
-      "name": "Whetstone",
-      "description": "One stone ground flat against another. Makes edges out of intentions.",
-      "tags": [
-        "Tool",
-        "Stone"
-      ],
-      "shape": "plate",
-      "color": "#7c838d",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 4
-        }
-      ]
-    },
-    {
-      "id": "ember",
-      "name": "Ember",
-      "description": "A caught spark, nursed into something that will survive being carried.",
-      "tags": [
-        "Fire",
-        "Component"
-      ],
-      "shape": "flame",
-      "color": "#ff9d3c",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "torch",
-      "name": "Torch",
-      "description": "Fire on a stick. Still the single best invention anyone has managed.",
-      "tags": [
-        "Tool",
-        "Fire"
-      ],
-      "shape": "torch",
-      "color": "#ffb454",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "stone_axe",
-      "name": "Stone Axe",
-      "description": "Crude, heavy, effective. Bites wood far better than your hands did.",
-      "tags": [
-        "Tool",
-        "Weapon"
-      ],
-      "shape": "axe",
-      "color": "#96979b",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        }
-      ],
-      "damage": 7
-    },
-    {
-      "id": "flint_knife",
-      "name": "Flint Knife",
-      "description": "A knapped edge lashed to a haft. Sharper than iron, for about a day.",
-      "tags": [
-        "Tool",
-        "Weapon"
-      ],
-      "shape": "blade",
-      "color": "#6c7178",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 1,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ],
-      "damage": 5
-    },
-    {
-      "id": "snare",
-      "name": "Snare",
-      "description": "Patience, arranged into a loop.",
-      "tags": [
-        "Tool"
-      ],
-      "shape": "ring",
-      "color": "#a08a5c",
-      "source": "transmuted",
-      "tier": 3,
-      "availableAtLevel": 2,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 4
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "bow",
-      "name": "Bow",
-      "description": "Stored intent. The stick does the work; the cord only remembers.",
-      "tags": [
-        "Weapon"
-      ],
-      "shape": "bow",
-      "color": "#a5763f",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 4
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        }
-      ],
-      "damage": 9
-    },
-    {
-      "id": "kiln",
-      "name": "Field Kiln",
-      "description": "Packed clay around a held fire. The first machine anyone builds.",
-      "tags": [
-        "Station"
-      ],
-      "shape": "kiln",
-      "color": "#c07a4c",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "bone_charm",
-      "name": "Bone Charm",
-      "description": "Carved and strung. Superstition, unless it works, in which case: alchemy.",
-      "tags": [
-        "Trinket"
-      ],
-      "shape": "bone",
-      "color": "#ded5bd",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "umbral",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "glow_tonic",
-      "name": "Glow Tonic",
-      "description": "Steeped glowcap. Drinking it makes your veins faintly visible. Mildly alarming.",
-      "tags": [
-        "Consumable"
-      ],
-      "shape": "flask",
-      "color": "#c6e764",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "bandage",
-      "name": "Resin Bandage",
-      "description": "Fiber and sap. Seals a wound and takes the hair with it later.",
-      "tags": [
-        "Consumable"
-      ],
-      "shape": "wrap",
-      "color": "#ddc79a",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 3
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "pitch",
-      "name": "Pitch",
-      "description": "Resin cooked down to something black, patient, and extremely flammable.",
-      "tags": [
-        "Component",
-        "Fire"
-      ],
-      "shape": "blob",
-      "color": "#4a3b2c",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 3,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "wind_sash",
-      "name": "Wind Sash",
-      "description": "Woven gale moss. Pulls very gently forward, always.",
-      "tags": [
-        "Apparel"
-      ],
-      "shape": "wrap",
-      "color": "#8fd6c4",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 4,
-      "composition": [
-        {
-          "element": "zephyr",
-          "quantity": 2
-        },
-        {
-          "element": "verdant",
-          "quantity": 3
-        }
-      ]
-    },
-    {
-      "id": "glass",
-      "name": "Glass",
-      "description": "Sand persuaded by heat to become honest.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "plate",
-      "color": "#a8dbe8",
-      "source": "transmuted",
-      "tier": 3,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "brick",
-      "name": "Firebrick",
-      "description": "Fired clay that shrugs off the heat that made it.",
-      "tags": [
-        "Component"
+      "id": "thermal_salt",
+      "name": "Thermal Salt",
+      "description": "Crusts over where water reached the surface and lost. Holds the day's heat into the night.",
+      "biome": "desert",
+      "elements": [
+        "cindral",
+        "vossen"
       ],
       "shape": "brick",
-      "color": "#bb6a4a",
-      "source": "transmuted",
-      "tier": 3,
-      "availableAtLevel": 5,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
+      "color": "#e8c8a8"
     },
     {
-      "id": "forge",
-      "name": "Forge",
-      "description": "Brick stacked into a throat that swallows air and spits out metal.",
-      "tags": [
-        "Station"
+      "id": "bogiron_nodule",
+      "name": "Bogiron Nodule",
+      "description": "Iron precipitated slowly out of standing water. Comes up wet and stays wet.",
+      "biome": "wetland",
+      "elements": [
+        "ferrune",
+        "vossen"
       ],
-      "shape": "kiln",
-      "color": "#8f4f38",
-      "source": "transmuted",
-      "tier": 4,
-      "availableAtLevel": 8,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
+      "shape": "blob",
+      "color": "#7a5a3a"
     },
     {
-      "id": "flask",
-      "name": "Glass Flask",
-      "description": "Blown thin and bound at the neck. The alchemist's actual first tool.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "flask",
-      "color": "#bfe6f0",
-      "source": "transmuted",
-      "tier": 4,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "fire_flask",
-      "name": "Fire Flask",
-      "description": "Pitch in glass. Throw it, then be somewhere else.",
-      "tags": [
-        "Weapon",
-        "Consumable"
-      ],
-      "shape": "flask",
-      "color": "#ff7a3c",
-      "source": "transmuted",
-      "tier": 5,
-      "availableAtLevel": 8,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "ember_vial",
-      "name": "Ember Vial",
-      "description": "A bloom sealed while still hot. Stays warm for a season.",
-      "tags": [
-        "Consumable",
-        "Fire"
-      ],
-      "shape": "flask",
-      "color": "#ff9f5e",
-      "source": "transmuted",
-      "tier": 5,
-      "availableAtLevel": 7,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 2
-        },
-        {
-          "element": "verdant",
-          "quantity": 2
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "obsidian_shard",
-      "name": "Obsidian Shard",
-      "description": "Struck free with a hammer, because nothing softer would do it.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "shard",
-      "color": "#3a3448",
-      "source": "transmuted",
-      "tier": 2,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 4
-        },
-        {
-          "element": "umbral",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "obsidian_spear",
-      "name": "Obsidian Spear",
-      "description": "Reach, plus an edge that does not forgive.",
-      "tags": [
-        "Weapon"
-      ],
-      "shape": "spear",
-      "color": "#4a4258",
-      "source": "transmuted",
-      "tier": 3,
-      "availableAtLevel": 7,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 3
-        },
-        {
-          "element": "umbral",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ],
-      "damage": 14
-    },
-    {
-      "id": "iron_ingot",
-      "name": "Iron Ingot",
-      "description": "Ore, minus everything that was not iron.",
-      "tags": [
-        "Metal",
-        "Component"
-      ],
-      "shape": "ingot",
-      "color": "#8e9299",
-      "source": "transmuted",
-      "tier": 5,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 2
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "silver_ingot",
-      "name": "Silver Ingot",
-      "description": "Poured bright and cooled slow. Conducts more than heat.",
-      "tags": [
-        "Metal",
-        "Component"
-      ],
-      "shape": "ingot",
-      "color": "#d6dae2",
-      "source": "transmuted",
-      "tier": 5,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "iron_hammer",
-      "name": "Iron Hammer",
-      "description": "The tool that makes the tools. Everything downstream owes it.",
-      "tags": [
-        "Tool"
-      ],
-      "shape": "hammer",
-      "color": "#8a8e96",
-      "source": "transmuted",
-      "tier": 6,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "iron_blade",
-      "name": "Iron Blade",
-      "description": "Ground to an edge and not yet given a handle. Awkward. Dangerous.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "blade",
-      "color": "#9aa0a8",
-      "source": "transmuted",
-      "tier": 6,
-      "availableAtLevel": 11,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 4
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "chain",
-      "name": "Iron Chain",
-      "description": "Links that only fail one at a time.",
-      "tags": [
-        "Component"
-      ],
-      "shape": "chain",
-      "color": "#7f858d",
-      "source": "transmuted",
-      "tier": 6,
-      "availableAtLevel": 11,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 3
-        }
-      ]
-    },
-    {
-      "id": "iron_sword",
-      "name": "Iron Sword",
-      "description": "Blade, grip, and the whole long argument between them settled.",
-      "tags": [
-        "Weapon"
-      ],
-      "shape": "sword",
-      "color": "#aab0b8",
-      "source": "transmuted",
-      "tier": 7,
-      "availableAtLevel": 12,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 2
-        }
-      ],
-      "damage": 22
-    },
-    {
-      "id": "silver_mirror",
-      "name": "Silver Mirror",
-      "description": "Backed glass. Shows the room, and occasionally the room next to it.",
-      "tags": [
-        "Trinket",
-        "Arcane"
-      ],
-      "shape": "mirror",
-      "color": "#e3e8f0",
-      "source": "transmuted",
-      "tier": 6,
-      "availableAtLevel": 12,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "lens",
-      "name": "Focusing Lens",
-      "description": "Glass grown around a crystal seed. Bends light into a decision.",
-      "tags": [
-        "Component",
-        "Arcane"
-      ],
-      "shape": "lens",
-      "color": "#9fdcf5",
-      "source": "transmuted",
-      "tier": 4,
-      "availableAtLevel": 12,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "lantern",
-      "name": "Lantern",
-      "description": "A torch that has learned manners. Throws light where you point it.",
-      "tags": [
-        "Tool"
-      ],
-      "shape": "lantern",
-      "color": "#ffd27a",
-      "source": "transmuted",
-      "tier": 5,
-      "availableAtLevel": 12,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "resonator",
-      "name": "Resonator",
-      "description": "Silver wound around a shard. Hums at whatever frequency you were about to need.",
-      "tags": [
-        "Component",
-        "Arcane"
-      ],
-      "shape": "core",
-      "color": "#a7d8ea",
-      "source": "transmuted",
-      "tier": 6,
-      "availableAtLevel": 13,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 2
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "rune_stone",
-      "name": "Rune Stone",
-      "description": "Aetherdust ground into cut stone. The marks were not there when you started.",
-      "tags": [
-        "Arcane"
-      ],
-      "shape": "rune",
-      "color": "#c58fd8",
-      "source": "transmuted",
-      "tier": 1,
-      "availableAtLevel": 15,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "sigil",
-      "name": "Bound Sigil",
-      "description": "A rune given a voice. It answers now, which is the entire problem.",
-      "tags": [
-        "Arcane"
-      ],
-      "shape": "rune",
-      "color": "#dd9bf0",
-      "source": "transmuted",
-      "tier": 7,
-      "availableAtLevel": 16,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "aether_lens",
-      "name": "Aether Lens",
-      "description": "Focuses something that is not light. Uncomfortable to look through.",
-      "tags": [
-        "Component",
-        "Arcane"
-      ],
-      "shape": "lens",
-      "color": "#efb2fb",
-      "source": "transmuted",
-      "tier": 5,
-      "availableAtLevel": 16,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 3
-        }
-      ]
-    },
-    {
-      "id": "void_shard",
-      "name": "Void Shard",
-      "description": "Voidglass broken correctly. There is an incorrect way, and it is worse.",
-      "tags": [
-        "Arcane"
-      ],
-      "shape": "shard",
-      "color": "#5b4a80",
-      "source": "transmuted",
-      "tier": 7,
-      "availableAtLevel": 15,
-      "composition": [
-        {
-          "element": "umbral",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        },
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "void_blade",
-      "name": "Void Blade",
-      "description": "An edge that arrives slightly before the swing.",
-      "tags": [
-        "Weapon",
-        "Arcane"
-      ],
-      "shape": "sword",
-      "color": "#6f5a9c",
-      "source": "transmuted",
-      "tier": 8,
-      "availableAtLevel": 17,
-      "composition": [
-        {
-          "element": "umbral",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        },
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "verdant",
-          "quantity": 2
-        }
-      ],
-      "damage": 38
-    },
-    {
-      "id": "orb_focus",
-      "name": "Orb Focus",
-      "description": "Sigil and lens seated together. The orbs stop feeling like pockets and start feeling like hands.",
-      "tags": [
-        "Arcane",
-        "Key"
-      ],
-      "shape": "orb",
-      "color": "#d6a8ff",
-      "source": "transmuted",
-      "tier": 8,
-      "availableAtLevel": 18,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 3
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "maelstrom_key",
-      "name": "Maelstrom Key",
-      "description": "Not a key to a door. A key to the thing the door was built to keep out.",
-      "tags": [
-        "Arcane",
-        "Key"
-      ],
-      "shape": "star",
-      "color": "#ffc8f5",
-      "source": "transmuted",
-      "tier": 9,
-      "availableAtLevel": 20,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 3
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        },
-        {
-          "element": "ferric",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "umbral",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "fireball",
-      "name": "Bound Fireball",
-      "description": "Pyron wrapped in a skin of moving air. Stable right up until it isn't.",
-      "tags": [
-        "Weapon",
-        "Alchemical"
-      ],
-      "shape": "flame",
-      "color": "#ff5e2e",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 5,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "healing_draught",
-      "name": "Healing Draught",
-      "description": "Life-essence held in solution. Tastes like cut grass and copper.",
-      "tags": [
-        "Consumable",
-        "Alchemical"
-      ],
-      "shape": "flask",
-      "color": "#5fe08c",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 5,
-      "composition": [
-        {
-          "element": "verdant",
-          "quantity": 1
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "stone_ward",
-      "name": "Stone Ward",
-      "description": "Terran bound with Ferric until it forgets how to be moved.",
-      "tags": [
-        "Trinket",
-        "Alchemical"
-      ],
-      "shape": "plate",
-      "color": "#a08663",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 6,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 2
-        },
-        {
-          "element": "ferric",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "light_lure",
-      "name": "Light Lure",
-      "description": "A knot of Lumis that things follow. Not always the things you wanted.",
-      "tags": [
-        "Tool",
-        "Alchemical"
-      ],
-      "shape": "star",
-      "color": "#ffe066",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 8,
-      "composition": [
-        {
-          "element": "lumis",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "shadow_veil",
-      "name": "Shadow Veil",
-      "description": "Umbral spun thin enough to wear. You are still here; you are simply not worth noticing.",
-      "tags": [
-        "Apparel",
-        "Alchemical"
-      ],
-      "shape": "wrap",
-      "color": "#7a6bb8",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 8,
-      "composition": [
-        {
-          "element": "umbral",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "storm_core",
-      "name": "Storm Core",
-      "description": "Zephyr and Pyron forced to share a vessel. They have never once agreed.",
-      "tags": [
-        "Component",
-        "Alchemical"
-      ],
-      "shape": "core",
-      "color": "#8fd0ff",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 10,
-      "composition": [
-        {
-          "element": "zephyr",
-          "quantity": 2
-        },
-        {
-          "element": "pyron",
-          "quantity": 1
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "golem_core",
-      "name": "Golem Core",
-      "description": "Enough Terran to matter, enough Ferric to obey. Put it in something heavy.",
-      "tags": [
-        "Component",
-        "Alchemical"
-      ],
-      "shape": "core",
-      "color": "#b08d5e",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 12,
-      "composition": [
-        {
-          "element": "terran",
-          "quantity": 3
-        },
-        {
-          "element": "ferric",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "quicksilver",
-      "name": "Quicksilver",
-      "description": "Metal that refuses to hold still. Alchemists adore it; their hands do not.",
-      "tags": [
-        "Component",
-        "Alchemical"
+      "id": "marshgas_bladder",
+      "name": "Marshgas Bladder",
+      "description": "A sac of what the wetland has been breaking down. Light in the gauntlet and eager to leave it.",
+      "biome": "wetland",
+      "elements": [
+        "aeryl",
+        "sporel"
       ],
       "shape": "drop",
-      "color": "#dfe6ef",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 12,
-      "composition": [
-        {
-          "element": "ferric",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        }
-      ]
+      "color": "#a8c85a"
     },
     {
-      "id": "philosophers_ember",
-      "name": "Philosopher's Ember",
-      "description": "The small famous one. Burns without fuel, and has not gone out in four hundred years.",
-      "tags": [
-        "Arcane",
-        "Alchemical"
+      "id": "silt_pearl",
+      "name": "Silt Pearl",
+      "description": "Silt turned over long enough to become smooth. The wetland's one tidy object.",
+      "biome": "wetland",
+      "elements": [
+        "vossen",
+        "terrix"
       ],
-      "shape": "flame",
-      "color": "#ffd27a",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 15,
-      "composition": [
-        {
-          "element": "pyron",
-          "quantity": 2
-        },
-        {
-          "element": "lumis",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
+      "shape": "lens",
+      "color": "#e8e0d0"
     },
     {
-      "id": "maelstrom_seed",
-      "name": "Maelstrom Seed",
-      "description": "A fragment of the storm, folded small. It is patient, and it is counting.",
-      "tags": [
-        "Arcane",
-        "Key",
-        "Alchemical"
+      "id": "coolant_residue",
+      "name": "Coolant Residue",
+      "description": "Pooled under lines that are still pumping. The building is cooling something it no longer needs to.",
+      "biome": "data_center",
+      "elements": [
+        "glacite",
+        "vossen"
       ],
-      "shape": "orb",
-      "color": "#f2a6ff",
-      "source": "alchemized",
-      "tier": 1,
-      "availableAtLevel": 18,
-      "composition": [
-        {
-          "element": "aether",
-          "quantity": 2
-        },
-        {
-          "element": "umbral",
-          "quantity": 1
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        }
-      ]
+      "shape": "flask",
+      "color": "#7fd8d8"
+    },
+    {
+      "id": "capacitor_core",
+      "name": "Capacitor Core",
+      "description": "Still holding a charge it was given a long time ago. Nothing here has been told to stop.",
+      "biome": "data_center",
+      "elements": [
+        "arcen",
+        "ferrune"
+      ],
+      "shape": "core",
+      "color": "#b07cf0"
+    },
+    {
+      "id": "dark_fiber",
+      "name": "Dark Fiber",
+      "description": "Laid to carry light and never lit. The only thing in the Coliseum that will let you disappear.",
+      "biome": "data_center",
+      "elements": [
+        "solvane",
+        "umbrel"
+      ],
+      "shape": "chain",
+      "color": "#3a2a4c"
     }
   ],
-  "transmutation": [
+  "biomes": [
     {
-      "id": "tr_cord",
-      "a": "fiber",
-      "b": "fiber",
-      "result": "cord",
-      "requiredLevel": 1,
-      "xp": 25
-    },
-    {
-      "id": "tr_stone_axe",
-      "a": "stick",
-      "b": "stone",
-      "result": "stone_axe",
-      "requiredLevel": 1,
-      "xp": 25
-    },
-    {
-      "id": "tr_flint_knife",
-      "a": "stick",
-      "b": "flint",
-      "result": "flint_knife",
-      "requiredLevel": 1,
-      "xp": 25
-    },
-    {
-      "id": "tr_ember",
-      "a": "flint",
-      "b": "flint",
-      "result": "ember",
-      "requiredLevel": 1,
-      "xp": 25
-    },
-    {
-      "id": "tr_torch",
-      "a": "ember",
-      "b": "stick",
-      "result": "torch",
-      "requiredLevel": 1,
-      "xp": 30
-    },
-    {
-      "id": "tr_whetstone",
-      "a": "stone",
-      "b": "stone",
-      "result": "whetstone",
-      "requiredLevel": 1,
-      "xp": 25
-    },
-    {
-      "id": "tr_rope",
-      "a": "cord",
-      "b": "cord",
-      "result": "rope",
-      "requiredLevel": 2,
-      "xp": 35
-    },
-    {
-      "id": "tr_snare",
-      "a": "rope",
-      "b": "stick",
-      "result": "snare",
-      "requiredLevel": 2,
-      "xp": 35
-    },
-    {
-      "id": "tr_kiln",
-      "a": "clay",
-      "b": "ember",
-      "result": "kiln",
-      "requiredLevel": 3,
-      "xp": 60
-    },
-    {
-      "id": "tr_bow",
-      "a": "cord",
-      "b": "stick",
-      "result": "bow",
-      "requiredLevel": 3,
-      "xp": 45
-    },
-    {
-      "id": "tr_bone_charm",
-      "a": "bone",
-      "b": "cord",
-      "result": "bone_charm",
-      "requiredLevel": 3,
-      "xp": 45
-    },
-    {
-      "id": "tr_glow_tonic",
-      "a": "glowcap",
-      "b": "spring_water",
-      "result": "glow_tonic",
-      "requiredLevel": 3,
-      "xp": 45
-    },
-    {
-      "id": "tr_bandage",
-      "a": "fiber",
-      "b": "resin",
-      "result": "bandage",
-      "requiredLevel": 3,
-      "xp": 40
-    },
-    {
-      "id": "tr_pitch",
-      "a": "resin",
-      "b": "ember",
-      "result": "pitch",
-      "requiredLevel": 3,
-      "xp": 45
-    },
-    {
-      "id": "tr_wind_sash",
-      "a": "gale_moss",
-      "b": "cord",
-      "result": "wind_sash",
-      "requiredLevel": 4,
-      "xp": 55
-    },
-    {
-      "id": "tr_glass",
-      "a": "sand",
-      "b": "kiln",
-      "result": "glass",
-      "requiredLevel": 6,
-      "xp": 70
-    },
-    {
-      "id": "tr_brick",
-      "a": "clay",
-      "b": "kiln",
-      "result": "brick",
-      "requiredLevel": 5,
-      "xp": 70
-    },
-    {
-      "id": "tr_flask",
-      "a": "glass",
-      "b": "cord",
-      "result": "flask",
-      "requiredLevel": 6,
-      "xp": 80
-    },
-    {
-      "id": "tr_obsidian_shard",
-      "a": "obsidian",
-      "b": "whetstone",
-      "result": "obsidian_shard",
-      "requiredLevel": 6,
-      "xp": 80
-    },
-    {
-      "id": "tr_obsidian_spear",
-      "a": "obsidian_shard",
-      "b": "stick",
-      "result": "obsidian_spear",
-      "requiredLevel": 7,
-      "xp": 95
-    },
-    {
-      "id": "tr_ember_vial",
-      "a": "ember_bloom",
-      "b": "flask",
-      "result": "ember_vial",
-      "requiredLevel": 7,
-      "xp": 95
-    },
-    {
-      "id": "tr_forge",
-      "a": "brick",
-      "b": "brick",
-      "result": "forge",
-      "requiredLevel": 8,
-      "xp": 130
-    },
-    {
-      "id": "tr_fire_flask",
-      "a": "flask",
-      "b": "pitch",
-      "result": "fire_flask",
-      "requiredLevel": 8,
-      "xp": 110
-    },
-    {
-      "id": "tr_iron_ingot",
-      "a": "iron_ore",
-      "b": "forge",
-      "result": "iron_ingot",
-      "requiredLevel": 10,
-      "xp": 150
-    },
-    {
-      "id": "tr_silver_ingot",
-      "a": "silver_ore",
-      "b": "forge",
-      "result": "silver_ingot",
-      "requiredLevel": 10,
-      "xp": 150
-    },
-    {
-      "id": "tr_iron_hammer",
-      "a": "iron_ingot",
-      "b": "stick",
-      "result": "iron_hammer",
-      "requiredLevel": 10,
-      "xp": 140
-    },
-    {
-      "id": "tr_iron_blade",
-      "a": "iron_ingot",
-      "b": "whetstone",
-      "result": "iron_blade",
-      "requiredLevel": 11,
-      "xp": 160
-    },
-    {
-      "id": "tr_chain",
-      "a": "iron_ingot",
-      "b": "rope",
-      "result": "chain",
-      "requiredLevel": 11,
-      "xp": 155
-    },
-    {
-      "id": "tr_iron_sword",
-      "a": "iron_blade",
-      "b": "cord",
-      "result": "iron_sword",
-      "requiredLevel": 12,
-      "xp": 190
-    },
-    {
-      "id": "tr_silver_mirror",
-      "a": "silver_ingot",
-      "b": "glass",
-      "result": "silver_mirror",
-      "requiredLevel": 12,
-      "xp": 190
-    },
-    {
-      "id": "tr_lens",
-      "a": "glass",
-      "b": "crystal_shard",
-      "result": "lens",
-      "requiredLevel": 12,
-      "xp": 190
-    },
-    {
-      "id": "tr_lantern",
-      "a": "lens",
-      "b": "torch",
-      "result": "lantern",
-      "requiredLevel": 12,
-      "xp": 200
-    },
-    {
-      "id": "tr_resonator",
-      "a": "silver_ingot",
-      "b": "crystal_shard",
-      "result": "resonator",
-      "requiredLevel": 13,
-      "xp": 220
-    },
-    {
-      "id": "tr_rune_stone",
-      "a": "stone",
-      "b": "aetherdust",
-      "result": "rune_stone",
-      "requiredLevel": 15,
-      "xp": 280
-    },
-    {
-      "id": "tr_void_shard",
-      "a": "voidglass",
-      "b": "iron_hammer",
-      "result": "void_shard",
-      "requiredLevel": 15,
-      "xp": 280
-    },
-    {
-      "id": "tr_sigil",
-      "a": "rune_stone",
-      "b": "resonator",
-      "result": "sigil",
-      "requiredLevel": 16,
-      "xp": 340
-    },
-    {
-      "id": "tr_aether_lens",
-      "a": "lens",
-      "b": "aetherdust",
-      "result": "aether_lens",
-      "requiredLevel": 16,
-      "xp": 340
-    },
-    {
-      "id": "tr_void_blade",
-      "a": "void_shard",
-      "b": "iron_sword",
-      "result": "void_blade",
-      "requiredLevel": 17,
-      "xp": 420
-    },
-    {
-      "id": "tr_orb_focus",
-      "a": "sigil",
-      "b": "aether_lens",
-      "result": "orb_focus",
-      "requiredLevel": 18,
-      "xp": 600
-    },
-    {
-      "id": "tr_maelstrom_key",
-      "a": "orb_focus",
-      "b": "maelstrom_seed",
-      "result": "maelstrom_key",
-      "requiredLevel": 20,
-      "xp": 1000
-    }
-  ],
-  "alchemy": [
-    {
-      "id": "alc_fireball",
-      "result": "fireball",
-      "requiredLevel": 5,
-      "xp": 40,
-      "requiredElements": [
-        {
-          "element": "pyron",
-          "quantity": 2
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "alc_healing",
-      "result": "healing_draught",
-      "requiredLevel": 5,
-      "xp": 40,
-      "requiredElements": [
-        {
-          "element": "verdant",
-          "quantity": 2
-        },
-        {
-          "element": "aqualis",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "alc_stone_ward",
-      "result": "stone_ward",
-      "requiredLevel": 6,
-      "xp": 50,
-      "requiredElements": [
-        {
-          "element": "terran",
-          "quantity": 4
-        },
-        {
-          "element": "ferric",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "alc_light_lure",
-      "result": "light_lure",
-      "requiredLevel": 8,
-      "xp": 60,
-      "requiredElements": [
-        {
-          "element": "lumis",
-          "quantity": 3
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "alc_shadow_veil",
-      "result": "shadow_veil",
-      "requiredLevel": 8,
-      "xp": 60,
-      "requiredElements": [
-        {
-          "element": "umbral",
-          "quantity": 3
-        },
-        {
-          "element": "zephyr",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "alc_storm_core",
-      "result": "storm_core",
-      "requiredLevel": 10,
-      "xp": 80,
-      "requiredElements": [
-        {
-          "element": "zephyr",
-          "quantity": 3
-        },
-        {
-          "element": "pyron",
-          "quantity": 2
-        },
-        {
-          "element": "aether",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "alc_golem_core",
-      "result": "golem_core",
-      "requiredLevel": 12,
-      "xp": 90,
-      "requiredElements": [
-        {
-          "element": "terran",
-          "quantity": 5
-        },
-        {
-          "element": "ferric",
-          "quantity": 3
-        }
-      ]
-    },
-    {
-      "id": "alc_quicksilver",
-      "result": "quicksilver",
-      "requiredLevel": 12,
-      "xp": 90,
-      "requiredElements": [
-        {
-          "element": "ferric",
-          "quantity": 3
-        },
-        {
-          "element": "aqualis",
-          "quantity": 2
-        },
-        {
-          "element": "lumis",
-          "quantity": 1
-        }
-      ]
-    },
-    {
-      "id": "alc_phil_ember",
-      "result": "philosophers_ember",
-      "requiredLevel": 15,
-      "xp": 140,
-      "requiredElements": [
-        {
-          "element": "pyron",
-          "quantity": 3
-        },
-        {
-          "element": "lumis",
-          "quantity": 3
-        },
-        {
-          "element": "aether",
-          "quantity": 2
-        }
-      ]
-    },
-    {
-      "id": "alc_maelstrom",
-      "result": "maelstrom_seed",
-      "requiredLevel": 18,
-      "xp": 200,
-      "requiredElements": [
-        {
-          "element": "aether",
-          "quantity": 4
-        },
-        {
-          "element": "umbral",
-          "quantity": 2
-        },
-        {
-          "element": "lumis",
-          "quantity": 2
-        }
-      ]
-    }
-  ],
-  "zones": [
-    {
-      "id": "hollow_verge",
-      "name": "Hollow Verge",
-      "subtitle": "where the world still behaves",
-      "description": "Scrub, cold streams and river stone. Nothing here wants to hurt you, which is how you know you have not gone far enough yet.",
-      "requiredLevel": 1,
-      "size": {
-        "w": 1400,
-        "h": 1900
+      "id": "plains_forest",
+      "name": "Plains / Forest",
+      "position": "Centre",
+      "centre": {
+        "x": 0,
+        "y": 0
       },
+      "radius": 22000,
+      "distanceFromCentre": 0,
+      "mood": "Open, bright, unthreatening. Where you always start and always return.",
       "palette": {
-        "ground": "#20302a",
-        "groundAlt": "#26382f",
-        "accent": "#4c7a5a",
-        "fog": "#0d1512"
-      },
-      "nodeCount": 40,
-      "respawnSeconds": 14,
-      "spawns": [
-        {
-          "material": "stick",
-          "weight": 26
-        },
-        {
-          "material": "stone",
-          "weight": 24
-        },
-        {
-          "material": "fiber",
-          "weight": 22
-        },
-        {
-          "material": "flint",
-          "weight": 14
-        },
-        {
-          "material": "clay",
-          "weight": 8
-        },
-        {
-          "material": "spring_water",
-          "weight": 6
-        }
-      ],
-      "enemies": [
-        "mire_husk"
-      ],
-      "enemyCount": 4
-    },
-    {
-      "id": "rustpine_wood",
-      "name": "Rustpine Wood",
-      "subtitle": "close, and getting closer",
-      "description": "Red-needled pines grown too near each other. Something has been stripping the lower branches, and it was not deer.",
-      "requiredLevel": 3,
-      "size": {
-        "w": 1600,
-        "h": 2100
-      },
-      "palette": {
-        "ground": "#2b2118",
-        "groundAlt": "#33271b",
-        "accent": "#8a5a32",
-        "fog": "#150f0a"
+        "ground": "#2b3a24",
+        "groundAlt": "#334227",
+        "accent": "#6f9a4a",
+        "fog": "#141c10"
       },
       "nodeCount": 46,
-      "respawnSeconds": 16,
-      "spawns": [
-        {
-          "material": "stick",
-          "weight": 22
-        },
-        {
-          "material": "fiber",
-          "weight": 20
-        },
-        {
-          "material": "resin",
-          "weight": 18
-        },
-        {
-          "material": "glowcap",
-          "weight": 16
-        },
-        {
-          "material": "bone",
-          "weight": 12
-        },
-        {
-          "material": "gale_moss",
-          "weight": 12
-        }
-      ],
-      "enemies": [
-        "mire_husk",
-        "pine_stalker"
-      ],
-      "enemyCount": 6
-    },
-    {
-      "id": "cinder_flats",
-      "name": "Cinder Flats",
-      "subtitle": "still warm underfoot",
-      "description": "A plain of black grit that has not finished cooling in living memory. Walk on the pale stripes; the dark ones give.",
-      "requiredLevel": 6,
-      "size": {
-        "w": 1800,
-        "h": 2200
-      },
-      "palette": {
-        "ground": "#2a2220",
-        "groundAlt": "#332826",
-        "accent": "#a3512c",
-        "fog": "#160f0d"
-      },
-      "nodeCount": 50,
       "respawnSeconds": 18,
-      "spawns": [
-        {
-          "material": "coal",
-          "weight": 24
-        },
-        {
-          "material": "sand",
-          "weight": 22
-        },
-        {
-          "material": "stone",
-          "weight": 16
-        },
-        {
-          "material": "flint",
-          "weight": 14
-        },
-        {
-          "material": "obsidian",
-          "weight": 14
-        },
-        {
-          "material": "ember_bloom",
-          "weight": 10
-        }
-      ],
-      "enemies": [
-        "ember_wisp",
-        "pine_stalker"
-      ],
-      "enemyCount": 7
+      "materials": [
+        "heartwood_burl",
+        "riverglass",
+        "ashcap_fungus",
+        "ironvine",
+        "stormpetal",
+        "loamstone"
+      ]
     },
     {
-      "id": "ferrous_deep",
-      "name": "Ferrous Deep",
-      "subtitle": "the mountain, opened",
-      "description": "Cut galleries running down into ore. The lamps were left burning by people who meant to come back.",
-      "requiredLevel": 10,
-      "size": {
-        "w": 1800,
-        "h": 2400
+      "id": "snowy_mountain",
+      "name": "Snowy Mountain",
+      "position": "Upper left",
+      "centre": {
+        "x": -33941,
+        "y": -33941
       },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Cold, vertical, lit from within. The sole source of Glacite.",
       "palette": {
-        "ground": "#22242c",
-        "groundAlt": "#282b34",
-        "accent": "#5f6b86",
-        "fog": "#0d0f14"
+        "ground": "#39424e",
+        "groundAlt": "#434d5a",
+        "accent": "#cfe9f5",
+        "fog": "#181d24"
       },
-      "nodeCount": 54,
-      "respawnSeconds": 20,
-      "spawns": [
-        {
-          "material": "iron_ore",
-          "weight": 26
-        },
-        {
-          "material": "stone",
-          "weight": 18
-        },
-        {
-          "material": "coal",
-          "weight": 16
-        },
-        {
-          "material": "clay",
-          "weight": 12
-        },
-        {
-          "material": "silver_ore",
-          "weight": 16
-        },
-        {
-          "material": "crystal_shard",
-          "weight": 12
-        }
-      ],
-      "enemies": [
-        "deep_crawler",
-        "ember_wisp"
-      ],
-      "enemyCount": 8
+      "nodeCount": 30,
+      "respawnSeconds": 18,
+      "materials": [
+        "rimeshard",
+        "coldiron_ore",
+        "peakmoss"
+      ]
     },
     {
-      "id": "maelstrom_rim",
-      "name": "The Maelstrom Rim",
-      "subtitle": "where it grinds the world thin",
-      "description": "The edge of the storm that gives the project its name. Ground here is a suggestion. Do not put down anything you want to keep.",
-      "requiredLevel": 15,
-      "size": {
-        "w": 2000,
-        "h": 2400
+      "id": "desert",
+      "name": "Desert",
+      "position": "Upper right",
+      "centre": {
+        "x": 33941,
+        "y": -33941
       },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Exposed. Nowhere to hide, and visible from far off.",
       "palette": {
-        "ground": "#1d1930",
-        "groundAlt": "#241f3b",
-        "accent": "#7d5fb8",
-        "fog": "#0a0814"
+        "ground": "#6b5433",
+        "groundAlt": "#7a613b",
+        "accent": "#f5d76e",
+        "fog": "#241c10"
       },
-      "nodeCount": 56,
-      "respawnSeconds": 22,
-      "spawns": [
-        {
-          "material": "aetherdust",
-          "weight": 24
+      "nodeCount": 30,
+      "respawnSeconds": 18,
+      "materials": [
+        "sunfused_glass",
+        "dustbloom",
+        "thermal_salt"
+      ]
+    },
+    {
+      "id": "wetland",
+      "name": "Wetland",
+      "position": "Lower left",
+      "centre": {
+        "x": -33941,
+        "y": 33941
+      },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Low visibility, slow going. Cover in every direction.",
+      "palette": {
+        "ground": "#2c3a33",
+        "groundAlt": "#33433a",
+        "accent": "#8fae6a",
+        "fog": "#121a16"
+      },
+      "nodeCount": 30,
+      "respawnSeconds": 18,
+      "materials": [
+        "bogiron_nodule",
+        "marshgas_bladder",
+        "silt_pearl"
+      ]
+    },
+    {
+      "id": "data_center",
+      "name": "Abandoned Data-Center",
+      "position": "Lower right",
+      "centre": {
+        "x": 33941,
+        "y": 33941
+      },
+      "radius": 22000,
+      "distanceFromCentre": 48000,
+      "mood": "Neon light and coolant fog. Still running, with growth creeping through it. The sole source of Umbrel.",
+      "palette": {
+        "ground": "#241f33",
+        "groundAlt": "#2b2540",
+        "accent": "#7fd8d8",
+        "fog": "#0e0b16"
+      },
+      "nodeCount": 30,
+      "respawnSeconds": 18,
+      "materials": [
+        "coolant_residue",
+        "capacitor_core",
+        "dark_fiber"
+      ]
+    }
+  ],
+  "coliseum": {
+    "boundaryRadius": 73000,
+    "travelSeconds": {
+      "$comment": "Spawn to biome edge. Measured in the PC blockout, not a target.",
+      "walk": [
+        30,
+        35
+      ],
+      "sprint": [
+        25,
+        30
+      ]
+    }
+  },
+  "crafting": {
+    "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
+    "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2).",
+    "baseStats": {
+      "carryCapacity": 60,
+      "pullRadius": 600,
+      "pullSpeed": 1200
+    },
+    "recipes": [
+      {
+        "id": "reinforced_weave",
+        "name": "Reinforced Weave",
+        "effect": {
+          "stat": "carryCapacity",
+          "amount": 40
         },
-        {
-          "material": "voidglass",
-          "weight": 22
+        "description": "Burl grain laid across vine that already carries its own metal. The gauntlet stops complaining about weight.",
+        "cost": [
+          {
+            "material": "heartwood_burl",
+            "quantity": 4
+          },
+          {
+            "material": "ironvine",
+            "quantity": 3
+          }
+        ]
+      },
+      {
+        "id": "layered_weave",
+        "name": "Layered Weave",
+        "effect": {
+          "stat": "carryCapacity",
+          "amount": 60
         },
-        {
-          "material": "crystal_shard",
-          "weight": 20
+        "description": "Three materials that have nothing in common except that none of them will give.",
+        "cost": [
+          {
+            "material": "loamstone",
+            "quantity": 5
+          },
+          {
+            "material": "ironvine",
+            "quantity": 4
+          },
+          {
+            "material": "ashcap_fungus",
+            "quantity": 3
+          }
+        ]
+      },
+      {
+        "id": "widened_aperture",
+        "name": "Widened Aperture",
+        "effect": {
+          "stat": "pullRadius",
+          "amount": 250
         },
-        {
-          "material": "obsidian",
-          "weight": 18
+        "description": "The mouth of the pull opens wider. You stop having to walk at things.",
+        "cost": [
+          {
+            "material": "riverglass",
+            "quantity": 4
+          },
+          {
+            "material": "stormpetal",
+            "quantity": 3
+          }
+        ]
+      },
+      {
+        "id": "deeper_current",
+        "name": "Deeper Current",
+        "effect": {
+          "stat": "pullSpeed",
+          "amount": 300
         },
+        "description": "The spiral tightens and quickens. Material arrives before you have finished passing it.",
+        "cost": [
+          {
+            "material": "stormpetal",
+            "quantity": 4
+          },
+          {
+            "material": "heartwood_burl",
+            "quantity": 3
+          }
+        ]
+      }
+    ]
+  },
+  "alchemy": [
+    {
+      "id": "gust",
+      "name": "Gust",
+      "tutorial": true,
+      "effect": {
+        "kind": "shove",
+        "damage": 2,
+        "knockback": 260,
+        "radius": 180
+      },
+      "description": "A hard shove pulled straight out of the air.",
+      "elements": [
         {
-          "material": "gale_moss",
-          "weight": 16
+          "element": "aeryl",
+          "quantity": 2
         }
-      ],
-      "enemies": [
-        "rift_shade",
-        "deep_crawler"
-      ],
-      "enemyCount": 9
+      ]
+    },
+    {
+      "id": "torrent",
+      "name": "Torrent",
+      "tutorial": true,
+      "effect": {
+        "kind": "beam",
+        "damage": 9,
+        "knockback": 90,
+        "range": 320
+      },
+      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far.",
+      "elements": [
+        {
+          "element": "aeryl",
+          "quantity": 2
+        },
+        {
+          "element": "vossen",
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "id": "emberlash",
+      "name": "Emberlash",
+      "tutorial": true,
+      "effect": {
+        "kind": "burst",
+        "damage": 14,
+        "knockback": 140,
+        "radius": 210,
+        "burnSeconds": 3
+      },
+      "description": "Ignited air. Cheap to make and difficult to be near.",
+      "elements": [
+        {
+          "element": "cindral",
+          "quantity": 3
+        },
+        {
+          "element": "aeryl",
+          "quantity": 2
+        }
+      ]
     }
   ],
   "enemies": [
     {
-      "id": "mire_husk",
-      "name": "Mire Husk",
-      "description": "Waterlogged bark grown around something that used to walk. Slow, and it does not stop.",
-      "shape": "lump",
-      "color": "#5d7a52",
-      "hp": 14,
-      "damage": 3,
-      "speed": 52,
-      "aggroRadius": 150,
-      "attackRange": 26,
-      "attackCooldown": 1.4,
-      "xp": 12,
-      "drops": [
-        {
-          "material": "fiber",
-          "chance": 0.5
-        },
-        {
-          "material": "resin",
-          "chance": 0.2
-        }
-      ]
-    },
-    {
-      "id": "pine_stalker",
-      "name": "Pine Stalker",
-      "description": "It has been stripping the lower branches. Now it has noticed you.",
-      "shape": "shard",
-      "color": "#8a5a32",
-      "hp": 26,
-      "damage": 6,
-      "speed": 74,
-      "aggroRadius": 210,
-      "attackRange": 28,
-      "attackCooldown": 1.15,
-      "xp": 26,
-      "drops": [
-        {
-          "material": "bone",
-          "chance": 0.45
-        },
-        {
-          "material": "resin",
-          "chance": 0.3
-        }
-      ]
-    },
-    {
-      "id": "ember_wisp",
-      "name": "Ember Wisp",
-      "description": "A scrap of the fire that made the flats, still looking for fuel.",
-      "shape": "flame",
-      "color": "#ff8347",
-      "hp": 30,
-      "damage": 9,
-      "speed": 96,
-      "aggroRadius": 240,
-      "attackRange": 24,
-      "attackCooldown": 0.95,
-      "xp": 42,
-      "drops": [
-        {
-          "material": "coal",
-          "chance": 0.45
-        },
-        {
-          "material": "ember_bloom",
-          "chance": 0.25
-        }
-      ]
-    },
-    {
-      "id": "deep_crawler",
-      "name": "Deep Crawler",
-      "description": "Armoured in the ore it eats. Hits like the mountain it came out of.",
-      "shape": "ore",
-      "color": "#7d6a5c",
-      "hp": 68,
-      "damage": 14,
+      "id": "goblin",
+      "name": "Goblin",
+      "tier": 1,
+      "represents": "Baseline firewalls and low-skill rival hackers",
+      "shape": "blob",
+      "color": "#6f8f4a",
+      "hp": 16,
+      "damage": 4,
       "speed": 62,
-      "aggroRadius": 200,
-      "attackRange": 30,
-      "attackCooldown": 1.5,
-      "xp": 80,
-      "drops": [
-        {
-          "material": "iron_ore",
-          "chance": 0.5
-        },
-        {
-          "material": "crystal_shard",
-          "chance": 0.2
-        }
-      ]
+      "aggroRadius": 220,
+      "attackRange": 34,
+      "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
     },
     {
-      "id": "rift_shade",
-      "name": "Rift Shade",
-      "description": "The storm's idea of a person. It arrives slightly before it moves.",
-      "shape": "core",
-      "color": "#8b7cd8",
-      "hp": 95,
-      "damage": 22,
-      "speed": 112,
+      "id": "minotaur",
+      "name": "Minotaur",
+      "tier": 2,
+      "represents": "Hardened defences and genuinely competent rivals",
+      "shape": "bone",
+      "color": "#a2603a",
+      "hp": 58,
+      "damage": 12,
+      "speed": 54,
       "aggroRadius": 280,
-      "attackRange": 30,
-      "attackCooldown": 1.05,
-      "xp": 160,
-      "drops": [
-        {
-          "material": "voidglass",
-          "chance": 0.4
-        },
-        {
-          "material": "aetherdust",
-          "chance": 0.3
-        }
-      ]
+      "attackRange": 44,
+      "description": "Something in the program decided you were worth spending on. Only ever a few."
+    },
+    {
+      "id": "scythe_bearer",
+      "name": "Scythe-bearer",
+      "tier": 3,
+      "represents": "Elite. The most capable opposition in the program",
+      "shape": "blade",
+      "color": "#8b2f4a",
+      "hp": 140,
+      "damage": 26,
+      "speed": 70,
+      "aggroRadius": 360,
+      "attackRange": 60,
+      "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
     }
-  ]
+  ],
+  "waves": {
+    "$comment": "Enemy pressure, from GDD section 7.1. The bundle - three waves - is the unit of pressure, not the single wave. Timing is scheduled; composition is procedural: which enemies, where they enter and how many are rolled, but WHEN they arrive is a design knob rather than a random one. The hard cap of three live wave-groups is exactly one full bundle, so ignoring a whole bundle puts the player at maximum pressure with the next one inbound.",
+    "$pacing_comment": "The canon pacing is tuned for a PC session. On a phone, a 30-minute gap between bundles means most players would finish a session without ever meeting one, so 'mobile' is active by default and compresses the schedule while keeping every ratio canon holds meaningful - three waves to a bundle, the gap timed from the END of the previous bundle so a struggling player is not punished, and one bundle live at a time. Switch activePacing to 'canon' to play the PC timings.",
+    "activePacing": "mobile",
+    "pacing": {
+      "canon": {
+        "wavesPerBundle": 3,
+        "secondsBetweenWaves": [
+          120,
+          300
+        ],
+        "secondsBetweenBundles": [
+          1800,
+          1800
+        ],
+        "secondsToClearWave": [
+          120,
+          300
+        ]
+      },
+      "mobile": {
+        "wavesPerBundle": 3,
+        "secondsBetweenWaves": [
+          35,
+          70
+        ],
+        "secondsBetweenBundles": [
+          300,
+          300
+        ],
+        "secondsToClearWave": [
+          30,
+          75
+        ]
+      }
+    },
+    "maxLiveWaveGroups": 3,
+    "$composition_comment": "Rolled per wave. Minotaur scarcity is the tuning knob that makes tier 2 mean anything, and the scythe-bearer is rarer still - canon is explicit that 'only a few' is what gives them weight.",
+    "composition": [
+      {
+        "bundleIndex": 0,
+        "goblin": [
+          3,
+          5
+        ],
+        "minotaur": [
+          0,
+          0
+        ],
+        "scythe_bearer": [
+          0,
+          0
+        ]
+      },
+      {
+        "bundleIndex": 1,
+        "goblin": [
+          4,
+          7
+        ],
+        "minotaur": [
+          0,
+          1
+        ],
+        "scythe_bearer": [
+          0,
+          0
+        ]
+      },
+      {
+        "bundleIndex": 2,
+        "goblin": [
+          5,
+          8
+        ],
+        "minotaur": [
+          1,
+          2
+        ],
+        "scythe_bearer": [
+          0,
+          0
+        ]
+      },
+      {
+        "bundleIndex": 3,
+        "goblin": [
+          6,
+          9
+        ],
+        "minotaur": [
+          1,
+          3
+        ],
+        "scythe_bearer": [
+          0,
+          1
+        ]
+      }
+    ],
+    "ambient": {
+      "$comment": "A separate population that persists between bundles. Never includes tier 3.",
+      "goblin": [
+        2,
+        4
+      ],
+      "minotaur": [
+        0,
+        1
+      ]
+    },
+    "$stealth_comment": "Enemies do not know where the player is; hiding or moving carefully lets exploration continue indefinitely, and the player is never required to clear a wave. During the FIRST bundle only, every enemy is shown - a tutorial affordance that then fades, because enemies not knowing where you are only matters if you do not automatically know where they are.",
+    "showEnemiesDuringFirstBundle": true
+  }
 }

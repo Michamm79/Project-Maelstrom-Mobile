@@ -1,15 +1,31 @@
 {
-  "$comment": "Alchemy: N elements with quantities produce one object. Mirrors AlchemyRecipe.cs. Gated behind alchemyUnlockLevel (5).",
-  "recipes": [
-    { "id": "alc_fireball",      "requires": { "pyron": 2, "zephyr": 1 },                 "result": "fireball",           "requiredLevel": 5,  "xp": 40 },
-    { "id": "alc_healing",       "requires": { "verdant": 2, "aqualis": 2 },              "result": "healing_draught",    "requiredLevel": 5,  "xp": 40 },
-    { "id": "alc_stone_ward",    "requires": { "terran": 4, "ferric": 2 },                "result": "stone_ward",         "requiredLevel": 6,  "xp": 50 },
-    { "id": "alc_light_lure",    "requires": { "lumis": 3, "aether": 1 },                 "result": "light_lure",         "requiredLevel": 8,  "xp": 60 },
-    { "id": "alc_shadow_veil",   "requires": { "umbral": 3, "zephyr": 1 },                "result": "shadow_veil",        "requiredLevel": 8,  "xp": 60 },
-    { "id": "alc_storm_core",    "requires": { "zephyr": 3, "pyron": 2, "aether": 1 },    "result": "storm_core",         "requiredLevel": 10, "xp": 80 },
-    { "id": "alc_golem_core",    "requires": { "terran": 5, "ferric": 3 },                "result": "golem_core",         "requiredLevel": 12, "xp": 90 },
-    { "id": "alc_quicksilver",   "requires": { "ferric": 3, "aqualis": 2, "lumis": 1 },   "result": "quicksilver",        "requiredLevel": 12, "xp": 90 },
-    { "id": "alc_phil_ember",    "requires": { "pyron": 3, "lumis": 3, "aether": 2 },     "result": "philosophers_ember", "requiredLevel": 15, "xp": 140 },
-    { "id": "alc_maelstrom",     "requires": { "aether": 4, "umbral": 2, "lumis": 2 },    "result": "maelstrom_seed",     "requiredLevel": 18, "xp": 200 }
+  "$comment": "Alchemy consumes ELEMENTS extracted from materials and produces combat abilities - not items, and not more materials. Visible but non-interactive before Level 2, so the player knows something is being withheld; at Level 2 the full menu opens, populated with whatever elements are held, everything else visibly locked. The three combinations below are canon (GDD section 6.2) and are the ones taught in the tutorial, all craftable from Plains/Forest material alone so the tutorial requires no travel.",
+  "$gap_comment": "Canon's Corporate economy table implies four combinations available at Level 2, and Milestone 1B lists 'the wider element table' as still to come - so the full combination list does not exist in canon yet. Only the three canon combinations ship here. Inventing more would repeat the mistake this rebuild is correcting.",
+  "$effects_comment": "Effect names and shapes are canon; the numbers are INFERRED and flagged as such.",
+  "combinations": [
+    {
+      "id": "gust",
+      "name": "Gust",
+      "elements": { "aeryl": 2 },
+      "tutorial": true,
+      "effect": { "kind": "shove", "damage": 2, "knockback": 260, "radius": 180 },
+      "description": "A hard shove pulled straight out of the air."
+    },
+    {
+      "id": "torrent",
+      "name": "Torrent",
+      "elements": { "aeryl": 2, "vossen": 3 },
+      "tutorial": true,
+      "effect": { "kind": "beam", "damage": 9, "knockback": 90, "range": 320 },
+      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far."
+    },
+    {
+      "id": "emberlash",
+      "name": "Emberlash",
+      "elements": { "cindral": 3, "aeryl": 2 },
+      "tutorial": true,
+      "effect": { "kind": "burst", "damage": 14, "knockback": 140, "radius": 210, "burnSeconds": 3 },
+      "description": "Ignited air. Cheap to make and difficult to be near."
+    }
   ]
 }

@@ -1,13 +1,18 @@
 /**
  * Indexed, read-only view over the generated content bundle.
  *
- * Replaces Unity's Resources.LoadAll<T>() - the bundle is imported at build time,
- * so there is no async load and no missing-asset failure mode.
+ * The bundle is imported at build time, so there is no async load and no
+ * missing-asset failure mode.
  */
 import bundleJson from '@content/maelstrom-content.json';
 import type {
-  AlchemyRecipe,
+  AlchemyCombination,
+  BiomeDef,
+  BiomeId,
+  ColiseumDef,
+  CombinationId,
   ContentBundle,
+  CraftingDef,
   ElementDef,
   ElementId,
   EnemyDef,
@@ -15,10 +20,8 @@ import type {
   MaterialDef,
   MaterialId,
   ProgressionConfig,
-  TransmutationRecipe,
   TutorialStep,
-  ZoneDef,
-  ZoneId,
+  WavesDef,
 } from './types';
 
 const bundle = bundleJson as unknown as ContentBundle;
@@ -27,29 +30,28 @@ export class Content {
   readonly progression: ProgressionConfig = bundle.progression;
   readonly elements: readonly ElementDef[] = bundle.elements;
   readonly materials: readonly MaterialDef[] = bundle.materials;
-  readonly transmutation: readonly TransmutationRecipe[] = bundle.transmutation;
-  readonly alchemy: readonly AlchemyRecipe[] = bundle.alchemy;
-  readonly zones: readonly ZoneDef[] = bundle.zones;
+  readonly biomes: readonly BiomeDef[] = bundle.biomes;
+  readonly coliseum: ColiseumDef = bundle.coliseum;
+  readonly crafting: CraftingDef = bundle.crafting;
+  readonly alchemy: readonly AlchemyCombination[] = bundle.alchemy;
   readonly enemies: readonly EnemyDef[] = bundle.enemies;
+  readonly waves: WavesDef = bundle.waves;
   readonly tutorial: readonly TutorialStep[] = bundle.tutorial;
+  /** Unreal units per screen unit; canon distances are stored in uu. */
+  readonly unitsPerPixel: number = bundle.unitsPerPixel ?? 12;
 
   private readonly elementById = new Map<ElementId, ElementDef>();
   private readonly materialById = new Map<MaterialId, MaterialDef>();
-  private readonly zoneById = new Map<ZoneId, ZoneDef>();
+  private readonly biomeById = new Map<BiomeId, BiomeDef>();
   private readonly enemyById = new Map<EnemyId, EnemyDef>();
-
-  /**
-   * Transmutation lookup keyed by the sorted input pair, which is what makes
-   * FindRecipe order-independent without scanning the list.
-   */
-  private readonly transmutationByPair = new Map<string, TransmutationRecipe>();
+  private readonly combinationById = new Map<CombinationId, AlchemyCombination>();
 
   constructor() {
     for (const e of this.elements) this.elementById.set(e.id, e);
     for (const m of this.materials) this.materialById.set(m.id, m);
-    for (const z of this.zones) this.zoneById.set(z.id, z);
+    for (const b of this.biomes) this.biomeById.set(b.id, b);
     for (const e of this.enemies) this.enemyById.set(e.id, e);
-    for (const r of this.transmutation) this.transmutationByPair.set(pairKey(r.a, r.b), r);
+    for (const c of this.alchemy) this.combinationById.set(c.id, c);
   }
 
   element(id: ElementId): ElementDef {
@@ -64,14 +66,10 @@ export class Content {
     return m;
   }
 
-  zone(id: ZoneId): ZoneDef {
-    const z = this.zoneById.get(id);
-    if (!z) throw new Error(`unknown zone "${id}"`);
-    return z;
-  }
-
-  hasMaterial(id: MaterialId): boolean {
-    return this.materialById.has(id);
+  biome(id: BiomeId): BiomeDef {
+    const b = this.biomeById.get(id);
+    if (!b) throw new Error(`unknown biome "${id}"`);
+    return b;
   }
 
   enemy(id: EnemyId): EnemyDef {
@@ -80,23 +78,54 @@ export class Content {
     return e;
   }
 
-  recipeByPair(a: MaterialId, b: MaterialId): TransmutationRecipe | undefined {
-    return this.transmutationByPair.get(pairKey(a, b));
+  combination(id: CombinationId): AlchemyCombination {
+    const c = this.combinationById.get(id);
+    if (!c) throw new Error(`unknown combination "${id}"`);
+    return c;
   }
 
-  /** Zones the player has reached, in unlock order. */
-  unlockedZones(level: number): readonly ZoneDef[] {
-    return this.zones.filter((z) => z.requiredLevel <= level);
+  hasMaterial(id: MaterialId): boolean {
+    return this.materialById.has(id);
   }
 
-  /** Every recipe that consumes this material - powers the codex "used in" list. */
-  recipesUsing(id: MaterialId): readonly TransmutationRecipe[] {
-    return this.transmutation.filter((r) => r.a === id || r.b === id);
+  /** The permanent spawn. Canon fixes it as Plains/Forest at the origin. */
+  get spawnBiome(): BiomeDef {
+    return this.biome('plains_forest');
   }
-}
 
-export function pairKey(a: MaterialId, b: MaterialId): string {
-  return a < b ? `${a}+${b}` : `${b}+${a}`;
+  /** Which region a point in Unreal units falls in, or null for connective terrain. */
+  biomeAt(x: number, y: number): BiomeDef | null {
+    for (const b of this.biomes) {
+      if (Math.hypot(x - b.centre.x, y - b.centre.y) <= b.radius) return b;
+    }
+    return null;
+  }
+
+  materialsOf(biome: BiomeId): readonly MaterialDef[] {
+    return this.materials.filter((m) => m.biome === biome);
+  }
+
+  /** Which biomes a material's elements can be reached from - powers the codex. */
+  biomesYielding(element: ElementId): readonly BiomeDef[] {
+    const ids = new Set(this.materials.filter((m) => m.elements.includes(element)).map((m) => m.biome));
+    return this.biomes.filter((b) => ids.has(b.id));
+  }
+
+  /** Crafting recipes that consume this material - the codex "used in" list. */
+  recipesUsing(id: MaterialId): readonly CraftingDef['recipes'][number][] {
+    return this.crafting.recipes.filter((r) => id in r.cost);
+  }
+
+  /** Combinations that spend this element. */
+  combinationsUsing(element: ElementId): readonly AlchemyCombination[] {
+    return this.alchemy.filter((c) => element in c.elements);
+  }
+
+  get activePacing(): WavesDef['pacing'][string] {
+    const pacing = this.waves.pacing[this.waves.activePacing];
+    if (!pacing) throw new Error(`unknown wave pacing "${this.waves.activePacing}"`);
+    return pacing;
+  }
 }
 
 /** Shared instance. The bundle is immutable, so a singleton is safe. */

@@ -1,35 +1,40 @@
 {
-  "$comment": "The opening guide. Text lives here; the rule that completes each step lives in web/src/core/tutorial.ts, keyed by id. The build fails if the two ever disagree.",
+  "$comment": "The opening guide, following GDD section 8.1: Level 0 teaches gathering with no enemies in the world at all, then reaching Level 1 triggers an unmistakable warning and the first wave bundle, which is where combat is taught. Canon is explicit that the tutorial says what to do and where to go and deliberately withholds why. Text lives here; the rule that completes each step lives in web/src/core/tutorial.ts, keyed by id, and the build fails if the two disagree.",
   "steps": [
     {
       "id": "move",
       "title": "Find your feet",
-      "hint": "Press and drag anywhere on the left of the screen to walk."
+      "hint": "Press and drag anywhere on the left of the screen to walk. You woke here. Nobody has told you why."
     },
     {
-      "id": "gather",
-      "title": "Take what you find",
-      "hint": "Stand next to something glowing, then press the green button on the right."
+      "id": "pull",
+      "title": "The pull",
+      "hint": "You have no tool. Hold the right button near anything and the gauntlets draw it in."
     },
     {
-      "id": "fill",
-      "title": "Fill the second orb",
-      "hint": "You carry two orbs and each holds one material. Gather another."
+      "id": "pull_moving",
+      "title": "Keep walking",
+      "hint": "The pull works at walking pace. You never have to stop, and the walk between places is where most of the gathering happens."
     },
     {
-      "id": "transmute",
-      "title": "Make something new",
-      "hint": "Press TRANSMUTE between the orbs to fuse what they hold."
+      "id": "carry",
+      "title": "What the orbs are for",
+      "hint": "The orbs show what you hold, not where it is kept. Watch them fill as you go."
     },
     {
-      "id": "fight",
-      "title": "Something else lives here",
-      "hint": "Near an enemy the button turns red. Attacking always beats gathering, so you never pick a flower mid-fight."
+      "id": "craft",
+      "title": "Make the gauntlets better",
+      "hint": "Open the menu and craft a Reinforced Weave. Everything you build first is a way to gather more."
     },
     {
-      "id": "bench",
-      "title": "The bench",
-      "hint": "Open Bench to swap what the orbs hold, unload one, or break a material down into elements."
+      "id": "warning",
+      "title": "Something has noticed",
+      "hint": "The warning is not subtle. Three waves are coming, and you are not required to clear any of them."
+    },
+    {
+      "id": "combine",
+      "title": "You were given three things",
+      "hint": "Gust, Torrent and Emberlash. Someone else made them. At Level 2 you get the workshop."
     }
   ]
 }

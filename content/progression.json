@@ -1,41 +1,60 @@
 {
-  "$comment": "Tuning constants. Kept out of code so balance can be changed without touching either runtime.",
-  "alchemyUnlockLevel": 5,
-  "orbCount": 2,
-  "maxLevel": 25,
-  "$comment_yield": "Decomposition is lossy on purpose: breaking a crafted thing returns only this fraction of its inputs' essence (min 1 per element). Without it, composition doubles every craft tier and a late-game item would decompose into hundreds of elements.",
-  "decompositionYield": 0.6,
+  "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening; past Level 2 the cycle continues and canon's storyline does not yet advance. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu - neither is built yet.",
+  "alchemyUnlockLevel": 2,
+  "classLevel": 5,
+  "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
   "xp": {
-    "gather": 4,
-    "gatherNewMaterial": 30,
-    "repeatTransmuteFactor": 0.2,
-    "repeatAlchemyFactor": 0.25,
-    "decompose": 6
+    "firstMaterial": 30,
+    "firstCraft": 60,
+    "firstAlchemy": 60,
+    "firstBiome": 80,
+    "clearWave": 40
   },
   "levelCurve": {
-    "$comment": "XP required to advance FROM level n TO n+1 is base * n^exponent, rounded to the nearest 5.",
-    "base": 60,
-    "exponent": 1.45
+    "$comment": "XP required to advance FROM level n TO n+1. Levels 0 and 1 are short on purpose: canon puts the first wave bundle at Level 1 and the rune at Level 2, so the opening has to reach Level 2 inside one session.",
+    "thresholds": [
+      60,
+      150,
+      360,
+      640,
+      1000,
+      1450,
+      2000,
+      2650,
+      3400,
+      4250
+    ]
   },
-  "$comment_gather": "gatherRadius plus the player radius is the pickup range. At 168 px/s a radius of 34 left only ~0.56s in range walking straight over a node, and under 0.3s clipping its edge - shorter than the time it takes to see the prompt and move a thumb. gatherGraceSeconds keeps the last node gatherable briefly after you pass it, so a slightly late tap still lands.",
+  "levels": [
+    {
+      "level": 0,
+      "trigger": "Start",
+      "grants": "Gauntlets. The tutorial teaches gathering. No enemies exist yet."
+    },
+    {
+      "level": 1,
+      "trigger": "Novelty XP from the tutorial",
+      "grants": "A blatant warning, then the first wave bundle. Combat is taught here."
+    },
+    {
+      "level": 2,
+      "trigger": "Clearing all three waves",
+      "grants": "Rune, and the full alchemy menu."
+    }
+  ],
   "player": {
-    "moveSpeed": 168,
-    "gatherRadius": 42,
-    "radius": 13,
-    "gatherGraceSeconds": 0.45,
-    "gatherGraceRangeFactor": 2
+    "$comment": "Speeds in screen units per second, chosen so that spawn to biome edge lands inside canon's measured 30-35 seconds walking and 25-30 sprinting.",
+    "moveSpeed": 70,
+    "sprintSpeed": 84,
+    "radius": 11,
+    "pullSeconds": 0.45
   },
   "combat": {
-    "$comment": "Damage is base plus the best weapon carried - there is no equip slot, so the tech tree itself is the progression. Regen is generous because this is a crafting game: dying should cost time, not progress.",
+    "$comment": "No base weapon damage and no attack arc: canon has no weapon items, and every offensive option is an alchemical combination. Death is a setback, never a reset (section 3.5).",
     "maxHp": 60,
-    "baseDamage": 3,
-    "attackRange": 52,
-    "attackCooldown": 0.5,
-    "attackArc": 1.6,
-    "knockback": 26,
-    "invulnerableSeconds": 0.6,
-    "regenPerSecond": 2.5,
-    "regenDelaySeconds": 5,
-    "respawnSeconds": 2.5
+    "invulnerableSeconds": 0.7,
+    "regenPerSecond": 1.5,
+    "regenDelaySeconds": 6,
+    "respawnSeconds": 3
   }
 }

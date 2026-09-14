@@ -1442,3 +1442,322 @@ button.ghost.wide {
   font-size: 11px;
   color: var(--ink-faint);
 }
+
+/* ------------------------------------------------------------------ canon HUD
+   The rebuild onto the GDD: gauntlet orbs that display rather than store, a
+   held PULL, and one menu holding both crafting and alchemy. */
+
+.place {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: rgba(14, 16, 26, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  min-width: 0;
+}
+.place b {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+.place span {
+  font-size: 10px;
+  opacity: 0.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40vw;
+}
+
+/* The two gauntlets, bottom-left of centre, above the menu button. */
+/* Bottom-left, clear of both thumbs: the stick lives in the left half of the
+   screen and the action column on the right, so the orbs sit above the stick
+   rather than between them. */
+.orbwrap {
+  position: absolute;
+  left: 12px;
+  bottom: 108px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.orbwrap > * {
+  pointer-events: auto;
+}
+.orbbar {
+  display: flex;
+  gap: 8px;
+}
+.orb {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.12), rgba(10, 12, 20, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 6px;
+}
+/* How full the inventory is, read as how full the orb looks. */
+.orb .fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(159, 216, 232, 0.22), rgba(159, 216, 232, 0.06));
+  transition: height 0.25s ease;
+  pointer-events: none;
+}
+.orb .mote {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.orb .mote em {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 700;
+  color: #e8e2d4;
+  text-shadow: 0 1px 2px #000;
+}
+.carry {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(14, 16, 26, 0.7);
+}
+.carry.full {
+  color: #f8a0a0;
+  opacity: 1;
+}
+.nav-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e2d4;
+  padding: 9px 14px;
+  border-radius: 11px;
+  background: rgba(30, 34, 50, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Two stacked actions on the right: CAST above, PULL under the thumb.
+   align-items must stay flex-end - centring these put the column over the orb
+   readout, which then swallowed every press on PULL. */
+.action-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.action.pull {
+  background: radial-gradient(circle at 36% 30%, #3e7f92, #1d4350);
+  border-color: rgba(159, 216, 232, 0.5);
+}
+.action.pull:active {
+  background: radial-gradient(circle at 36% 30%, #58a6bd, #255566);
+}
+.action.cast {
+  width: 62px;
+  height: 62px;
+  background: radial-gradient(circle at 36% 30%, #8a4a7a, #47223f);
+  border-color: rgba(224, 160, 210, 0.45);
+}
+.action b {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+/* The readied combinations, as one row above the action buttons. */
+.castbar {
+  position: absolute;
+  right: 12px;
+  bottom: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+.castbar .cast {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font: inherit;
+  color: #e8e2d4;
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: rgba(20, 22, 34, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.castbar .cast b {
+  font-size: 11px;
+}
+.castbar .cast span {
+  font-size: 9px;
+  opacity: 0.55;
+  letter-spacing: 0.02em;
+}
+.castbar .cast.on {
+  border-color: rgba(224, 160, 210, 0.75);
+  background: rgba(60, 30, 54, 0.9);
+}
+.castbar .cast.short {
+  opacity: 0.45;
+}
+
+/* Menu rows. Fast to read, because the world does not stop for this. */
+.sheet .note {
+  margin: 0 14px 8px;
+  font-size: 11px;
+  opacity: 0.5;
+}
+.row-item .head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.row-item .head em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.62;
+}
+.row-item .cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0;
+}
+.row-item p {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.45;
+}
+.row-item .go {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e2d4;
+  padding: 7px 14px;
+  border-radius: 9px;
+  background: rgba(60, 78, 108, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.row-item .go:disabled {
+  opacity: 0.4;
+}
+.row-item .tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+.row-item.done {
+  opacity: 0.55;
+}
+.row-item.locked {
+  opacity: 0.45;
+}
+.pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 10px;
+}
+.locked {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(40, 28, 56, 0.5);
+  border: 1px solid rgba(176, 124, 240, 0.22);
+  margin-bottom: 12px;
+}
+.locked b {
+  font-size: 12px;
+}
+.locked p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  /* A short screen has no room for a tall HUD. The orbs shrink, the readied
+     combinations become one horizontal row, and everything hugs an edge so the
+     middle of the screen stays the game. */
+  .orbwrap {
+    left: 12px;
+    bottom: 6px;
+    gap: 7px;
+  }
+  .orb {
+    width: 42px;
+    height: 42px;
+    padding: 4px;
+  }
+  .castbar {
+    flex-direction: row;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 4px;
+    gap: 5px;
+  }
+  .castbar .cast {
+    padding: 3px 7px;
+  }
+  .castbar .cast span {
+    display: none;
+  }
+  .place span {
+    display: none;
+  }
+}
+
+/* The top bar is three flex children now - place, health, level - so health
+   needs to claim its share or it collapses to nothing between the other two. */
+.topbar .vitals {
+  flex: 1;
+  min-width: 54px;
+  padding: 0;
+  margin-top: 0;
+}
+.topbar .vitals.hurt .hpbar i {
+  background: linear-gradient(90deg, #dc2626, #f87171);
+}
+
+/* Clear of the guide banner: they were landing on top of each other. */
+.toasts {
+  top: calc(var(--safe-t) + 158px);
+}
+
+/* These rows stack: a name-and-effect line, the cost, what it does, then the
+   button. The old rule laid them out as a horizontal strip, which squeezed the
+   description into a column three words wide. */
+.sheet .row-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.sheet .row-item .go {
+  align-self: flex-start;
+}
+.sheet .row-item .head b {
+  font-size: 14px;
+}

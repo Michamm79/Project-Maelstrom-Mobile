@@ -57,8 +57,9 @@ export class TitleScreen {
       el(
         'p',
         'tblurb',
-        'Two orbs, one pair of hands. Gather what the land gives up, fuse it into ' +
-          'something it was never meant to be, and carry that further in.',
+        'You wake at the centre of a bounded arena you did not choose, with two ' +
+          'half-orbs above your hands and no memory of how you got here. Nobody ' +
+          'explains why. Only what to do, and where to go.',
       ),
     );
 
@@ -86,7 +87,7 @@ export class TitleScreen {
       });
 
       const skip = el('button', 'tbtn', 'Skip the guide');
-      skip.append(el('span', 'tsub', 'Straight into the Hollow Verge'));
+      skip.append(el('span', 'tsub', 'Straight into the Coliseum'));
       skip.addEventListener('click', () => {
         this.hide();
         this.choice.onNewGame(false);
