@@ -1761,3 +1761,18 @@ button.ghost.wide {
 .sheet .row-item .head b {
   font-size: 14px;
 }
+
+/* The health bar claimed flex:1 and crushed the place card down to a dark pill.
+   The name of where you are is the more useful of the two, so it takes the
+   slack and health gets a fixed share. */
+.topbar .place {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.topbar .vitals {
+  flex: 0 0 84px;
+  min-width: 84px;
+}
+.topbar .level {
+  flex: 0 0 auto;
+}

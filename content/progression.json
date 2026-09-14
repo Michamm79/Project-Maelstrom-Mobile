@@ -11,18 +11,18 @@
     "clearWave": 40
   },
   "levelCurve": {
-    "$comment": "XP required to advance FROM level n TO n+1. Levels 0 and 1 are short on purpose: canon puts the first wave bundle at Level 1 and the rune at Level 2, so the opening has to reach Level 2 inside one session.",
+    "$comment": "Cumulative XP to advance FROM level n TO n+1. Set from canon's own triggers rather than by feel. Level 1 is the end of the gathering tutorial: the spawn holds six materials at 30 each, so 150 means finding five of them. Level 2 is clearing all three waves of the first bundle, so it sits at 350 cumulative - reachable from the six spawn materials (180), a first craft (60) and three cleared waves (120). An earlier curve put Level 1 at 60, which armed the wave director after two pickups.",
     "thresholds": [
-      60,
       150,
-      360,
-      640,
-      1000,
-      1450,
-      2000,
-      2650,
-      3400,
-      4250
+      200,
+      340,
+      520,
+      760,
+      1040,
+      1380,
+      1760,
+      2200,
+      2700
     ]
   },
   "levels": [

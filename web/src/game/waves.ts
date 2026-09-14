@@ -45,7 +45,9 @@ export class WaveDirector {
   arm(): void {
     if (this.phase !== 'idle') return;
     this.phase = 'between-bundles';
-    this.timer = 3;
+    // Long enough for the warning to land and be read. Canon wants the player
+    // to know something is coming, not to be standing in it already.
+    this.timer = 9;
   }
 
   get armed(): boolean {
@@ -85,8 +87,6 @@ export class WaveDirector {
   update(dt: number, level: number): void {
     if (level >= 1) this.arm();
     if (this.phase === 'idle') return;
-
-    this.spawnAmbientOnce();
 
     const alive = this.world.enemies.filter((e) => !e.dead).length;
     if (this.liveGroups > 0 && alive === 0) {
@@ -134,6 +134,11 @@ export class WaveDirector {
   private endBundle(): void {
     this.phase = 'between-bundles';
     this.timer = this.roll(this.pacing.secondsBetweenBundles);
+    // Canon calls the ambient population "a separate population that persists
+    // BETWEEN bundles" - so it arrives once the first bundle is done, not
+    // alongside it. Spawning both at once turned the combat tutorial into a
+    // nine-enemy ambush.
+    this.spawnAmbientOnce();
   }
 
   private nextWave(): void {

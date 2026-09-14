@@ -15,18 +15,18 @@
       "clearWave": 40
     },
     "levelCurve": {
-      "$comment": "XP required to advance FROM level n TO n+1. Levels 0 and 1 are short on purpose: canon puts the first wave bundle at Level 1 and the rune at Level 2, so the opening has to reach Level 2 inside one session.",
+      "$comment": "Cumulative XP to advance FROM level n TO n+1. Set from canon's own triggers rather than by feel. Level 1 is the end of the gathering tutorial: the spawn holds six materials at 30 each, so 150 means finding five of them. Level 2 is clearing all three waves of the first bundle, so it sits at 350 cumulative - reachable from the six spawn materials (180), a first craft (60) and three cleared waves (120). An earlier curve put Level 1 at 60, which armed the wave director after two pickups.",
       "thresholds": [
-        60,
         150,
-        360,
-        640,
-        1000,
-        1450,
-        2000,
-        2650,
-        3400,
-        4250
+        200,
+        340,
+        520,
+        760,
+        1040,
+        1380,
+        1760,
+        2200,
+        2700
       ]
     },
     "levels": [
@@ -63,16 +63,16 @@
     },
     "xpTable": [
       0,
-      60,
-      210,
-      570,
+      150,
+      350,
+      690,
       1210,
-      2210,
-      3660,
-      5660,
-      8310,
-      11710,
-      15960
+      1970,
+      3010,
+      4390,
+      6150,
+      8350,
+      11050
     ]
   },
   "tutorial": [
@@ -420,7 +420,7 @@
         "accent": "#6f9a4a",
         "fog": "#141c10"
       },
-      "nodeCount": 46,
+      "nodeCount": 240,
       "respawnSeconds": 18,
       "materials": [
         "heartwood_burl",
@@ -448,7 +448,7 @@
         "accent": "#cfe9f5",
         "fog": "#181d24"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18,
       "materials": [
         "rimeshard",
@@ -473,7 +473,7 @@
         "accent": "#f5d76e",
         "fog": "#241c10"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18,
       "materials": [
         "sunfused_glass",
@@ -498,7 +498,7 @@
         "accent": "#8fae6a",
         "fog": "#121a16"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18,
       "materials": [
         "bogiron_nodule",
@@ -523,7 +523,7 @@
         "accent": "#7fd8d8",
         "fog": "#0e0b16"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18,
       "materials": [
         "coolant_residue",
@@ -548,10 +548,10 @@
   },
   "crafting": {
     "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
-    "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2).",
+    "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2). The pull radius was raised from 600 to 900 after measuring the loop: at 600 a walking player swept up under two nodes a minute, which made the walk between biomes dead time - the exact failure canon warns the whole world shape depends on avoiding.",
     "baseStats": {
       "carryCapacity": 60,
-      "pullRadius": 600,
+      "pullRadius": 900,
       "pullSpeed": 1200
     },
     "recipes": [
@@ -615,7 +615,7 @@
       "id": "gust",
       "name": "Gust",
       "elements": {
-        "aeryl": 2
+        "aeryl": 1
       },
       "tutorial": true,
       "effect": {

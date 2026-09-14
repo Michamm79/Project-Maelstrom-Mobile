@@ -136,16 +136,27 @@ describe('alchemy', () => {
 
   it('spends the elements by consuming what was carrying them', () => {
     const alchemy = new Alchemy(bundle as never);
-    inventory.add('stormpetal', 4); // AYL + ARC
+    const cost = content.combination('gust').elements.aeryl ?? 0;
+    inventory.add('stormpetal', 4); // AYL + ARC, one of each per unit
     expect(alchemy.cast('gust', inventory, 1)?.id).toBe('gust');
-    expect(inventory.count('stormpetal')).toBe(2);
+    expect(inventory.count('stormpetal')).toBe(4 - cost);
   });
 
-  it('casts nothing when the pool is short', () => {
+  it('casts nothing when the pool is short, and spends nothing either', () => {
     const alchemy = new Alchemy(bundle as never);
-    inventory.add('stormpetal', 1);
-    expect(alchemy.cast('gust', inventory, 1)).toBeNull();
-    expect(inventory.count('stormpetal')).toBe(1);
+    // Torrent wants Vossen as well as Aeryl, and Stormpetal carries none of it.
+    inventory.add('stormpetal', 4);
+    expect(alchemy.cast('torrent', inventory, 2)).toBeNull();
+    expect(inventory.count('stormpetal')).toBe(4);
+  });
+
+  it('leaves a level 1 player able to cast something from spawn material alone', () => {
+    // Canon: the handed-over combinations are what the first wave bundle is
+    // fought with, so arriving at it with nothing castable is a broken opening.
+    const alchemy = new Alchemy(bundle as never);
+    for (const m of content.materialsOf('plains_forest')) inventory.add(m.id, 1);
+    const castable = alchemy.outlooks(inventory, 1).filter((o) => o.can);
+    expect(castable.length).toBeGreaterThan(0);
   });
 
   it('reports the missing elements rather than just refusing', () => {
@@ -163,14 +174,30 @@ describe('XP', () => {
     expect(p.award('firstMaterial', 'loamstone')).toBeGreaterThan(0);
   });
 
-  it('reaches level 2 - where the rune and the workshop are - inside an opening', () => {
+  it('holds level 1 back until the gathering tutorial is actually done', () => {
+    // Canon puts the first wave bundle at Level 1 and gives Level 0 no enemies
+    // at all, so Level 1 must not arrive after a pickup or two.
     const p = new Progression(content.progression);
-    // Six spawn materials plus the first biome and one craft: an unhurried
-    // first session, not a grind.
+    p.award('firstMaterial', 'loamstone');
+    p.award('firstMaterial', 'riverglass');
+    expect(p.level).toBe(0);
+  });
+
+  it('reaches level 2 on canon\'s own opening - the spawn, a craft, one bundle', () => {
+    const p = new Progression(content.progression);
     for (const m of content.materialsOf('plains_forest')) p.award('firstMaterial', m.id);
-    p.award('firstBiome', 'plains_forest');
     p.award('firstCraft', 'reinforced_weave');
+    // Level 2 is granted for clearing all three waves of the first bundle.
+    for (const wave of ['1', '2', '3']) p.award('clearWave', wave);
     expect(p.level).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not pay for waking up at the spawn', () => {
+    // Waking somewhere is not a visit. Paying for it put the player at Level 1
+    // before they had pressed Begin, which armed the waves immediately.
+    const p = new Progression(content.progression);
+    p.award('firstBiome', 'plains_forest');
+    expect(p.level).toBe(0);
   });
 
   it('cannot be farmed off one node', () => {

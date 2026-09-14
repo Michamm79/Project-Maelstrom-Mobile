@@ -26,10 +26,15 @@ export class Progression {
   }
 
   get level(): number {
+    return this.levelAt(this.xpTotal);
+  }
+
+  /** The level a given XP total corresponds to - used to detect a level change. */
+  levelAt(xp: number): number {
     const table = this.config.xpTable;
     let level = 0;
     for (let i = 1; i < table.length; i++) {
-      if (this.xpTotal >= (table[i] ?? Infinity)) level = i;
+      if (xp >= (table[i] ?? Infinity)) level = i;
       else break;
     }
     return level;

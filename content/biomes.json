@@ -30,7 +30,7 @@
         "accent": "#6f9a4a",
         "fog": "#141c10"
       },
-      "nodeCount": 46,
+      "nodeCount": 240,
       "respawnSeconds": 18
     },
     {
@@ -50,7 +50,7 @@
         "accent": "#cfe9f5",
         "fog": "#181d24"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18
     },
     {
@@ -70,7 +70,7 @@
         "accent": "#f5d76e",
         "fog": "#241c10"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18
     },
     {
@@ -90,7 +90,7 @@
         "accent": "#8fae6a",
         "fog": "#121a16"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18
     },
     {
@@ -110,10 +110,11 @@
         "accent": "#7fd8d8",
         "fog": "#0e0b16"
       },
-      "nodeCount": 30,
+      "nodeCount": 200,
       "respawnSeconds": 18
     }
   ],
   "unitsPerPixel": 12,
-  "$scale_comment": "Canon distances are Unreal units (1uu = 1cm) so the PC and mobile builds describe the same space. The mobile renderer divides by this to get screen units. At 12, the gauntlet's base 600uu pull reads as a 50px radius - comfortable for a thumb - and spawn to biome edge comes out at roughly 32 seconds on foot, which is canon's measured 30-35."
+  "$scale_comment": "Canon distances are Unreal units (1uu = 1cm) so the PC and mobile builds describe the same space. The mobile renderer divides by this to get screen units. At 12, the gauntlet's base 600uu pull reads as a 50px radius - comfortable for a thumb - and spawn to biome edge comes out at roughly 32 seconds on foot, which is canon's measured 30-35.",
+  "$density_comment": "Node counts are set from the loop, not from taste: a walking player sweeps a corridor twice the pull radius wide, so counts are chosen to yield roughly one pickup every four or five seconds on foot. That makes a 30-second biome crossing worth about six materials and fills the 60-unit cap over a long expedition rather than an ordinary walk. Plains/Forest carries a little more because it holds six materials to the others' three."
 }

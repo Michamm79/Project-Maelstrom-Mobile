@@ -223,9 +223,37 @@ export class World {
    * Scatter, biome by biome. A material can only appear inside its own region -
    * canon states that outright, and the content build enforces it too, because
    * a stray node would quietly remove the reason to travel.
+   *
+   * Density is the thing that makes the loop work: the walk between biomes is
+   * only enjoyable if it is productive, so there has to be enough here that a
+   * player holding the pull picks something up every few seconds.
    */
   private generateNodes(rng: Rng): void {
-    const minSpacing = 74;
+    const minSpacing = 54;
+    // Spacing is checked against a grid rather than against every node placed so
+    // far - the whole world is a few thousand nodes, and comparing each against
+    // all of them would stall the first frame.
+    const cell = minSpacing;
+    const grid = new Map<string, { x: number; y: number }[]>();
+    const key = (x: number, y: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+    const crowded = (x: number, y: number): boolean => {
+      const cx = Math.floor(x / cell);
+      const cy = Math.floor(y / cell);
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          for (const n of grid.get(`${cx + ox},${cy + oy}`) ?? []) {
+            if (Math.hypot(n.x - x, n.y - y) < minSpacing) return true;
+          }
+        }
+      }
+      return false;
+    };
+    const remember = (x: number, y: number) => {
+      const k = key(x, y);
+      const bucket = grid.get(k);
+      if (bucket) bucket.push({ x, y });
+      else grid.set(k, [{ x, y }]);
+    };
 
     for (const b of this.content.biomes) {
       const disc = this.disc(b.id);
@@ -236,13 +264,14 @@ export class World {
         const material = rng.pick(materials);
         let x = disc.x;
         let y = disc.y;
-        for (let attempt = 0; attempt < 24; attempt++) {
+        for (let attempt = 0; attempt < 12; attempt++) {
           const angle = rng.range(0, Math.PI * 2);
           const r = Math.sqrt(rng.range(0, 1)) * (disc.radius - 40);
           x = disc.x + Math.cos(angle) * r;
           y = disc.y + Math.sin(angle) * r;
-          if (!this.nodes.some((n) => Math.hypot(n.x - x, n.y - y) < minSpacing)) break;
+          if (!crowded(x, y)) break;
         }
+        remember(x, y);
         this.pushNode(rng, material, b.id, x, y);
       }
     }
@@ -250,22 +279,26 @@ export class World {
     // The connective terrain is forest, not a void, so it carries forest
     // material. That is what makes the walk between biomes productive, which
     // canon treats as the thing the whole world shape depends on.
+    // Scaled to the gaps' share of the world, so the connective forest is as
+    // worth crossing as the regions are worth arriving in.
     const forest = this.content.biome('plains_forest');
-    const centre = this.disc('plains_forest');
-    for (let i = 0; i < 260; i++) {
+    for (let i = 0; i < 900; i++) {
       let x = 0;
       let y = 0;
-      for (let attempt = 0; attempt < 24; attempt++) {
+      let placed = false;
+      for (let attempt = 0; attempt < 12; attempt++) {
         const angle = rng.range(0, Math.PI * 2);
         const r = Math.sqrt(rng.range(0, 1)) * this.boundaryRadius;
         x = Math.cos(angle) * r;
         y = Math.sin(angle) * r;
         // Only the gaps: inside a region, that region's own scatter owns it.
-        if (this.biomeAt(x, y) === null) break;
-        if (attempt === 23) return;
+        if (this.biomeAt(x, y) === null && !crowded(x, y)) {
+          placed = true;
+          break;
+        }
       }
-      if (this.biomeAt(x, y) !== null) continue;
-      void centre;
+      if (!placed) continue;
+      remember(x, y);
       this.pushNode(rng, rng.pick(forest.materials), 'plains_forest', x, y);
     }
   }

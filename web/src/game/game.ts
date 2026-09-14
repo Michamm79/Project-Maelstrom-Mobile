@@ -81,7 +81,17 @@ export class Game {
     });
     if (restored) this.applyRun(restored);
 
+    // Canon awards XP for the first VISIT to a biome. Waking up at the spawn is
+    // not a visit, and paying for it put the player at Level 1 before they had
+    // pressed Begin - which armed the wave director and filled the world with
+    // enemies during what is meant to be an undisturbed gathering tutorial.
+    this.progression.award('firstBiome', content.spawnBiome.id);
+
     this.ui.bind(this.hudState());
+    // currentBiome is deliberately left empty: refreshPlace() skips when the
+    // biome has not changed, so seeding it here meant the place card never got
+    // its first label. The award above is what stops the spawn paying out, and
+    // it makes the award() call below a no-op on its own.
     this.refreshPlace();
     this.title.show(restored !== null && restored.started, restored ? this.runSummary() : null);
   }
@@ -213,13 +223,14 @@ export class Game {
   }
 
   private cast(): void {
+    this.readyFirstCombination();
     if (!this.selected) {
-      this.ui.toast('Ready a combination first', 'bad');
+      this.ui.toast('Nothing to cast yet', 'bad');
       return;
     }
     const combination = this.alchemy.cast(this.selected, this.inventory, this.progression.level);
     if (!combination) {
-      this.ui.toast('Not enough of those elements', 'bad');
+      this.ui.toast(this.whyNotCastable(this.selected), 'bad');
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
@@ -232,11 +243,43 @@ export class Game {
     this.ui.refresh(this.hudState());
   }
 
+  /**
+   * `amount` has already been added by the caller, so the level here is the new
+   * one; `before` is recomputed from the XP that was not yet awarded.
+   */
+  /**
+   * "Not enough elements" is true but useless while something is chasing you.
+   * Name the element that is short and a material that carries it, so the answer
+   * is "go and pull one of those" rather than "open the menu and work it out".
+   */
+  private whyNotCastable(id: CombinationId): string {
+    const combination = content.combination(id);
+    const outlook = this.alchemy.outlook(combination, this.inventory, this.progression.level);
+    if (!outlook.unlocked) {
+      return `${combination.name} opens at level ${content.progression.alchemyUnlockLevel}`;
+    }
+    const missing = Object.keys(outlook.shortfall)[0];
+    if (!missing) return `${combination.name} will not fire`;
+
+    const element = content.element(missing);
+    const source = content.materials.find((m) => m.elements.includes(missing));
+    return source
+      ? `${combination.name} needs ${element.name} - pull a ${source.name}`
+      : `${combination.name} needs ${element.name}`;
+  }
+
   private awardXp(amount: number, message: string): void {
     if (amount <= 0) return;
-    const before = this.progression.level;
+    const after = this.progression.level;
+    const before = this.progression.levelAt(this.progression.xp - amount);
     this.ui.toast(message, 'good');
-    if (this.progression.level > before) this.onLevelUp(before, this.progression.level);
+    if (after > before) {
+      this.onLevelUp(before, after);
+      // The cast bar is built from what the level unlocks, so it has to be
+      // rebuilt here. Without this the combinations stayed invisible until the
+      // next pickup, and the player had nothing to attack with.
+      this.ui.refresh(this.hudState());
+    }
   }
 
   private onLevelUp(from: number, to: number): void {
@@ -251,6 +294,15 @@ export class Game {
     if (to >= content.progression.alchemyUnlockLevel) {
       this.ui.toast('The workshop is open. Alchemy, in the menu.', 'big');
     }
+    this.readyFirstCombination();
+  }
+
+  /** Put something in the player's hand rather than making them find the menu. */
+  private readyFirstCombination(): void {
+    if (this.selected) return;
+    const level = this.progression.level;
+    const first = content.alchemy.find((c) => this.alchemy.unlocked(c, level));
+    if (first) this.selected = first.id;
   }
 
   // ---------------------------------------------------------------- loop

@@ -1,38 +1,63 @@
 {
   "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
-  "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2).",
+  "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2). The pull radius was raised from 600 to 900 after measuring the loop: at 600 a walking player swept up under two nodes a minute, which made the walk between biomes dead time - the exact failure canon warns the whole world shape depends on avoiding.",
   "baseStats": {
     "carryCapacity": 60,
-    "pullRadius": 600,
+    "pullRadius": 900,
     "pullSpeed": 1200
   },
   "recipes": [
     {
       "id": "reinforced_weave",
       "name": "Reinforced Weave",
-      "cost": { "heartwood_burl": 4, "ironvine": 3 },
-      "effect": { "stat": "carryCapacity", "amount": 40 },
+      "cost": {
+        "heartwood_burl": 4,
+        "ironvine": 3
+      },
+      "effect": {
+        "stat": "carryCapacity",
+        "amount": 40
+      },
       "description": "Burl grain laid across vine that already carries its own metal. The gauntlet stops complaining about weight."
     },
     {
       "id": "layered_weave",
       "name": "Layered Weave",
-      "cost": { "loamstone": 5, "ironvine": 4, "ashcap_fungus": 3 },
-      "effect": { "stat": "carryCapacity", "amount": 60 },
+      "cost": {
+        "loamstone": 5,
+        "ironvine": 4,
+        "ashcap_fungus": 3
+      },
+      "effect": {
+        "stat": "carryCapacity",
+        "amount": 60
+      },
       "description": "Three materials that have nothing in common except that none of them will give."
     },
     {
       "id": "widened_aperture",
       "name": "Widened Aperture",
-      "cost": { "riverglass": 4, "stormpetal": 3 },
-      "effect": { "stat": "pullRadius", "amount": 250 },
+      "cost": {
+        "riverglass": 4,
+        "stormpetal": 3
+      },
+      "effect": {
+        "stat": "pullRadius",
+        "amount": 250
+      },
       "description": "The mouth of the pull opens wider. You stop having to walk at things."
     },
     {
       "id": "deeper_current",
       "name": "Deeper Current",
-      "cost": { "stormpetal": 4, "heartwood_burl": 3 },
-      "effect": { "stat": "pullSpeed", "amount": 300 },
+      "cost": {
+        "stormpetal": 4,
+        "heartwood_burl": 3
+      },
+      "effect": {
+        "stat": "pullSpeed",
+        "amount": 300
+      },
       "description": "The spiral tightens and quickens. Material arrives before you have finished passing it."
     }
   ]
