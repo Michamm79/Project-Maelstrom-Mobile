@@ -4,13 +4,18 @@
  *
  * Style reference is the handheld look (chunky 1px tinted outline, 3-tone
  * shading, 4-direction facing, bouncy 4-frame walk). The CHARACTER is drawn
- * from a reference the author supplied of themselves: dark curly hair, a black
- * long-sleeve top, dark trousers, slim build. It replaced a hooded alchemist,
- * which is why the palette's `h/H/d` ramp is hair where it used to be a hood.
+ * from a reference the author supplied of themselves: silver hair, a black
+ * shirt that covers the arms and the upper back but leaves the torso bare, and
+ * dark trousers. It replaced a hooded alchemist, which is why the palette's
+ * `h/H/d` ramp is hair where it used to be a hood.
  *
- * The belt is the one warm colour in the outfit and it is carrying the whole
- * figure's legibility: against dark ground, an all-black costume with a dark
- * head reads as one silhouette with no internal structure.
+ * That cut is what makes the figure legible rather than a problem to solve: the
+ * bare torso is a light mass between two dark sleeves, so the shirt can be as
+ * near-black as it should be without the whole silhouette going flat against
+ * dark ground. Silver hair does the same job at the top.
+ *
+ * The belt has to stay dark for the same reason in reverse - a warm brown at
+ * skin value merged into the torso and the two read as one tan block.
  *
  * The body is authored as character maps and the legs are drawn per frame, so
  * a walk cycle costs four leg poses rather than sixteen hand-placed frames —
@@ -40,20 +45,20 @@ const H = 24;
 const PALETTE = {
   '.': null,
   o: '#1d1526', // outline
-  h: '#4a3527', // hair light
-  H: '#33241a', // hair mid
-  d: '#231810', // hair shadow, and the line where it meets the face
+  h: '#e2e6ec', // hair light - silver
+  H: '#b3b9c4', // hair mid
+  d: '#848b98', // hair shadow, and the line where it meets the face
   s: '#efc09a', // skin
   S: '#c8926a', // skin shadow
-  c: '#4a4557', // top, lit
-  C: '#302c3b', // top, shadow
-  k: '#7a5a3a', // belt
-  K: '#4e3826', // belt dark
+  c: '#312f3a', // shirt, lit
+  C: '#1f1d26', // shirt, shadow
+  k: '#4a3a2c', // belt - dark leather, or it reads as more skin
+  K: '#2b211a', // belt dark
   t: '#1f1c26', // trouser
   T: '#15131a', // trouser shadow
   b: '#2c2630', // boot
   B: '#19161c', // boot dark
-  y: '#33241a', // kept for compatibility; the hood's pale hair is now hair
+  y: '#b3b9c4', // kept for compatibility; the hood's pale hair is now hair
 };
 
 // ---------------------------------------------------------------- body maps
@@ -73,11 +78,11 @@ const BODY = {
     '...oHdSSSSdHo...',
     '...ooHHddHHoo...',
     '..occcccccccco..',
-    '..oCccccccccCo..',
-    '..oCcckkkkccCo..',
-    '..oCccKKKKccCo..',
-    '..osccccccccso..',
-    '...occcccccco...',
+    '..oCcsssssscCo..',
+    '..oCcsssssscCo..',
+    '..oCckkkkkkcCo..',
+    '..osttttttttso..',
+    '...otttttttto...',
   ],
   up: [
     '......oooo......',
@@ -93,10 +98,10 @@ const BODY = {
     '...ooHHddHHoo...',
     '..occcccccccco..',
     '..oCccccccccCo..',
-    '..oCccccccccCo..',
-    '..oCccKKKKccCo..',
-    '..osccccccccso..',
-    '...occcccccco...',
+    '..oCcsssssscCo..',
+    '..oCckkkkkkcCo..',
+    '..osttttttttso..',
+    '...otttttttto...',
   ],
   side: [
     '.....oooo.......',
@@ -110,12 +115,12 @@ const BODY = {
     '..oHdssssssho...',
     '...oHdSSSSho....',
     '...ooHHddHHo....',
-    '..oCcccccccCo...',
-    '..oCcccccccCo...',
-    '..oCcckkkkcCo...',
-    '..oCccKKKKcCo...',
-    '..oCcccccccso...',
-    '...occccccco....',
+    '..occccccccco...',
+    '..oCsssssscCo...',
+    '..oCsssssscCo...',
+    '..oCkkkkkkcCo...',
+    '..ostttttttso...',
+    '...ottttttto....',
   ],
 };
 
