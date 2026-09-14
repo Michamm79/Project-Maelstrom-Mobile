@@ -1,287 +1,136 @@
 using System.Collections.Generic;
 using UnityEngine;
-using OrbSystem.ContentModel;
+using Maelstrom.ContentModel;
 
-namespace OrbSystem
+namespace Maelstrom
 {
     /// <summary>
-    /// Loads the shared content bundle and turns it into live ScriptableObjects,
-    /// then registers them with TransmutationSystem and AlchemySystem.
+    /// Reads the generated content bundle and indexes it.
     ///
-    /// This replaces hand-authoring 69 materials and 50 recipes as .asset files:
-    /// content lives in one JSON that the web build reads too, so a balance change
-    /// lands in both runtimes at once. Assets are still supported - if you would
-    /// rather work in the inspector, run
-    /// OrbSystem -> Content -> Import Content Assets and leave this unassigned.
+    /// Deliberately a plain reader: it builds no ScriptableObjects and owns no
+    /// game logic, so the one thing this directory still guarantees - that the
+    /// two runtimes read identical content - holds without the rest of the tree
+    /// having to be correct.
     ///
-    /// Create via: Create -> OrbSystem -> Content Database.
+    /// See the note in ContentSchema.cs: the GDD's PC project is Unreal Engine
+    /// 5.8, not Unity. The other scripts under unity/Assets/Scripts still
+    /// implement the earlier prototype's mechanics - orb slots, and combining
+    /// two materials into a third - which are not in canon and no longer exist
+    /// anywhere else in this repository. They are left in place pending a
+    /// decision on this directory rather than quietly rewritten.
     /// </summary>
-    [CreateAssetMenu(fileName = "ContentDatabase", menuName = "OrbSystem/Content Database", order = 10)]
+    [CreateAssetMenu(fileName = "ContentDatabase", menuName = "Maelstrom/Content Database", order = 0)]
     public class ContentDatabase : ScriptableObject
     {
-        [Tooltip("Path under a Resources folder, without the .json extension.")]
+        [Tooltip("Resources path of the generated bundle, without the .json extension.")]
         public string resourcePath = "maelstrom-content";
 
-        [Tooltip("Sprite looked up by MaterialSO.shape, so generated materials can " +
-                 "still show art. Optional - leave empty to run without icons.")]
-        public List<ShapeSprite> shapeSprites = new List<ShapeSprite>();
-
-        [System.Serializable]
-        public struct ShapeSprite
-        {
-            public string shape;
-            public Sprite sprite;
-        }
-
-        private readonly Dictionary<string, ElementSO> elementsById = new Dictionary<string, ElementSO>();
-        private readonly Dictionary<string, MaterialSO> materialsById = new Dictionary<string, MaterialSO>();
-        private readonly List<TransmutationRecipe> transmutationRecipes = new List<TransmutationRecipe>();
-        private readonly List<AlchemyRecipe> alchemyRecipes = new List<AlchemyRecipe>();
-        private readonly List<ZoneJson> zones = new List<ZoneJson>();
-        private readonly List<EnemyJson> enemies = new List<EnemyJson>();
-        private readonly List<TutorialStepJson> tutorial = new List<TutorialStepJson>();
-
-        private ProgressionJson progression = new ProgressionJson();
+        private ContentBundleJson bundle;
         private bool loaded;
 
-        public bool Loaded => loaded;
-        public ProgressionJson Progression => progression;
-        public IReadOnlyList<ZoneJson> Zones => zones;
-        public IReadOnlyList<EnemyJson> Enemies => enemies;
-        public IReadOnlyList<TutorialStepJson> Tutorial => tutorial;
-        public IReadOnlyDictionary<string, ElementSO> Elements => elementsById;
-        public IReadOnlyDictionary<string, MaterialSO> Materials => materialsById;
-        public IReadOnlyList<TransmutationRecipe> TransmutationRecipes => transmutationRecipes;
-        public IReadOnlyList<AlchemyRecipe> AlchemyRecipes => alchemyRecipes;
+        private readonly Dictionary<string, ElementJson> elementsById = new Dictionary<string, ElementJson>();
+        private readonly Dictionary<string, MaterialJson> materialsById = new Dictionary<string, MaterialJson>();
+        private readonly Dictionary<string, BiomeJson> biomesById = new Dictionary<string, BiomeJson>();
+        private readonly Dictionary<string, EnemyJson> enemiesById = new Dictionary<string, EnemyJson>();
+        private readonly Dictionary<string, AlchemyCombinationJson> combinationsById =
+            new Dictionary<string, AlchemyCombinationJson>();
 
-        /// <summary>
-        /// Parse the bundle and register everything. Safe to call repeatedly;
-        /// only the first call does work.
-        /// </summary>
+        public bool Loaded => loaded;
+        public ProgressionJson Progression => bundle?.progression;
+        public ColiseumJson Coliseum => bundle?.coliseum;
+        public CraftingJson Crafting => bundle?.crafting;
+        public WavesJson Waves => bundle?.waves;
+        public float UnitsPerPixel => bundle?.unitsPerPixel ?? 12f;
+        public IReadOnlyList<ElementJson> Elements => bundle?.elements ?? new List<ElementJson>();
+        public IReadOnlyList<MaterialJson> Materials => bundle?.materials ?? new List<MaterialJson>();
+        public IReadOnlyList<BiomeJson> Biomes => bundle?.biomes ?? new List<BiomeJson>();
+        public IReadOnlyList<AlchemyCombinationJson> Alchemy => bundle?.alchemy ?? new List<AlchemyCombinationJson>();
+        public IReadOnlyList<EnemyJson> Enemies => bundle?.enemies ?? new List<EnemyJson>();
+        public IReadOnlyList<TutorialStepJson> Tutorial => bundle?.tutorial ?? new List<TutorialStepJson>();
+
         public void Load()
         {
             if (loaded) return;
             Reload();
         }
 
-        /// <summary>Force a re-parse. Useful after editing content during play mode.</summary>
         public void Reload()
         {
+            loaded = false;
             elementsById.Clear();
             materialsById.Clear();
-            transmutationRecipes.Clear();
-            alchemyRecipes.Clear();
-            zones.Clear();
-            enemies.Clear();
-            tutorial.Clear();
+            biomesById.Clear();
+            enemiesById.Clear();
+            combinationsById.Clear();
 
             var asset = Resources.Load<TextAsset>(resourcePath);
             if (asset == null)
             {
-                Debug.LogError(
-                    $"[ContentDatabase] No TextAsset at Resources/{resourcePath}.json. " +
-                    "Run `npm run build:content` at the repo root to generate it.");
-                loaded = true;
+                Debug.LogError($"ContentDatabase: no bundle at Resources/{resourcePath}. " +
+                               "Run `npm run build:content` at the repository root.");
                 return;
             }
 
-            var bundle = JsonUtility.FromJson<ContentBundleJson>(asset.text);
-            if (bundle == null || bundle.materials.Count == 0)
+            bundle = JsonUtility.FromJson<ContentBundleJson>(asset.text);
+            if (bundle == null)
             {
-                Debug.LogError($"[ContentDatabase] Could not parse Resources/{resourcePath}.json.");
-                loaded = true;
+                Debug.LogError("ContentDatabase: the bundle failed to parse.");
                 return;
             }
 
-            progression = bundle.progression ?? new ProgressionJson();
-            zones.AddRange(bundle.zones);
-            enemies.AddRange(bundle.enemies);
-            tutorial.AddRange(bundle.tutorial);
-
-            BuildElements(bundle);
-            BuildMaterials(bundle);
-            BuildTransmutation(bundle);
-            BuildAlchemy(bundle);
-
-            TransmutationSystem.RegisterRecipes(transmutationRecipes);
-            AlchemySystem.RegisterRecipes(alchemyRecipes);
+            foreach (var e in bundle.elements) elementsById[e.id] = e;
+            foreach (var m in bundle.materials) materialsById[m.id] = m;
+            foreach (var b in bundle.biomes) biomesById[b.id] = b;
+            foreach (var e in bundle.enemies) enemiesById[e.id] = e;
+            foreach (var c in bundle.alchemy) combinationsById[c.id] = c;
 
             loaded = true;
-            Debug.Log(
-                $"[ContentDatabase] {elementsById.Count} elements, {materialsById.Count} materials, " +
-                $"{transmutationRecipes.Count} transmutations, {alchemyRecipes.Count} alchemy recipes, " +
-                $"{zones.Count} zones, {enemies.Count} enemies.");
         }
 
-        private void BuildElements(ContentBundleJson bundle)
+        public ElementJson Element(string id) =>
+            elementsById.TryGetValue(id ?? string.Empty, out var v) ? v : null;
+
+        public MaterialJson Material(string id) =>
+            materialsById.TryGetValue(id ?? string.Empty, out var v) ? v : null;
+
+        public BiomeJson Biome(string id) =>
+            biomesById.TryGetValue(id ?? string.Empty, out var v) ? v : null;
+
+        public EnemyJson Enemy(string id) =>
+            enemiesById.TryGetValue(id ?? string.Empty, out var v) ? v : null;
+
+        public AlchemyCombinationJson Combination(string id) =>
+            combinationsById.TryGetValue(id ?? string.Empty, out var v) ? v : null;
+
+        /// <summary>
+        /// The pacing actually in use. The bundle carries both canon's PC timings
+        /// and the compressed mobile ones.
+        /// </summary>
+        public WavePacingJson ActivePacing()
         {
-            foreach (var json in bundle.elements)
+            if (bundle?.waves == null) return new WavePacingJson();
+            return bundle.waves.activePacing == "canon" ? bundle.waves.canon : bundle.waves.mobile;
+        }
+
+        /// <summary>
+        /// Which region a point falls in, in Unreal units, or null for the
+        /// connective forest between them.
+        /// </summary>
+        public BiomeJson BiomeAt(float x, float y)
+        {
+            foreach (var b in Biomes)
             {
-                var element = CreateInstance<ElementSO>();
-                element.name = json.id;
-                element.elementID = json.id;
-                element.displayName = json.name;
-                element.description = json.description;
-                element.elementColor = ParseColor(json.color, Color.white);
-                elementsById[json.id] = element;
-            }
-        }
-
-        private void BuildMaterials(ContentBundleJson bundle)
-        {
-            // Two passes are not needed for materials (composition only references
-            // elements, which are already built), but recipes below do need every
-            // material to exist first.
-            foreach (var json in bundle.materials)
-            {
-                var material = CreateInstance<MaterialSO>();
-                material.name = json.id;
-                material.materialID = json.id;
-                material.displayName = json.name;
-                material.description = json.description;
-                material.tags = json.tags ?? new List<string>();
-                material.shape = json.shape;
-                material.tint = ParseColor(json.color, Color.white);
-                material.icon = SpriteForShape(json.shape);
-                material.tier = json.tier;
-                material.availableAtLevel = json.availableAtLevel;
-                material.origin = ParseOrigin(json.source);
-
-                foreach (var pair in json.composition)
-                {
-                    if (!elementsById.TryGetValue(pair.element, out var element))
-                    {
-                        Debug.LogWarning($"[ContentDatabase] Material '{json.id}' references unknown element '{pair.element}'.");
-                        continue;
-                    }
-                    material.elementComposition.Add(new ElementQuantity(element, pair.quantity));
-                }
-
-                materialsById[json.id] = material;
-            }
-        }
-
-        private void BuildTransmutation(ContentBundleJson bundle)
-        {
-            foreach (var json in bundle.transmutation)
-            {
-                if (!TryResolve(json.a, json.id, out var a)) continue;
-                if (!TryResolve(json.b, json.id, out var b)) continue;
-                if (!TryResolve(json.result, json.id, out var result)) continue;
-
-                var recipe = CreateInstance<TransmutationRecipe>();
-                recipe.name = json.id;
-                recipe.recipeID = json.id;
-                recipe.inputA = a;
-                recipe.inputB = b;
-                recipe.resultMaterial = result;
-                recipe.resultPrefab = result.worldPrefab;
-                recipe.requiredLevel = json.requiredLevel;
-                recipe.xp = json.xp;
-                transmutationRecipes.Add(recipe);
-            }
-        }
-
-        private void BuildAlchemy(ContentBundleJson bundle)
-        {
-            foreach (var json in bundle.alchemy)
-            {
-                if (!TryResolve(json.result, json.id, out var result)) continue;
-
-                var recipe = CreateInstance<AlchemyRecipe>();
-                recipe.name = json.id;
-                recipe.recipeID = json.id;
-                recipe.resultMaterial = result;
-                recipe.resultPrefab = result.worldPrefab;
-                recipe.requiredLevel = json.requiredLevel;
-                recipe.xp = json.xp;
-
-                foreach (var pair in json.requiredElements)
-                {
-                    if (!elementsById.TryGetValue(pair.element, out var element))
-                    {
-                        Debug.LogWarning($"[ContentDatabase] Alchemy '{json.id}' requires unknown element '{pair.element}'.");
-                        continue;
-                    }
-                    recipe.requiredElements.Add(new ElementQuantity(element, pair.quantity));
-                }
-
-                alchemyRecipes.Add(recipe);
-            }
-        }
-
-        private bool TryResolve(string materialID, string recipeID, out MaterialSO material)
-        {
-            if (materialsById.TryGetValue(materialID, out material)) return true;
-
-            Debug.LogWarning($"[ContentDatabase] Recipe '{recipeID}' references unknown material '{materialID}'.");
-            return false;
-        }
-
-        public ElementSO Element(string id)
-        {
-            return elementsById.TryGetValue(id, out var element) ? element : null;
-        }
-
-        public MaterialSO Material(string id)
-        {
-            return materialsById.TryGetValue(id, out var material) ? material : null;
-        }
-
-        public ZoneJson Zone(string id)
-        {
-            foreach (var zone in zones)
-            {
-                if (zone.id == id) return zone;
+                if (b.centre == null) continue;
+                var dx = x - b.centre.x;
+                var dy = y - b.centre.y;
+                if (Mathf.Sqrt(dx * dx + dy * dy) <= b.radius) return b;
             }
             return null;
         }
 
-        public EnemyJson Enemy(string id)
-        {
-            foreach (var enemy in enemies)
-            {
-                if (enemy.id == id) return enemy;
-            }
-            return null;
-        }
-
-        public List<ZoneJson> UnlockedZones(int playerLevel)
-        {
-            var unlocked = new List<ZoneJson>();
-            foreach (var zone in zones)
-            {
-                if (zone.requiredLevel <= playerLevel) unlocked.Add(zone);
-            }
-            return unlocked;
-        }
-
-        private Sprite SpriteForShape(string shape)
-        {
-            if (string.IsNullOrEmpty(shape)) return null;
-
-            foreach (var entry in shapeSprites)
-            {
-                if (entry.shape == shape) return entry.sprite;
-            }
-            return null;
-        }
-
-        private static MaterialSO.Origin ParseOrigin(string source)
-        {
-            switch (source)
-            {
-                case "transmuted": return MaterialSO.Origin.Transmuted;
-                case "alchemized": return MaterialSO.Origin.Alchemized;
-                default: return MaterialSO.Origin.Gathered;
-            }
-        }
-
-        /// <summary>Parses "#rrggbb" (the form the content file uses).</summary>
         public static Color ParseColor(string hex, Color fallback)
         {
-            if (!string.IsNullOrEmpty(hex) && ColorUtility.TryParseHtmlString(hex, out var parsed)) return parsed;
-            return fallback;
+            return ColorUtility.TryParseHtmlString(hex, out var parsed) ? parsed : fallback;
         }
     }
 }

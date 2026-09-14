@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace OrbSystem.ContentModel
+namespace Maelstrom.ContentModel
 {
     /// <summary>
     /// Serializable mirrors of unity/Assets/Resources/maelstrom-content.json.
@@ -12,62 +12,50 @@ namespace OrbSystem.ContentModel
     /// re-run `npm run build:content`.
     ///
     /// Shapes here are constrained by JsonUtility: no dictionaries, no nullable
-    /// primitives, no top-level arrays. The build step already flattens element
-    /// maps into ElementQuantityJson arrays for exactly this reason.
+    /// primitives, no top-level arrays. The build step flattens every
+    /// id-to-quantity map into an array of pairs for exactly this reason.
+    ///
+    /// NOTE ON THIS DIRECTORY: the GDD's PC project is Unreal Engine 5.8. This
+    /// C# tree exists because the repository it was first ported from was a
+    /// Unity prototype, which turned out to be a different project. It is kept
+    /// only so the generated bundle has a matching reader; it mirrors canon, but
+    /// canon does not target Unity.
     /// </summary>
     [Serializable]
     public class ContentBundleJson
     {
         public int version;
+        public float unitsPerPixel = 12f;
         public ProgressionJson progression;
+        public ColiseumJson coliseum;
+        public CraftingJson crafting;
+        public WavesJson waves;
         public List<ElementJson> elements = new List<ElementJson>();
         public List<MaterialJson> materials = new List<MaterialJson>();
-        public List<TransmutationJson> transmutation = new List<TransmutationJson>();
-        public List<AlchemyJson> alchemy = new List<AlchemyJson>();
-        public List<ZoneJson> zones = new List<ZoneJson>();
+        public List<BiomeJson> biomes = new List<BiomeJson>();
+        public List<AlchemyCombinationJson> alchemy = new List<AlchemyCombinationJson>();
         public List<EnemyJson> enemies = new List<EnemyJson>();
         public List<TutorialStepJson> tutorial = new List<TutorialStepJson>();
     }
 
-    [Serializable]
-    public class ProgressionJson
-    {
-        public int alchemyUnlockLevel = 5;
-        public int orbCount = 2;
-        public int maxLevel = 25;
-        public float decompositionYield = 0.6f;
-        public XpJson xp = new XpJson();
-        public int[] xpTable = new int[0];
-        public CombatJson combat = new CombatJson();
-        public PlayerJson player = new PlayerJson();
-    }
+    // ------------------------------------------------------------- elements
 
-    [Serializable]
-    public class XpJson
-    {
-        public int gather = 4;
-        public int gatherNewMaterial = 30;
-        public float repeatTransmuteFactor = 0.2f;
-        public float repeatAlchemyFactor = 0.25f;
-        public int decompose = 6;
-    }
-
+    /// <summary>
+    /// One of the ten invented elements. Never real chemistry: the symbol is
+    /// always three letters, which is what stops the table being mistaken for
+    /// the periodic table. The content build rejects anything else.
+    /// </summary>
     [Serializable]
     public class ElementJson
     {
         public string id;
         public string name;
-        public string description;
-        public string color;
-        // Periodic-table layout. The alchemy screen is generated from these, so a
-        // duplicate symbol or cell is a content error the build already rejects.
         public string symbol;
-        public int number;
-        public string group;
-        public int row;
-        public int col;
+        public string domain;
+        public string color;
     }
 
+    /// <summary>An element and how much of it. JsonUtility cannot read a map.</summary>
     [Serializable]
     public class ElementQuantityJson
     {
@@ -75,71 +63,37 @@ namespace OrbSystem.ContentModel
         public int quantity;
     }
 
+    /// <summary>A material and how much of it.</summary>
+    [Serializable]
+    public class MaterialQuantityJson
+    {
+        public string material;
+        public int quantity;
+    }
+
+    // ------------------------------------------------------------- materials
+
     [Serializable]
     public class MaterialJson
     {
         public string id;
         public string name;
         public string description;
-        public List<string> tags = new List<string>();
+        /// <summary>The only biome it can be found in. Enforced at build time.</summary>
+        public string biome;
+        /// <summary>Exactly two, always.</summary>
+        public string[] elements = new string[0];
         public string shape;
         public string color;
-        public string source;
-        public int tier;
-        public int availableAtLevel;
-        public List<ElementQuantityJson> composition = new List<ElementQuantityJson>();
-
-        /// <summary>
-        /// Weapon damage. JsonUtility has no nullable int, so a non-weapon reads
-        /// back as 0; the build refuses to emit a weapon without a damage value,
-        /// so 0 here always means "not a weapon" and never "a broken weapon".
-        /// </summary>
-        public int damage;
     }
 
-    [Serializable]
-    public class TransmutationJson
-    {
-        public string id;
-        public string a;
-        public string b;
-        public string result;
-        public int requiredLevel;
-        public int xp;
-    }
+    // ------------------------------------------------------------- the world
 
     [Serializable]
-    public class AlchemyJson
+    public class PointJson
     {
-        public string id;
-        public string result;
-        public int requiredLevel;
-        public int xp;
-        public List<ElementQuantityJson> requiredElements = new List<ElementQuantityJson>();
-    }
-
-    [Serializable]
-    public class ZoneJson
-    {
-        public string id;
-        public string name;
-        public string subtitle;
-        public string description;
-        public int requiredLevel;
-        public SizeJson size = new SizeJson();
-        public PaletteJson palette = new PaletteJson();
-        public int nodeCount;
-        public float respawnSeconds;
-        public List<SpawnJson> spawns = new List<SpawnJson>();
-        public List<string> enemies = new List<string>();
-        public int enemyCount;
-    }
-
-    [Serializable]
-    public class SizeJson
-    {
-        public float w;
-        public float h;
+        public float x;
+        public float y;
     }
 
     [Serializable]
@@ -151,67 +105,197 @@ namespace OrbSystem.ContentModel
         public string fog;
     }
 
+    /// <summary>
+    /// A region of the one continuous Coliseum. Not a level: there is no load
+    /// between these, and nothing gates on player level.
+    /// </summary>
     [Serializable]
-    public class SpawnJson
+    public class BiomeJson
     {
-        public string material;
-        public float weight;
+        public string id;
+        public string name;
+        public string position;
+        public PointJson centre;
+        public float radius;
+        public float distanceFromCentre;
+        public string mood;
+        public PaletteJson palette;
+        public int nodeCount;
+        public float respawnSeconds;
+        public string[] materials = new string[0];
     }
 
     [Serializable]
-    public class CombatJson
+    public class TravelSecondsJson
     {
-        public int maxHp = 60;
-        public int baseDamage = 3;
-        public float attackRange = 52f;
-        public float attackCooldown = 0.5f;
-        public float attackArc = 1.6f;
-        public float knockback = 26f;
-        public float invulnerableSeconds = 0.6f;
-        public float regenPerSecond = 2.5f;
-        public float regenDelaySeconds = 5f;
-        public float respawnSeconds = 2.5f;
+        public float[] walk = new float[0];
+        public float[] sprint = new float[0];
     }
 
     [Serializable]
-    public class PlayerJson
+    public class ColiseumJson
     {
-        public float moveSpeed = 168f;
-        public float gatherRadius = 42f;
-        public float radius = 13f;
-        public float gatherGraceSeconds = 0.45f;
-        public float gatherGraceRangeFactor = 2f;
+        public float boundaryRadius;
+        public TravelSecondsJson travelSeconds;
     }
 
+    // ------------------------------------------------------------- crafting
+
+    /// <summary>Which gauntlet stat a recipe permanently raises.</summary>
+    [Serializable]
+    public class CraftEffectJson
+    {
+        public string stat;
+        public float amount;
+    }
+
+    [Serializable]
+    public class CraftingRecipeJson
+    {
+        public string id;
+        public string name;
+        public string description;
+        public List<MaterialQuantityJson> cost = new List<MaterialQuantityJson>();
+        public CraftEffectJson effect;
+    }
+
+    [Serializable]
+    public class BaseStatsJson
+    {
+        public float carryCapacity = 60f;
+        public float pullRadius = 600f;
+        public float pullSpeed = 1200f;
+    }
+
+    /// <summary>Crafting consumes materials and produces permanent upgrades.</summary>
+    [Serializable]
+    public class CraftingJson
+    {
+        public BaseStatsJson baseStats = new BaseStatsJson();
+        public List<CraftingRecipeJson> recipes = new List<CraftingRecipeJson>();
+    }
+
+    // ------------------------------------------------------------- alchemy
+
+    [Serializable]
+    public class AbilityEffectJson
+    {
+        public string kind;
+        public float damage;
+        public float knockback;
+        public float radius;
+        public float range;
+        public float burnSeconds;
+    }
+
+    /// <summary>
+    /// Alchemy consumes elements and produces combat abilities - not items.
+    /// Locked until Level 2, except the handful handed over at Level 1.
+    /// </summary>
+    [Serializable]
+    public class AlchemyCombinationJson
+    {
+        public string id;
+        public string name;
+        public string description;
+        public List<ElementQuantityJson> elements = new List<ElementQuantityJson>();
+        public bool tutorial;
+        public AbilityEffectJson effect;
+    }
+
+    // ------------------------------------------------------------- enemies
+
+    /// <summary>
+    /// A rendering of hostile code, in one of exactly three tiers. Deliberately
+    /// carries no drop table: materials come from the world, and rewarding kills
+    /// with material would make fighting a gathering strategy.
+    /// </summary>
     [Serializable]
     public class EnemyJson
     {
         public string id;
         public string name;
+        public int tier;
+        public string represents;
         public string description;
         public string shape;
         public string color;
-        public int hp;
-        public int damage;
+        public float hp;
+        public float damage;
         public float speed;
         public float aggroRadius;
         public float attackRange;
-        public float attackCooldown;
-        public int xp;
-        public List<EnemyDropJson> drops = new List<EnemyDropJson>();
     }
 
+    // ------------------------------------------------------------- waves
+
     [Serializable]
-    public class EnemyDropJson
+    public class WavePacingJson
     {
-        public string material;
-        public float chance;
+        public int wavesPerBundle = 3;
+        public float[] secondsBetweenWaves = new float[0];
+        public float[] secondsBetweenBundles = new float[0];
+        public float[] secondsToClearWave = new float[0];
     }
 
     /// <summary>
-    /// One card of the opening guide. The rule that completes each step is code,
-    /// keyed by id - see web/src/core/tutorial.ts for the reference implementation.
+    /// Timing is scheduled; composition is rolled. A bundle is three waves, the
+    /// gap to the next is timed from the END of the previous one, and at most
+    /// one full bundle is alive at a time.
     /// </summary>
+    [Serializable]
+    public class WavesJson
+    {
+        public string activePacing = "mobile";
+        public WavePacingJson canon = new WavePacingJson();
+        public WavePacingJson mobile = new WavePacingJson();
+        public int maxLiveWaveGroups = 3;
+        public bool showEnemiesDuringFirstBundle = true;
+    }
+
+    // ------------------------------------------------------------- progression
+
+    /// <summary>XP is novelty, not volume: first-time events only.</summary>
+    [Serializable]
+    public class XpJson
+    {
+        public int firstMaterial;
+        public int firstCraft;
+        public int firstAlchemy;
+        public int firstBiome;
+        public int clearWave;
+    }
+
+    [Serializable]
+    public class PlayerJson
+    {
+        public float moveSpeed = 70f;
+        public float sprintSpeed = 84f;
+        public float radius = 11f;
+        public float pullSeconds = 0.45f;
+    }
+
+    [Serializable]
+    public class CombatJson
+    {
+        public float maxHp = 60f;
+        public float invulnerableSeconds = 0.7f;
+        public float regenPerSecond = 1.5f;
+        public float regenDelaySeconds = 6f;
+        public float respawnSeconds = 3f;
+    }
+
+    [Serializable]
+    public class ProgressionJson
+    {
+        public int alchemyUnlockLevel = 2;
+        public int classLevel = 5;
+        public XpJson xp = new XpJson();
+        public int[] xpTable = new int[0];
+        public PlayerJson player = new PlayerJson();
+        public CombatJson combat = new CombatJson();
+    }
+
     [Serializable]
     public class TutorialStepJson
     {
