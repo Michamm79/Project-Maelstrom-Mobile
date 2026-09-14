@@ -104,11 +104,29 @@ check(
   ((await page.locator('.oline').textContent()) ?? '').trim().length > 0,
   (await page.locator('.oline').textContent()) ?? '',
 );
+// Wait for the fade to settle rather than sampling it mid-flight. Read at a
+// fixed delay this caught the HUD at 0.04 locally and 0.075 on a CI runner -
+// a check that fails on machine speed rather than on behaviour. The transition
+// ends at exactly 0 (measured: settled by ~800ms of its 600ms), so the settled
+// value is what to assert, and the wait is what makes it deterministic.
+const hudHid = await page
+  .waitForFunction(
+    () => {
+      const hud = document.querySelector('#ui > .action-wrap');
+      if (!hud) return false;
+      const style = getComputedStyle(hud);
+      return style.opacity === '0' && style.pointerEvents === 'none';
+    },
+    null,
+    { timeout: 4000 },
+  )
+  .then(() => true)
+  .catch(() => false);
 const hudOpacity = await peek(() => {
   const hud = document.querySelector('#ui > .action-wrap');
-  return hud ? parseFloat(getComputedStyle(hud).opacity) : 1;
+  return getComputedStyle(hud).opacity;
 });
-check('the HUD is not there to greet you', hudOpacity < 0.05, `opacity ${hudOpacity}`);
+check('the HUD is not there to greet you', hudHid, `settled at opacity ${hudOpacity}`);
 
 // The scene holds the world: a wave timer running under a fade would be the
 // opposite of coming round somewhere before anything asks anything of you.
