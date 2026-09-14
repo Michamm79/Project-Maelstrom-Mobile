@@ -16,7 +16,8 @@
         "knockback": 260,
         "radius": 180
       },
-      "description": "A hard shove pulled straight out of the air."
+      "description": "A hard shove pulled straight out of the air.",
+      "cooldownSeconds": 2.5
     },
     {
       "id": "torrent",
@@ -32,7 +33,8 @@
         "knockback": 90,
         "range": 320
       },
-      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far."
+      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far.",
+      "cooldownSeconds": 6
     },
     {
       "id": "emberlash",
@@ -49,7 +51,9 @@
         "radius": 210,
         "burnSeconds": 3
       },
-      "description": "Ignited air. Cheap to make and difficult to be near."
+      "description": "Ignited air. Cheap to make and difficult to be near.",
+      "cooldownSeconds": 9
     }
-  ]
+  ],
+  "$cooldown_comment": "Cooldowns are INFERRED - canon does not give them. They exist so the combinations can sit as skill buttons beside the basic attack rather than being spammed the moment the elements allow it."
 }

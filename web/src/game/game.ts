@@ -39,8 +39,11 @@ export class Game {
   private readonly progression = new Progression(content.progression);
 
   private selected: CombinationId | null = null;
-  private pulling = false;
+  /** Gathering is on unless the player turns it off. */
+  private pulling = true;
   private castQueued = false;
+  /** Seconds left on each combination, ticked every frame. */
+  private readonly cooldowns = new Map<CombinationId, number>();
 
   private started = false;
   private guided = false;
@@ -61,10 +64,13 @@ export class Game {
     this.ui = new Ui(uiRoot, content, {
       onCraft: (id) => this.craft(id),
       onSelectCombination: (id) => this.selectCombination(id),
+      onAttack: () => this.attack(),
+      onSkill: (id) => this.useSkill(id),
+      onTogglePull: () => this.togglePull(),
     });
 
     this.input = new InputController(canvas);
-    this.buildActionButtons(uiRoot);
+    this.ui.setPullActive(this.pulling);
 
     this.title = new TitleScreen(uiRoot, {
       onContinue: () => this.resume(),
@@ -98,46 +104,31 @@ export class Game {
 
   // ---------------------------------------------------------------- controls
 
-  private buildActionButtons(root: HTMLElement): void {
-    const wrap = document.createElement('div');
-    wrap.className = 'action-wrap';
+  // ---------------------------------------------------------------- actions
 
-    const pull = document.createElement('button');
-    pull.className = 'action pull';
-    pull.innerHTML = '<b>PULL</b>';
-    // Held, not tapped. Pointer capture keeps the hold alive if the thumb
-    // drifts off the button, which it does constantly on a phone.
-    const startPull = (event: PointerEvent) => {
-      event.preventDefault();
-      this.pulling = true;
-      try {
-        pull.setPointerCapture(event.pointerId);
-      } catch {
-        // The pointer can already be gone; the hold still works without capture.
-      }
-    };
-    const endPull = () => {
-      this.pulling = false;
-    };
-    pull.addEventListener('pointerdown', startPull, { passive: false });
-    pull.addEventListener('pointerup', endPull);
-    pull.addEventListener('pointercancel', endPull);
-    pull.addEventListener('lostpointercapture', endPull);
+  /**
+   * Gathering is a toggle, not a hold. Canon wants the pull working at a run
+   * with nothing to think about, and holding a button for a whole expedition is
+   * the opposite of that - so it is on by default and stays on.
+   */
+  private togglePull(): void {
+    this.pulling = !this.pulling;
+    this.ui.setPullActive(this.pulling);
+    this.ui.toast(this.pulling ? 'Gathering' : 'Gathering off', 'info');
+  }
 
-    const cast = document.createElement('button');
-    cast.className = 'action cast';
-    cast.innerHTML = '<b>CAST</b>';
-    cast.addEventListener(
-      'pointerdown',
-      (event) => {
-        event.preventDefault();
-        this.castQueued = true;
-      },
-      { passive: false },
-    );
+  private attack(): void {
+    const result = this.world.swing();
+    if (!result) return;
+    this.ui.setCombo(result.combo);
+    if (result.killed.length) this.waves.notifyKills(result.killed.length);
+    if (result.hit.length) this.tutorialProgress.struck += 1;
+  }
 
-    wrap.append(cast, pull);
-    root.append(wrap);
+  private useSkill(id: CombinationId): void {
+    if ((this.cooldowns.get(id) ?? 0) > 0) return;
+    this.selected = id;
+    this.cast();
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -234,6 +225,7 @@ export class Game {
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
+    this.cooldowns.set(combination.id, combination.cooldownSeconds);
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
       `First cast: ${combination.name}`,
@@ -332,7 +324,6 @@ export class Game {
     // the pull is suspended with it, since a menu that kept gathering for you
     // would be a stranger answer than either.
     if (content.progression.pauseWithMenu && this.ui.sheetOpen) {
-      this.pulling = false;
       this.castQueued = false;
       this.world.updatePull(dt, false, 0, content.progression.player.pullSeconds, 0);
       return;
@@ -377,6 +368,16 @@ export class Game {
       this.castQueued = false;
       this.cast();
     }
+
+    if (this.ui.attacking) this.attack();
+
+    for (const [id, left] of this.cooldowns) {
+      const next = left - dt;
+      if (next <= 0) this.cooldowns.delete(id);
+      else this.cooldowns.set(id, next);
+    }
+    this.ui.setCooldowns(this.cooldowns);
+    this.ui.setCombo(this.world.player.combo);
 
     this.world.update(dt);
     this.waves.update(dt, this.progression.level);

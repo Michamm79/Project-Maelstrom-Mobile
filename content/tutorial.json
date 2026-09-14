@@ -9,12 +9,12 @@
     {
       "id": "pull",
       "title": "The pull",
-      "hint": "You have no tool. Hold the right button near anything and the gauntlets draw it in."
+      "hint": "You have no tool. Gathering is already on - just walk near something and the gauntlets take it."
     },
     {
       "id": "pull_moving",
       "title": "Keep walking",
-      "hint": "The pull works at walking pace. You never have to stop, and the walk between places is where most of the gathering happens."
+      "hint": "It works at walking pace. You never stop, and the walk between places is where most of the gathering happens."
     },
     {
       "id": "carry",
@@ -30,6 +30,11 @@
       "id": "warning",
       "title": "Something has noticed",
       "hint": "The warning is not subtle. Three waves are coming, and you are not required to clear any of them."
+    },
+    {
+      "id": "strike",
+      "title": "Your hands are the weapon",
+      "hint": "ATTACK swings at whatever is nearest. Stay on one target and the hits build; back off and they reset."
     },
     {
       "id": "combine",

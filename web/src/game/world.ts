@@ -83,6 +83,13 @@ export interface Prop {
 export type Facing = 'down' | 'up' | 'side';
 
 export interface Player {
+  /** Counts down while the swing animation plays. */
+  attackAnim: number;
+  attackCooldown: number;
+  /** Consecutive hits on the same target, and how long they stay counted. */
+  combo: number;
+  comboTimer: number;
+  comboTargetId: number;
   x: number;
   y: number;
   hp: number;
@@ -156,6 +163,11 @@ export class World {
       facing: -Math.PI / 2,
       moving: false,
       bob: 0,
+      attackAnim: 0,
+      attackCooldown: 0,
+      combo: 0,
+      comboTimer: 0,
+      comboTargetId: -1,
       facing4: 'down',
       mirrored: false,
       frame: 0,
@@ -460,6 +472,91 @@ export class World {
     return enemy;
   }
 
+  /**
+   * The nearest enemy the gauntlets could actually reach, for auto-targeting.
+   * Returns null when nothing is in range, so the button can say so rather than
+   * swinging at air.
+   */
+  nearestTarget(range: number): Enemy | null {
+    let best: Enemy | null = null;
+    let bestDistance = range;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const distance = Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y);
+      if (distance <= bestDistance) {
+        best = enemy;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * A basic unarmed swing. Auto-targets and turns to face first, so the button
+   * never promises a hit it cannot land - and the arc means neighbours of the
+   * target get caught too, which is what stops a crowd becoming a queue.
+   */
+  swing(): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
+    const player = this.player;
+    const attack = this.content.progression.combat.basicAttack;
+    if (player.dead || player.attackCooldown > 0) return null;
+
+    const target = this.nearestTarget(attack.range);
+    player.attackCooldown = attack.cooldownSeconds;
+    player.attackAnim = 0.2;
+    if (!target) {
+      this.breakCombo();
+      return { hit: [], killed: [], combo: 0 };
+    }
+
+    this.faceToward(target.x, target.y);
+
+    // Staying on one target builds the combo; switching or losing it resets.
+    if (player.comboTargetId === target.id && player.comboTimer > 0) {
+      player.combo = Math.min(attack.comboMax, player.combo + 1);
+    } else {
+      player.combo = 0;
+    }
+    player.comboTargetId = target.id;
+    player.comboTimer = attack.comboWindowSeconds;
+
+    const damage = attack.damage + player.combo * attack.comboBonus;
+    const halfArc = (attack.arcDegrees * Math.PI) / 360;
+    const hit: Enemy[] = [];
+    const killed: Enemy[] = [];
+
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const dx = enemy.x - player.x;
+      const dy = enemy.y - player.y;
+      if (Math.hypot(dx, dy) > attack.range) continue;
+      let delta = Math.atan2(dy, dx) - player.facing;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      if (Math.abs(delta) > halfArc) continue;
+
+      const length = Math.max(0.001, Math.hypot(dx, dy));
+      enemy.hitFlash = 0.16;
+      enemy.aggro = true;
+      enemy.knockX += (dx / length) * attack.knockback;
+      enemy.knockY += (dy / length) * attack.knockback;
+      const died = applyDamage(enemy, damage);
+      this.events.push({ kind: 'enemy-hit', enemy, amount: damage });
+      hit.push(enemy);
+      if (died) {
+        this.events.push({ kind: 'enemy-killed', enemy });
+        killed.push(enemy);
+      }
+    }
+    return { hit, killed, combo: player.combo };
+  }
+
+  private breakCombo(): void {
+    this.player.combo = 0;
+    this.player.comboTimer = 0;
+    this.player.comboTargetId = -1;
+  }
+
   /** Resolve one alchemical combination against whatever it catches. */
   cast(combination: AlchemyCombination): Enemy[] {
     const hits = abilityTargets(
@@ -571,6 +668,10 @@ export class World {
     player.invulnerable = Math.max(0, player.invulnerable - dt);
     player.sinceHit += dt;
     player.bob += dt;
+    player.attackAnim = Math.max(0, player.attackAnim - dt);
+    player.attackCooldown = Math.max(0, player.attackCooldown - dt);
+    player.comboTimer = Math.max(0, player.comboTimer - dt);
+    if (player.comboTimer <= 0 && player.combo > 0) this.breakCombo();
 
     if (player.dead) {
       // Death is a setback, not a reset: canon never wipes the world or

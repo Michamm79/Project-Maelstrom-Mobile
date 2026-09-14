@@ -34,6 +34,9 @@ export interface HudState {
 export interface UiHooks {
   onCraft(id: RecipeId): void;
   onSelectCombination(id: CombinationId): void;
+  onAttack(): void;
+  onSkill(id: CombinationId): void;
+  onTogglePull(): void;
 }
 
 type Tone = 'info' | 'good' | 'bad' | 'big';
@@ -100,7 +103,13 @@ export class Ui {
   private readonly sheet = el('div', 'sheet');
   private readonly sheetBody = el('div', 'body');
   private readonly tabs = el('div', 'tabs');
-  private readonly castBar = el('div', 'castbar');
+  private readonly skillArc = el('div', 'skillarc');
+  private readonly pullBtn = el('button');
+  private readonly attackBtn = el('button');
+  private readonly comboTag = el('i');
+  private readonly skillNodes = new Map<CombinationId, HTMLElement>();
+  private attackHeld = false;
+  private skillSignature = '';
 
   private tab: Tab = 'craft';
   private open = false;
@@ -114,7 +123,7 @@ export class Ui {
   ) {
     this.buildTopBar();
     this.buildOrbs();
-    this.buildCastBar();
+    this.buildCluster();
     this.buildSheet();
     this.root.append(this.toasts);
   }
@@ -153,9 +162,63 @@ export class Ui {
     this.root.append(wrap);
   }
 
-  /** The two or three combinations the player actually has, as one row of buttons. */
-  private buildCastBar(): void {
-    this.root.append(this.castBar);
+  /**
+   * The right-hand cluster, laid out the way a mobile action MMO does it: one
+   * large attack under the thumb, the skills arced above it within reach, and
+   * the gathering toggle set apart so it is never hit by accident mid-fight.
+   */
+  private buildCluster(): void {
+    const wrap = el('div', 'action-wrap');
+
+    this.pullBtn.className = 'action pull';
+    this.pullBtn.append(el('b', undefined, 'PULL'), el('span', 'sub', 'auto'));
+    onPress(this.pullBtn, () => this.hooks.onTogglePull());
+
+    this.attackBtn.className = 'action attack';
+    this.attackBtn.append(el('b', undefined, 'ATTACK'), this.comboTag);
+    this.comboTag.className = 'combo';
+    this.comboTag.hidden = true;
+    // Attack repeats while held, the way a basic attack chains - but a single
+    // tap still lands one, so it never requires a hold.
+    onPress(this.attackBtn, () => this.hooks.onAttack());
+    this.attackBtn.addEventListener('pointerdown', () => {
+      this.attackHeld = true;
+    });
+    for (const done of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+      this.attackBtn.addEventListener(done, () => {
+        this.attackHeld = false;
+      });
+    }
+
+    wrap.append(this.skillArc, this.pullBtn, this.attackBtn);
+    this.root.append(wrap);
+  }
+
+  /** True while the attack button is down, so the game can chain swings. */
+  get attacking(): boolean {
+    return this.attackHeld;
+  }
+
+  setPullActive(active: boolean): void {
+    this.pullBtn.classList.toggle('on', active);
+    const sub = this.pullBtn.querySelector('.sub');
+    if (sub) sub.textContent = active ? 'on' : 'off';
+  }
+
+  setCombo(combo: number): void {
+    this.comboTag.hidden = combo <= 0;
+    this.comboTag.textContent = combo > 0 ? `x${combo + 1}` : '';
+  }
+
+  /** Radial sweep on each skill, so what is ready is readable at a glance. */
+  setCooldowns(remaining: ReadonlyMap<CombinationId, number>): void {
+    for (const [id, node] of this.skillNodes) {
+      const left = remaining.get(id) ?? 0;
+      const total = this.content.combination(id).cooldownSeconds || 1;
+      const sweep = node.querySelector<HTMLElement>('.sweep');
+      if (sweep) sweep.style.height = `${Math.max(0, Math.min(1, left / total)) * 100}%`;
+      node.classList.toggle('cooling', left > 0);
+    }
   }
 
   private buildSheet(): void {
@@ -199,7 +262,7 @@ export class Ui {
     this.state = state;
     this.renderOrbs(state);
     this.renderLevel(state);
-    this.renderCastBar(state);
+    this.renderSkills(state);
     this.renderMenuBadge(state);
     if (this.open) this.renderSheet();
   }
@@ -279,21 +342,34 @@ export class Ui {
 
   // ---------------------------------------------------------------- casting
 
-  private renderCastBar(state: HudState): void {
+  /**
+   * One button per combination the player actually has. Tapping fires it - there
+   * is no separate "ready this" step, because a skill you have to arm before
+   * using is a skill you forget you have.
+   */
+  private renderSkills(state: HudState): void {
     const level = state.progression.level;
-    const available = state.alchemy
-      .outlooks(state.inventory, level)
-      .filter((o) => o.unlocked);
+    const available = state.alchemy.outlooks(state.inventory, level).filter((o) => o.unlocked);
 
-    this.castBar.replaceChildren();
+    const wanted = available.map((o) => o.combination.id).join(',');
+    if (wanted !== this.skillSignature) {
+      this.skillSignature = wanted;
+      this.skillArc.replaceChildren();
+      this.skillNodes.clear();
+      for (const outlook of available) {
+        const id = outlook.combination.id;
+        const button = el('button', 'skill');
+        button.append(el('i', 'sweep'));
+        button.append(el('b', undefined, outlook.combination.name));
+        button.append(el('span', undefined, this.elementLine(outlook.combination.elements)));
+        onPress(button, () => this.hooks.onSkill(id));
+        this.skillArc.append(button);
+        this.skillNodes.set(id, button);
+      }
+    }
+
     for (const outlook of available) {
-      const button = el('button', 'cast');
-      button.classList.toggle('on', state.selected === outlook.combination.id);
-      button.classList.toggle('short', !outlook.can);
-      button.append(el('b', undefined, outlook.combination.name));
-      button.append(el('span', undefined, this.elementLine(outlook.combination.elements)));
-      onPress(button, () => this.hooks.onSelectCombination(outlook.combination.id));
-      this.castBar.append(button);
+      this.skillNodes.get(outlook.combination.id)?.classList.toggle('short', !outlook.can);
     }
   }
 
@@ -391,7 +467,9 @@ export class Ui {
       // Visible but non-interactive before Level 2, "so the player knows
       // something is coming". Showing a locked menu is the point; hiding it
       // would remove the anticipation canon is explicitly buying here.
-      const locked = el('div', 'locked');
+      // Its own class: the combination rows also carry `locked`, and a shared
+      // name made the two indistinguishable to anything selecting them.
+      const locked = el('div', 'locked-note');
       locked.append(el('b', undefined, 'The workshop is not open to you yet.'));
       locked.append(
         el(

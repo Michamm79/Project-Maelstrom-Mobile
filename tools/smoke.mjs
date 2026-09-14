@@ -165,24 +165,21 @@ await peek(() => {
   node.pull = 0;
 });
 
-const pullBtn = await box('.action.pull');
 const stick = { x: 70, y: 520 };
 
-await touch('touchStart', [{ x: pullBtn.x, y: pullBtn.y, id: 1 }]);
+// Gathering is on by default, so walking alone should bring things in. Canon
+// wants the pull working at a run with nothing to think about.
 await page.waitForTimeout(900);
-await touch('touchEnd', []);
-await page.waitForTimeout(150);
-
 check(
-  'holding PULL draws in a nearby node',
+  'gathering happens without pressing anything',
   await peek(() => window.maelstrom.inventory.count('loamstone') > 0),
   await peek(() => `carrying ${window.maelstrom.inventory.used}`),
 );
 
-// The one that matters: a real two-finger touch, walking and pulling at once.
+// The one that matters: a real two-finger touch, walking and attacking at once.
 // A browser does not synthesise a click for a touch inside a multi-touch
 // sequence, so this is the only shape of test that can catch a click-bound
-// control - and canon's load-bearing rule is that the pull works while moving.
+// control - and both thumbs are genuinely in use during a wave.
 await peek(() => {
   const g = window.maelstrom;
   const p = g.world.player;
@@ -190,29 +187,33 @@ await peek(() => {
     n.available = false;
     n.respawnAt = g.world.time + 9999;
   });
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const node = g.world.nodes[i + 1];
     node.material = 'riverglass';
     node.biome = 'plains_forest';
-    node.x = p.x + 60 + i * 34;
+    node.x = p.x + 60 + i * 30;
     node.y = p.y;
     node.available = true;
     node.pull = 0;
   }
   window.__startX = p.x;
   window.__startCount = g.inventory.count('riverglass');
+  const def = { id: 'goblin', name: 'Goblin', tier: 1, represents: '', description: '', shape: 'blob', color: '#6f8f4a', hp: 999, damage: 0, speed: 0, aggroRadius: 8, attackRange: 4 };
+  window.__walkTarget = g.world.spawn(JSON.parse(JSON.stringify(def)), p.x + 24, p.y);
+  window.__walkHp = window.__walkTarget.hp;
 });
 
+const attackBtn = await box('.action.attack');
 await touch('touchStart', [{ x: stick.x, y: stick.y, id: 1 }]);
 await touch('touchMove', [{ x: stick.x + 46, y: stick.y, id: 1 }]);
 await touch('touchStart', [
   { x: stick.x + 46, y: stick.y, id: 1 },
-  { x: pullBtn.x, y: pullBtn.y, id: 2 },
+  { x: attackBtn.x, y: attackBtn.y, id: 2 },
 ]);
 for (let i = 0; i < 14; i++) {
   await touch('touchMove', [
     { x: stick.x + 46, y: stick.y, id: 1 },
-    { x: pullBtn.x, y: pullBtn.y, id: 2 },
+    { x: attackBtn.x, y: attackBtn.y, id: 2 },
   ]);
   await page.waitForTimeout(120);
 }
@@ -222,13 +223,15 @@ await page.waitForTimeout(200);
 const moving = await peek(() => ({
   moved: window.maelstrom.world.player.x - window.__startX,
   gained: window.maelstrom.inventory.count('riverglass') - window.__startCount,
+  struck: window.__walkHp - window.__walkTarget.hp,
 }));
 check('a real two-thumb touch walks', moving.moved > 40, `${Math.round(moving.moved)}px`);
 check(
-  'and pulls at the same time - the rule the world shape depends on',
+  'and gathers at the same time - the rule the world shape depends on',
   moving.gained > 0,
   `${moving.gained} gathered while walking`,
 );
+check('and the attack button works under a second thumb', moving.struck > 0, `${moving.struck} damage`);
 
 await page.screenshot({ path: join(SHOTS, '02-pulling.png') });
 
@@ -321,12 +324,12 @@ await page.waitForTimeout(250);
 const level = await peek(() => window.maelstrom.progression.level);
 check(
   'the alchemy menu is visible before it is usable',
-  await page.locator('.sheet .locked').isVisible(),
+  await page.locator('.sheet .locked-note').isVisible(),
   `level ${level}`,
 );
 check(
   'it names the level that opens it',
-  /level 2/i.test((await page.locator('.sheet .locked').textContent()) ?? ''),
+  /level 2/i.test((await page.locator('.sheet .locked-note').textContent()) ?? ''),
 );
 check('the element pool is shown', (await page.locator('.sheet .pool .chip').count()) === 10);
 check(
@@ -343,11 +346,45 @@ await page.waitForTimeout(200);
 await peek(() => {
   const g = window.maelstrom;
   g.inventory.add('stormpetal', 6);
-  g.selected = 'gust';
   g.ui.refresh(g.hudState());
 });
 await page.waitForTimeout(200);
-check('readied combinations appear as buttons', (await page.locator('.castbar .cast').count()) > 0);
+
+// Gathering is a toggle that starts on: canon wants the pull working at a run
+// with nothing to think about, and holding a button for a whole expedition is
+// the opposite of that.
+check('gathering is on without pressing anything', await peek(() => window.maelstrom.pulling === true));
+check(
+  'and the pull button says so',
+  /on/i.test((await page.locator('.action.pull .sub').textContent()) ?? ''),
+);
+
+// A basic attack. Canon has no weapon items but plainly implies one: Nahaste's
+// cost is "near-zero unarmed capability", and Amorratua scales with consecutive
+// hits.
+const melee = await peek(async () => {
+  const g = window.maelstrom;
+  const def = { id: 'goblin', name: 'Goblin', tier: 1, represents: '', description: '', shape: 'blob', color: '#6f8f4a', hp: 60, damage: 0, speed: 0, aggroRadius: 10, attackRange: 5 };
+  const e = g.world.spawn(JSON.parse(JSON.stringify(def)), g.world.player.x + 24, g.world.player.y);
+  const first = e.hp;
+  g.attack();
+  const afterOne = e.hp;
+  const steps = [];
+  for (let i = 0; i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const before = e.hp;
+    g.attack();
+    steps.push(before - e.hp);
+  }
+  return { landed: first - afterOne, steps, combo: g.world.player.combo };
+});
+check('a single tap lands a melee hit', melee.landed > 0, `${melee.landed} damage`);
+check(
+  'staying on a target builds the combo',
+  melee.combo > 0 && melee.steps[melee.steps.length - 1] > melee.steps[0],
+  `${melee.steps.join(' -> ')} at combo ${melee.combo}`,
+);
+check('the skills sit as buttons beside the attack', (await page.locator('.skillarc .skill').count()) > 0);
 
 const enemyBefore = await peek(() => {
   const g = window.maelstrom;
@@ -360,10 +397,10 @@ const enemyBefore = await peek(() => {
   void def;
   return window.__enemy.hp;
 });
-await page.locator('.action.cast').dispatchEvent('pointerdown');
+await page.locator('.skillarc .skill').first().dispatchEvent('pointerdown');
 await page.waitForTimeout(350);
 const enemyAfter = await peek(() => window.__enemy.hp);
-check('casting a combination damages what it catches', enemyAfter < enemyBefore, `${enemyBefore} -> ${enemyAfter}`);
+check('tapping a skill fires it without arming it first', enemyAfter < enemyBefore, `${enemyBefore} -> ${enemyAfter}`);
 check(
   'and spends the elements that carried it',
   await peek(() => window.maelstrom.inventory.count('stormpetal') < 6),

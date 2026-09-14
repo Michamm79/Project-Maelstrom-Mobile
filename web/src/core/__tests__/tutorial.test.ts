@@ -54,6 +54,7 @@ describe('advanceTutorial', () => {
       distinctHeld: 5,
       crafted: 3,
       warned: true,
+      struck: 3,
       combinationsUsed: 4,
     };
     expect(advanceTutorial(steps, 0, progress)).toBe(steps.length);

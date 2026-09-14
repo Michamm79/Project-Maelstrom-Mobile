@@ -95,6 +95,7 @@ export interface AlchemyCombination {
   elements: Quantities;
   /** One of the two or three someone else made, handed over at Level 1. */
   tutorial?: boolean;
+  cooldownSeconds: number;
   effect: {
     kind: AbilityKind;
     damage: number;
@@ -173,6 +174,17 @@ export interface ProgressionConfig {
     regenPerSecond: number;
     regenDelaySeconds: number;
     respawnSeconds: number;
+    /** The gauntlets themselves. Canon has no weapon items but does imply this. */
+    basicAttack: {
+      damage: number;
+      range: number;
+      arcDegrees: number;
+      cooldownSeconds: number;
+      comboWindowSeconds: number;
+      comboBonus: number;
+      comboMax: number;
+      knockback: number;
+    };
   };
   /** Cumulative XP needed to reach each level; index 0 is level 0. */
   xpTable: readonly number[];

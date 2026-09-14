@@ -19,6 +19,8 @@ export interface TutorialProgress {
   distinctHeld: number;
   crafted: number;
   warned: boolean;
+  /** Basic-attack hits landed. */
+  struck: number;
   combinationsUsed: number;
 }
 
@@ -30,6 +32,7 @@ export function emptyProgress(): TutorialProgress {
     distinctHeld: 0,
     crafted: 0,
     warned: false,
+    struck: 0,
     combinationsUsed: 0,
   };
 }
@@ -50,6 +53,7 @@ export const TUTORIAL_RULES: Record<string, (p: TutorialProgress) => boolean> = 
   carry: (p) => p.distinctHeld >= 3,
   craft: (p) => p.crafted >= 1,
   warning: (p) => p.warned,
+  strike: (p) => p.struck >= 1,
   combine: (p) => p.combinationsUsed >= 1,
 };
 

@@ -1680,17 +1680,17 @@ button.ghost.wide {
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   margin-bottom: 10px;
 }
-.locked {
+.locked-note {
   padding: 12px;
   border-radius: 10px;
   background: rgba(40, 28, 56, 0.5);
   border: 1px solid rgba(176, 124, 240, 0.22);
   margin-bottom: 12px;
 }
-.locked b {
+.locked-note b {
   font-size: 12px;
 }
-.locked p {
+.locked-note p {
   margin: 5px 0 0;
   font-size: 11px;
   opacity: 0.6;
@@ -1808,4 +1808,161 @@ button.ghost.wide {
 /* Whole-row tap target, so readying a combination is not a 40px button hunt. */
 .sheet .row-item {
   cursor: pointer;
+}
+
+/* ------------------------------------------------------------ action cluster
+   Laid out the way a mobile action MMO does it: one large attack under the
+   thumb, the skills arced above it within reach, and the gathering toggle set
+   apart so it is never hit by accident mid-fight. */
+
+.action-wrap {
+  display: block;
+  padding: 0;
+}
+.action-wrap .action,
+.action-wrap .skill {
+  pointer-events: auto;
+}
+
+.action.attack {
+  position: absolute;
+  right: 14px;
+  bottom: 18px;
+  width: 92px;
+  height: 92px;
+  background: radial-gradient(circle at 36% 30%, #9a4a4a, #4c1f24);
+  border-color: rgba(248, 160, 160, 0.5);
+}
+.action.attack:active {
+  transform: scale(0.94);
+}
+.action.attack .combo {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd9a0;
+}
+
+.action.pull {
+  position: absolute;
+  right: 122px;
+  bottom: 22px;
+  width: 58px;
+  height: 58px;
+  background: radial-gradient(circle at 36% 30%, #2c4750, #16262c);
+  border-color: rgba(159, 216, 232, 0.28);
+}
+.action.pull.on {
+  background: radial-gradient(circle at 36% 30%, #3e7f92, #1d4350);
+  border-color: rgba(159, 216, 232, 0.65);
+}
+.action.pull b {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.action.pull .sub {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+/* The arc: skills stepped up and to the left of the attack button. */
+.skillarc {
+  position: absolute;
+  right: 12px;
+  bottom: 118px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  align-items: flex-end;
+}
+.skillarc .skill {
+  position: relative;
+  overflow: hidden;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font: inherit;
+  color: #e8e2d4;
+  background: radial-gradient(circle at 36% 30%, #6b3f72, #2f1a3a);
+  border: 2px solid rgba(224, 160, 210, 0.4);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.4);
+}
+/* Each skill up the stack steps further left, so the row curves away from the
+   attack button instead of zig-zagging. column-reverse puts the first child at
+   the bottom, so the offsets grow with the index. */
+.skillarc .skill:nth-child(2) {
+  margin-right: 46px;
+}
+.skillarc .skill:nth-child(3) {
+  margin-right: 80px;
+}
+.skillarc .skill:nth-child(4) {
+  margin-right: 100px;
+}
+.skillarc .skill b {
+  /* "Emberlash" has to fit inside a 62px circle without being clipped. */
+  font-size: 9px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  max-width: 100%;
+  padding: 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skillarc .skill span {
+  font-size: 8px;
+  opacity: 0.6;
+  line-height: 1.15;
+  padding: 0 3px;
+}
+.skillarc .skill.short {
+  opacity: 0.45;
+}
+/* Cooldown sweeps up from the bottom, so "ready" is a glance not a count. */
+.skillarc .skill .sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: rgba(8, 6, 14, 0.66);
+  pointer-events: none;
+  transition: height 0.1s linear;
+}
+.skillarc .skill.cooling {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .action.attack {
+    width: 74px;
+    height: 74px;
+    bottom: 10px;
+  }
+  .action.pull {
+    right: 98px;
+    bottom: 12px;
+    width: 48px;
+    height: 48px;
+  }
+  .skillarc {
+    bottom: 92px;
+    gap: 6px;
+  }
+  .skillarc .skill {
+    width: 50px;
+    height: 50px;
+  }
+  .skillarc .skill:nth-child(2) {
+    margin-right: 38px;
+  }
+  .skillarc .skill:nth-child(3) {
+    margin-right: 66px;
+  }
 }

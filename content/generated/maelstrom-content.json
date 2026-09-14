@@ -59,7 +59,19 @@
       "invulnerableSeconds": 0.7,
       "regenPerSecond": 1.5,
       "regenDelaySeconds": 6,
-      "respawnSeconds": 3
+      "respawnSeconds": 3,
+      "$attack_comment": "Canon has no weapon ITEMS, but it plainly has a basic attack: section 9 gives Nahaste 'near-zero unarmed capability' as its cost, which only means something if everyone else has some; Amorratua scales damage with 'consecutive hits without disengaging'; and Dotore builds charge 'released into the next attack'. So this is the gauntlets themselves - the same hands that pull. Numbers are INFERRED.",
+      "basicAttack": {
+        "damage": 6,
+        "range": 46,
+        "arcDegrees": 110,
+        "cooldownSeconds": 0.42,
+        "$combo_comment": "Amorratua's hook, available to everyone in weaker form: staying on a target raises damage, and disengaging resets it.",
+        "comboWindowSeconds": 1.8,
+        "comboBonus": 1.5,
+        "comboMax": 5,
+        "knockback": 40
+      }
     },
     "$pause_comment": "GDD section 6.1 says the menu does NOT pause the world, reasoning that a pause 'would have erased wave pressure in exactly the moment it should bite'. The author has since asked for a pause, so it is on - kept as a flag rather than hard-coded, because canon and the build disagree here and the disagreement should be visible rather than buried.",
     "pauseWithMenu": true,
@@ -86,12 +98,12 @@
     {
       "id": "pull",
       "title": "The pull",
-      "hint": "You have no tool. Hold the right button near anything and the gauntlets draw it in."
+      "hint": "You have no tool. Gathering is already on - just walk near something and the gauntlets take it."
     },
     {
       "id": "pull_moving",
       "title": "Keep walking",
-      "hint": "The pull works at walking pace. You never have to stop, and the walk between places is where most of the gathering happens."
+      "hint": "It works at walking pace. You never stop, and the walk between places is where most of the gathering happens."
     },
     {
       "id": "carry",
@@ -107,6 +119,11 @@
       "id": "warning",
       "title": "Something has noticed",
       "hint": "The warning is not subtle. Three waves are coming, and you are not required to clear any of them."
+    },
+    {
+      "id": "strike",
+      "title": "Your hands are the weapon",
+      "hint": "ATTACK swings at whatever is nearest. Stay on one target and the hits build; back off and they reset."
     },
     {
       "id": "combine",
@@ -626,7 +643,8 @@
         "knockback": 260,
         "radius": 180
       },
-      "description": "A hard shove pulled straight out of the air."
+      "description": "A hard shove pulled straight out of the air.",
+      "cooldownSeconds": 2.5
     },
     {
       "id": "torrent",
@@ -642,7 +660,8 @@
         "knockback": 90,
         "range": 320
       },
-      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far."
+      "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far.",
+      "cooldownSeconds": 6
     },
     {
       "id": "emberlash",
@@ -659,7 +678,8 @@
         "radius": 210,
         "burnSeconds": 3
       },
-      "description": "Ignited air. Cheap to make and difficult to be near."
+      "description": "Ignited air. Cheap to make and difficult to be near.",
+      "cooldownSeconds": 9
     }
   ],
   "enemies": [
