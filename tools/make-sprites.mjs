@@ -2,9 +2,15 @@
 /**
  * Character sprite sheet generator — GBA-era top-down pixel art.
  *
- * Style reference is the handheld Zelda look (chunky 1px tinted outline, 3-tone
- * shading, saturated palette, 4-direction facing, bouncy 4-frame walk). The
- * CHARACTER is original: a hooded alchemist, not anybody else's design.
+ * Style reference is the handheld look (chunky 1px tinted outline, 3-tone
+ * shading, 4-direction facing, bouncy 4-frame walk). The CHARACTER is drawn
+ * from a reference the author supplied of themselves: dark curly hair, a black
+ * long-sleeve top, dark trousers, slim build. It replaced a hooded alchemist,
+ * which is why the palette's `h/H/d` ramp is hair where it used to be a hood.
+ *
+ * The belt is the one warm colour in the outfit and it is carrying the whole
+ * figure's legibility: against dark ground, an all-black costume with a dark
+ * head reads as one silhouette with no internal structure.
  *
  * The body is authored as character maps and the legs are drawn per frame, so
  * a walk cycle costs four leg poses rather than sixteen hand-placed frames —
@@ -33,21 +39,21 @@ const H = 24;
 // "warm" rather than "harsh".
 const PALETTE = {
   '.': null,
-  o: '#241a33', // outline
-  h: '#6cbf8e', // hood light
-  H: '#46906c', // hood mid
-  d: '#2c6349', // hood shadow
-  s: '#f0c49c', // skin
-  S: '#c48f68', // skin shadow
-  c: '#f2e6c8', // tunic light
-  C: '#d4c096', // tunic shadow
-  k: '#8a5a35', // leather
-  K: '#5c3a20', // leather dark
-  t: '#8d9bb5', // trouser
-  T: '#6a7692', // trouser shadow
-  b: '#7a4e2e', // boot
-  B: '#4e2f1a', // boot dark
-  y: '#e8d089', // pale hair
+  o: '#1d1526', // outline
+  h: '#4a3527', // hair light
+  H: '#33241a', // hair mid
+  d: '#231810', // hair shadow, and the line where it meets the face
+  s: '#efc09a', // skin
+  S: '#c8926a', // skin shadow
+  c: '#4a4557', // top, lit
+  C: '#302c3b', // top, shadow
+  k: '#7a5a3a', // belt
+  K: '#4e3826', // belt dark
+  t: '#1f1c26', // trouser
+  T: '#15131a', // trouser shadow
+  b: '#2c2630', // boot
+  B: '#19161c', // boot dark
+  y: '#33241a', // kept for compatibility; the hood's pale hair is now hair
 };
 
 // ---------------------------------------------------------------- body maps
@@ -57,38 +63,38 @@ const BODY = {
   down: [
     '......oooo......',
     '....oohhhhoo....',
-    '...ohhhhhhhho...',
+    '...ohhHhhHhhho..',
     '..ohhhhhhhhhho..',
     '..oHhhhhhhhhHo..',
-    '..oHHddddddHHo..',
+    '..oHHhhhhhhHHo..',
     '..oHdssssssdHo..',
     '..oHdsossosdHo..',
     '..oHdssssssdHo..',
     '...oHdSSSSdHo...',
     '...ooHHddHHoo...',
-    '..oHHccccccHHo..',
-    '..oHccccccccHo..',
-    '..oHcckkkkccHo..',
-    '..oHccKKKKccHo..',
+    '..occcccccccco..',
+    '..oCccccccccCo..',
+    '..oCcckkkkccCo..',
+    '..oCccKKKKccCo..',
     '..osccccccccso..',
     '...occcccccco...',
   ],
   up: [
     '......oooo......',
     '....oohhhhoo....',
-    '...ohhhhhhhho...',
+    '...ohhHhhHhhho..',
     '..ohhhhhhhhhho..',
     '..oHhhhhhhhhHo..',
     '..oHHhhhhhhHHo..',
-    '..oHHhyyyyhHHo..',
-    '..oHHhyyyyhHHo..',
-    '..oHHdyyyydHHo..',
-    '...oHHdyydHHo...',
+    '..oHhhhhhhhhHo..',
+    '..oHHhhhhhhHHo..',
+    '..oHHdhhhhdHHo..',
+    '...oHHddddHHo...',
     '...ooHHddHHoo...',
-    '..oHHccccccHHo..',
-    '..oHccccccccHo..',
-    '..oHccccccccHo..',
-    '..oHccKKKKccHo..',
+    '..occcccccccco..',
+    '..oCccccccccCo..',
+    '..oCccccccccCo..',
+    '..oCccKKKKccCo..',
     '..osccccccccso..',
     '...occcccccco...',
   ],
@@ -98,18 +104,18 @@ const BODY = {
     '..ohhhhhhhho....',
     '..ohhhhhhhhho...',
     '..oHhhhhhhhho...',
-    '..oHHdddddhho...',
+    '..oHHhhhhhhho...',
     '..oHdssssssho...',
     '..oHdsossssho...',
     '..oHdssssssho...',
     '...oHdSSSSho....',
     '...ooHHddHHo....',
-    '..oHHccccccHo...',
-    '..oHcccccccHo...',
-    '..oHcckkkkcHo...',
-    '..oHccKKKKcHo...',
-    '..oHcccccccso...',
-    '...occcccco.....',
+    '..oCcccccccCo...',
+    '..oCcccccccCo...',
+    '..oCcckkkkcCo...',
+    '..oCccKKKKcCo...',
+    '..oCcccccccso...',
+    '...occccccco....',
   ],
 };
 

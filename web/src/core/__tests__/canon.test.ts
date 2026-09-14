@@ -100,7 +100,31 @@ describe('the enemies', () => {
   });
 
   it('never attacks from beyond the range it closes to', () => {
-    for (const e of content.enemies) expect(e.attackRange).toBeLessThanOrEqual(e.aggroRadius);
+    for (const e of content.enemies) expect(e.attackRange).toBeLessThanOrEqual(e.noticeRadius);
+  });
+
+  /*
+   * The informational advantage is the player's. An enemy that notices from
+   * most of a screen away is running a detection sweep, and every encounter
+   * becomes a lock-on however the field is named.
+   */
+  it('notices at an encounter distance, not across a screen', () => {
+    for (const e of content.enemies) expect(e.noticeRadius).toBeLessThanOrEqual(200);
+  });
+
+  it('loses the player further out than it finds them, so backing off works', () => {
+    for (const e of content.enemies) {
+      expect(e.loseRadius).toBeGreaterThan(e.noticeRadius);
+      expect(e.forgetSeconds).toBeGreaterThan(0);
+    }
+  });
+
+  it('wanders slower than it chases, so a chase looks like one', () => {
+    for (const e of content.enemies) {
+      expect(e.wanderSpeed).toBeGreaterThan(0);
+      expect(e.wanderSpeed).toBeLessThan(e.speed);
+      expect(e.roamRadius).toBeGreaterThan(0);
+    }
   });
 });
 

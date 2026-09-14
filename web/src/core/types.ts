@@ -116,10 +116,28 @@ export interface EnemyDef {
   shape: string;
   color: string;
   hp: number;
+  /** How much of a shove it absorbs: knockback is divided by this. */
+  weight: number;
   damage: number;
+  /** Pursuit speed, once the player has actually been noticed. */
   speed: number;
-  aggroRadius: number;
+  /**
+   * An encounter distance, not a detection sweep. Canon gives the player the
+   * informational advantage, so this is a body length or two - the old
+   * aggroRadius covered most of a screen, which is what made them read as
+   * locked on from across the world.
+   */
+  noticeRadius: number;
+  /** Past this the enemy starts losing the player, and forgets after forgetSeconds. */
+  loseRadius: number;
+  forgetSeconds: number;
   attackRange: number;
+  /** The amble between roam targets: slower than pursuit, so a chase reads as one. */
+  wanderSpeed: number;
+  /** How far from where it entered the world an enemy will drift. */
+  roamRadius: number;
+  /** Min and max seconds spent standing still before choosing the next target. */
+  pauseSeconds: readonly number[];
 }
 
 export interface WavePacing {
@@ -144,6 +162,12 @@ export interface WavesDef {
   composition: readonly Readonly<Record<string, number | readonly number[]>>[];
   ambient: Readonly<Record<string, readonly number[]>>;
   showEnemiesDuringFirstBundle: boolean;
+  /**
+   * How far the player senses the program, in world units. The other half of
+   * canon's asymmetry: enemies notice only at an encounter distance, so without
+   * this the player would be exactly as blind as they are.
+   */
+  awarenessRadius: number;
 }
 
 export interface ProgressionConfig {
@@ -184,6 +208,8 @@ export interface ProgressionConfig {
       comboBonus: number;
       comboMax: number;
       knockback: number;
+      /** How long a hit interrupts for, before tier weight divides it. */
+      staggerSeconds: number;
     };
   };
   /** Cumulative XP needed to reach each level; index 0 is level 0. */

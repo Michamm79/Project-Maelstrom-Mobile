@@ -237,12 +237,44 @@ for (const e of enemyTiers) {
   tiersSeen.add(e.tier);
   if (!knownShapes.has(e.shape)) fail(`enemy "${e.id}" uses unknown shape "${e.shape}"`);
   if (!(e.hp > 0) || !(e.damage > 0)) fail(`enemy "${e.id}" has no health or no damage`);
-  // An enemy that attacks from beyond the distance it closes to can never land
+  // Weight divides knockback; below 1 it would multiply it instead.
+  if (!(e.weight >= 1)) fail(`enemy "${e.id}" has weight ${e.weight}; a shove cannot be amplified by being heavy`);
+  // An enemy that attacks from beyond the distance it notices at can never land
   // a hit, and reads in play as an enemy that is broken rather than passive.
-  if (e.attackRange > e.aggroRadius) fail(`enemy "${e.id}" attacks from beyond the range it approaches to`);
+  if (e.attackRange > e.noticeRadius) fail(`enemy "${e.id}" attacks from beyond the range it notices at`);
+  // Canon's asymmetry is the player knowing where the program is and not the
+  // other way round. A notice radius that covers most of a screen is a
+  // detection sweep, and turns every encounter into a lock-on.
+  if (!(e.noticeRadius > 0) || e.noticeRadius > 200) {
+    fail(`enemy "${e.id}" notices from ${e.noticeRadius}uu; that is a detection sweep, not an encounter`);
+  }
+  // Losing the player has to be easier than finding them, or backing off does
+  // nothing and the pursuit is a tether by another name.
+  if (!(e.loseRadius > e.noticeRadius)) fail(`enemy "${e.id}" forgets the player closer than it notices them`);
+  if (!(e.forgetSeconds > 0)) fail(`enemy "${e.id}" never gives up the chase`);
+  // A wander that is not slower than the chase makes the two indistinguishable.
+  if (!(e.wanderSpeed > 0) || e.wanderSpeed >= e.speed) {
+    fail(`enemy "${e.id}" wanders at ${e.wanderSpeed} against a chase of ${e.speed}; a chase has to look like one`);
+  }
+  if (!(e.roamRadius > 0)) fail(`enemy "${e.id}" has nowhere to wander, so it will stand where it spawned`);
+  const pause = e.pauseSeconds;
+  if (!Array.isArray(pause) || pause.length !== 2 || !(pause[0] >= 0) || !(pause[1] > pause[0])) {
+    fail(`enemy "${e.id}" needs pauseSeconds as [min, max] with max above min`);
+  }
   if ('drops' in e) fail(`enemy "${e.id}" has a drop table; materials come from the world, not from kills`);
 }
 if (tiersSeen.size !== 3) fail(`canon defines three enemy tiers; found ${tiersSeen.size}`);
+
+// The asymmetry has a direction. If the player senses less far than an enemy
+// notices, the informational advantage sits with the program, which is backwards.
+const awareness = waves.awarenessRadius;
+if (!(awareness > 0)) fail('waves.awarenessRadius is missing; the player would have no sense of what is nearby');
+else {
+  const sharpest = Math.max(...enemyTiers.map((e) => e.noticeRadius));
+  if (awareness <= sharpest) {
+    fail(`the player senses ${awareness}uu against an enemy noticing at ${sharpest}uu; the advantage is meant to be the player's`);
+  }
+}
 
 const pacing = waves.pacing?.[waves.activePacing];
 if (!pacing) fail(`waves.activePacing is "${waves.activePacing}", which has no entry in waves.pacing`);

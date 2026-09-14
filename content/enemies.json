@@ -10,10 +10,19 @@
       "shape": "blob",
       "color": "#6f8f4a",
       "hp": 16,
+      "weight": 1,
       "damage": 4,
       "speed": 62,
-      "aggroRadius": 220,
+      "noticeRadius": 90,
+      "loseRadius": 210,
+      "forgetSeconds": 3.5,
       "attackRange": 34,
+      "wanderSpeed": 26,
+      "roamRadius": 900,
+      "pauseSeconds": [
+        0.7,
+        2.4
+      ],
       "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
     },
     {
@@ -24,10 +33,19 @@
       "shape": "bone",
       "color": "#a2603a",
       "hp": 58,
+      "weight": 1.8,
       "damage": 12,
       "speed": 54,
-      "aggroRadius": 280,
+      "noticeRadius": 112,
+      "loseRadius": 260,
+      "forgetSeconds": 5.0,
       "attackRange": 44,
+      "wanderSpeed": 22,
+      "roamRadius": 700,
+      "pauseSeconds": [
+        1.0,
+        3.0
+      ],
       "description": "Something in the program decided you were worth spending on. Only ever a few."
     },
     {
@@ -38,11 +56,22 @@
       "shape": "blade",
       "color": "#8b2f4a",
       "hp": 140,
+      "weight": 2.6,
       "damage": 26,
       "speed": 70,
-      "aggroRadius": 360,
+      "noticeRadius": 140,
+      "loseRadius": 330,
+      "forgetSeconds": 6.5,
       "attackRange": 60,
+      "wanderSpeed": 30,
+      "roamRadius": 1100,
+      "pauseSeconds": [
+        0.6,
+        2.0
+      ],
       "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
     }
-  ]
+  ],
+  "$ai_comment": "Enemies wander; they do not home in. Canon gives the player the informational advantage - the program does not know where the intruder is - so noticeRadius is an encounter distance rather than a detection sweep: roughly a body length or two, not most of a screen. They amble between roam targets at wanderSpeed, notice the player only on getting close (or on being hit), pursue at speed, and forget after forgetSeconds once the player is past loseRadius. The player sees them coming; they do not see the player coming.",
+  "$weight_comment": "How much of a shove an enemy absorbs: knockback is divided by it. A Scythe-bearer taking the same 46-unit slide as a goblin would make tier meaningless at exactly the moment it should be most legible."
 }

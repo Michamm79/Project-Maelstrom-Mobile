@@ -261,7 +261,7 @@ await peek(() => {
   }
   window.__startX = p.x;
   window.__startCount = g.inventory.count('riverglass');
-  const def = { id: 'goblin', name: 'Goblin', tier: 1, represents: '', description: '', shape: 'blob', color: '#6f8f4a', hp: 999, damage: 0, speed: 0, aggroRadius: 8, attackRange: 4 };
+  const def = { ...window.maelstrom.world.content.enemy('goblin'), hp: 999, damage: 0, speed: 0, wanderSpeed: 0, noticeRadius: 12, attackRange: 4 };
   window.__walkTarget = g.world.spawn(JSON.parse(JSON.stringify(def)), p.x + 24, p.y);
   window.__walkHp = window.__walkTarget.hp;
 });
@@ -428,7 +428,7 @@ check(
 // hits.
 const melee = await peek(async () => {
   const g = window.maelstrom;
-  const def = { id: 'goblin', name: 'Goblin', tier: 1, represents: '', description: '', shape: 'blob', color: '#6f8f4a', hp: 60, damage: 0, speed: 0, aggroRadius: 10, attackRange: 5 };
+  const def = { ...window.maelstrom.world.content.enemy('goblin'), hp: 60, damage: 0, speed: 0, wanderSpeed: 0, noticeRadius: 12, attackRange: 5 };
   const e = g.world.spawn(JSON.parse(JSON.stringify(def)), g.world.player.x + 24, g.world.player.y);
   const first = e.hp;
   g.attack();
@@ -436,6 +436,13 @@ const melee = await peek(async () => {
   const steps = [];
   for (let i = 0; i < 3; i++) {
     await new Promise((r) => setTimeout(r, 500));
+    // Put it back in reach first. A hit now shoves, and a fixture with speed 0
+    // cannot walk back in - so without this the check measured the spacing
+    // rather than the combo it is named for. Spacing has its own tests.
+    e.x = g.world.player.x + 24;
+    e.y = g.world.player.y;
+    e.knockX = 0;
+    e.knockY = 0;
     const before = e.hp;
     g.attack();
     steps.push(before - e.hp);
@@ -443,6 +450,33 @@ const melee = await peek(async () => {
   return { landed: first - afterOne, steps, combo: g.world.player.combo };
 });
 check('a single tap lands a melee hit', melee.landed > 0, `${melee.landed} damage`);
+
+// attackAnim was set on every swing since combat went in and nothing ever read
+// it, so the attack dealt damage with no picture attached. The renderer draws
+// the arc against it now, and this is the cheap proof it is actually running.
+const swing = await peek(() => {
+  const g = window.maelstrom;
+  // Off cooldown: a swing during one correctly does nothing at all, animation
+  // included, and the melee block above just spent three.
+  g.world.player.attackCooldown = 0;
+  g.world.player.attackAnim = 0;
+  g.attack();
+  return g.world.player.attackAnim;
+});
+check('a swing has an animation to draw', swing > 0, `attackAnim ${swing.toFixed(2)}s`);
+
+// The player's half of the asymmetry. Enemies notice only at an encounter
+// distance now, so without this the player would be exactly as blind as they are.
+const sensing = await peek(() => {
+  const g = window.maelstrom;
+  const notice = Math.max(...g.world.content.enemies.map((e) => e.noticeRadius));
+  return { sense: g.world.content.waves.awarenessRadius, notice };
+});
+check(
+  'the player senses further than the program notices',
+  sensing.sense > sensing.notice,
+  `${sensing.sense}uu against ${sensing.notice}uu`,
+);
 check(
   'staying on a target builds the combo',
   melee.combo > 0 && melee.steps[melee.steps.length - 1] > melee.steps[0],
@@ -473,7 +507,7 @@ const enemyBefore = await peek(() => {
   const g = window.maelstrom;
   const def = g.world.content?.enemy?.('goblin') ?? null;
   window.__enemy = g.world.spawn(
-    JSON.parse(JSON.stringify({ id: 'goblin', name: 'Goblin', tier: 1, represents: '', description: '', shape: 'blob', color: '#6f8f4a', hp: 16, damage: 4, speed: 0, aggroRadius: 10, attackRange: 5 })),
+    JSON.parse(JSON.stringify({ ...window.maelstrom.world.content.enemy('goblin'), hp: 16, damage: 4, speed: 0, wanderSpeed: 0, noticeRadius: 12, attackRange: 5 })),
     g.world.player.x + 30,
     g.world.player.y,
   );

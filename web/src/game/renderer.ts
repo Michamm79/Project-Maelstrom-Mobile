@@ -11,7 +11,8 @@
  */
 import alchemistSheet from '../assets/alchemist.png';
 import { drawIcon, shade, withAlpha } from './icons';
-import type { BiomeDisc, World } from './world';
+import { drawCreature, isCreature } from './creatures';
+import { SWING_SECONDS, WIND_UP_SECONDS, type BiomeDisc, type World } from './world';
 import type { Content } from '../core/content';
 import type { InputController } from './input';
 
@@ -54,7 +55,11 @@ export interface RenderState {
   /** Current gauntlet reach, in screen units. */
   pullRadius: number;
   pulling: boolean;
-  /** True only during the first bundle - canon's fading tutorial affordance. */
+  /**
+   * True only during the first bundle, where it lifts the awareness limit so
+   * every enemy is marked however far away. Afterwards the player still senses
+   * what is nearby - that is permanent now - just not the whole Coliseum.
+   */
   showEnemies: boolean;
 }
 
@@ -170,6 +175,7 @@ export class Renderer {
     this.drawNodes(world, state, camera);
     this.drawEnemies(world, state, camera);
     this.drawPullRing(world, state);
+    this.drawSwing(world);
     this.drawPlayer(world);
     this.drawFloaters();
 
@@ -371,10 +377,22 @@ export class Renderer {
       const offscreen =
         enemy.x < bounds.left || enemy.x > bounds.right || enemy.y < bounds.top || enemy.y > bounds.bottom;
 
-      // The first-bundle affordance: an arrow at the screen edge for anything
-      // out of view. It disappears for good once that bundle is done.
+      /*
+       * Canon's asymmetry, the player's half of it: they sense what is around
+       * them, the program does not sense them. Enemies now notice only at an
+       * encounter distance, so this marker is not a crutch - it is the thing
+       * that lets a player go looking for a fight rather than only being found
+       * by one. Local, not a map of everything: only inside awarenessRadius.
+       */
       if (offscreen) {
-        if (state.showEnemies && !enemy.dead) this.drawOffscreenMarker(enemy.x, enemy.y, world);
+        if (!enemy.dead) {
+          const reach = Math.hypot(enemy.x - world.player.x, enemy.y - world.player.y);
+          // The tutorial bundle drops the limit entirely, so the first fight is
+          // never a search. After it, awareness is local again.
+          const sense = state.showEnemies ? Infinity : this.content.waves.awarenessRadius;
+          const limit = Number.isFinite(sense) ? sense : this.content.waves.awarenessRadius;
+          if (reach <= sense) this.drawOffscreenMarker(enemy, world, Math.min(1, reach / limit));
+        }
         continue;
       }
 
@@ -389,23 +407,39 @@ export class Renderer {
 
       if (enemy.dead) ctx.globalAlpha = 0.35;
 
-      // Aggro tell, so being noticed is legible before it reaches you.
+      // Noticed-you tell. It matters more now that noticing is an encounter
+      // rather than a sweep: this is the moment the wandering stopped.
       if (enemy.aggro && !enemy.dead) {
-        ctx.fillStyle = withAlpha('#f87171', 0.85);
+        const top = -30 - def.tier * 7;
+        ctx.fillStyle = withAlpha('#f87171', 0.85 + Math.sin(world.time * 10) * 0.15);
         ctx.beginPath();
-        ctx.moveTo(0, -30);
-        ctx.lineTo(4, -24);
-        ctx.lineTo(-4, -24);
+        ctx.moveTo(0, top);
+        ctx.lineTo(5, top - 7);
+        ctx.lineTo(-5, top - 7);
         ctx.closePath();
         ctx.fill();
       }
 
       const bob = Math.sin(world.time * 3 + enemy.id) * 2;
       ctx.translate(0, bob);
-      // Tier is read by silhouette: the size difference is doing the work a
-      // number on a health bar would otherwise have to.
+      // Tier is read by silhouette first and size second: a Goblin, a Minotaur
+      // and a Scythe-bearer are different shapes, not one shape at three scales.
       const size = 34 + def.tier * 8;
-      drawIcon(ctx, def.shape, enemy.hitFlash > 0 ? '#ffffff' : def.color, size);
+      if (isCreature(def.id)) {
+        drawCreature(ctx, def.id, {
+          color: def.color,
+          size: size * 1.35,
+          time: world.time,
+          phase: enemy.id * 1.7,
+          facing: Math.cos(enemy.facing) < 0 ? -1 : 1,
+          windUp: enemy.windUp > 0 ? 1 - enemy.windUp / WIND_UP_SECONDS : 0,
+          stagger: Math.min(1, enemy.stagger * 4),
+          aggro: enemy.aggro,
+          flash: enemy.hitFlash,
+        });
+      } else {
+        drawIcon(ctx, def.shape, enemy.hitFlash > 0 ? '#ffffff' : def.color, size);
+      }
 
       if (enemy.hp < def.hp && !enemy.dead) {
         const w = 28;
@@ -420,23 +454,95 @@ export class Renderer {
     }
   }
 
-  private drawOffscreenMarker(x: number, y: number, world: World): void {
+  /**
+   * An arrow at the edge of the view for something out of sight.
+   *
+   * @param nearness 0 at the player, 1 at the limit of what they can sense, so
+   *   the marker fades with distance and reads as "roughly over there" rather
+   *   than as a precise fix on something the player cannot actually see.
+   */
+  private drawOffscreenMarker(enemy: World['enemies'][number], world: World, nearness: number): void {
     const ctx = this.ctx;
-    const dx = x - world.player.x;
-    const dy = y - world.player.y;
+    const dx = enemy.x - world.player.x;
+    const dy = enemy.y - world.player.y;
     const angle = Math.atan2(dy, dx);
     const radius = (Math.min(this.width, this.height) / this.zoom) * 0.42;
+    const fade = 0.22 + (1 - nearness) * 0.55;
+    // Tier by size, the same way the bodies read it: a Scythe-bearer somewhere
+    // off screen is worth knowing about before it arrives.
+    const size = 5 + enemy.def.tier * 1.6;
 
     ctx.save();
     ctx.translate(world.player.x + Math.cos(angle) * radius, world.player.y + Math.sin(angle) * radius);
     ctx.rotate(angle);
-    ctx.fillStyle = withAlpha('#f87171', 0.5);
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = enemy.aggro ? '#f87171' : shade(enemy.def.color, 0.25);
     ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(-5, 5);
-    ctx.lineTo(-5, -5);
+    ctx.moveTo(size * 1.5, 0);
+    ctx.lineTo(-size, size * 0.85);
+    ctx.lineTo(-size, -size * 0.85);
     ctx.closePath();
     ctx.fill();
+    // A dark edge so it stays readable over pale ground.
+    ctx.globalAlpha = fade * 0.8;
+    ctx.strokeStyle = '#181024';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------- swing
+
+  /**
+   * The basic attack, drawn.
+   *
+   * `attackAnim` has been counting down on every swing since combat went in and
+   * nothing ever read it, so the attack landed damage with no picture attached -
+   * which is a large part of why it felt weightless whatever the numbers said.
+   *
+   * It is an arc rather than a weapon, because the gauntlets are the weapon: a
+   * crescent sweeping through the same cone the hit test uses, so what you see
+   * is what was actually checked.
+   */
+  private drawSwing(world: World): void {
+    const { player } = world;
+    if (player.attackAnim <= 0) return;
+
+    const ctx = this.ctx;
+    const attack = this.content.progression.combat.basicAttack;
+    // 0 at the start of the swing, 1 at the end.
+    const t = 1 - player.attackAnim / SWING_SECONDS;
+    const halfArc = (attack.arcDegrees * Math.PI) / 360;
+    // The leading edge travels through the cone; the trail follows it.
+    const lead = player.facing - halfArc + t * halfArc * 2;
+    const trail = lead - Math.min(halfArc * 1.4, t * halfArc * 2.6);
+    const reach = attack.range * (0.72 + t * 0.28);
+    const fade = Math.sin(Math.min(1, t) * Math.PI);
+
+    ctx.save();
+    ctx.translate(player.x, player.y);
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = withAlpha('#bfe9ff', fade * 0.55);
+    ctx.lineWidth = 9 * (1 - t * 0.45);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, reach * 0.82, trail, lead);
+    ctx.stroke();
+
+    ctx.strokeStyle = withAlpha('#ffffff', fade * 0.8);
+    ctx.lineWidth = 3 * (1 - t * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, reach * 0.86, trail, lead);
+    ctx.stroke();
+
+    // A spark at the leading edge, so the eye follows the direction of the cut.
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = '#eaf8ff';
+    ctx.beginPath();
+    ctx.arc(Math.cos(lead) * reach * 0.86, Math.sin(lead) * reach * 0.86, 3.2 * fade, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
   }
 

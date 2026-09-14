@@ -62,7 +62,7 @@
       "respawnSeconds": 3,
       "$attack_comment": "Canon has no weapon ITEMS, but it plainly has a basic attack: section 9 gives Nahaste 'near-zero unarmed capability' as its cost, which only means something if everyone else has some; Amorratua scales damage with 'consecutive hits without disengaging'; and Dotore builds charge 'released into the next attack'. So this is the gauntlets themselves - the same hands that pull. Numbers are INFERRED.",
       "basicAttack": {
-        "damage": 6,
+        "damage": 9,
         "range": 46,
         "arcDegrees": 110,
         "cooldownSeconds": 0.42,
@@ -70,7 +70,10 @@
         "comboWindowSeconds": 1.8,
         "comboBonus": 1.5,
         "comboMax": 5,
-        "knockback": 40
+        "knockback": 320,
+        "$knockback_comment": "Knockback is a velocity that bleeds off at 7/s, so the distance it actually moves something is roughly knockback/7 world units - the old 40 was about six units, less than a quarter of a body and invisible in play. 320 is about 46, roughly one body length, which also pushes a goblin back out of its own 34-unit attack range so the hit buys space as well as damage. Divided by each tier weight.",
+        "staggerSeconds": 0.28,
+        "$stagger_comment": "A hit interrupts. Without it the shove was real but invisible: the full 46 units of knockback went in while a goblin walked back at 62/s, so the measured peak was 23 and the hit read as nothing. Staggered, the shove lands whole and a swing also cancels a wind-up, which is what makes the basic attack feel like it connects rather than needing a bigger number. Divided by tier weight, so the heavy ones are never stunlocked."
       }
     },
     "$pause_comment": "GDD section 6.1 says the menu does NOT pause the world, reasoning that a pause 'would have erased wave pressure in exactly the moment it should bite'. The author has since asked for a pause, so it is on - kept as a flag rather than hard-coded, because canon and the build disagree here and the disagreement should be visible rather than buried.",
@@ -700,10 +703,19 @@
       "shape": "blob",
       "color": "#6f8f4a",
       "hp": 16,
+      "weight": 1,
       "damage": 4,
       "speed": 62,
-      "aggroRadius": 220,
+      "noticeRadius": 90,
+      "loseRadius": 210,
+      "forgetSeconds": 3.5,
       "attackRange": 34,
+      "wanderSpeed": 26,
+      "roamRadius": 900,
+      "pauseSeconds": [
+        0.7,
+        2.4
+      ],
       "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
     },
     {
@@ -714,10 +726,19 @@
       "shape": "bone",
       "color": "#a2603a",
       "hp": 58,
+      "weight": 1.8,
       "damage": 12,
       "speed": 54,
-      "aggroRadius": 280,
+      "noticeRadius": 112,
+      "loseRadius": 260,
+      "forgetSeconds": 5,
       "attackRange": 44,
+      "wanderSpeed": 22,
+      "roamRadius": 700,
+      "pauseSeconds": [
+        1,
+        3
+      ],
       "description": "Something in the program decided you were worth spending on. Only ever a few."
     },
     {
@@ -728,10 +749,19 @@
       "shape": "blade",
       "color": "#8b2f4a",
       "hp": 140,
+      "weight": 2.6,
       "damage": 26,
       "speed": 70,
-      "aggroRadius": 360,
+      "noticeRadius": 140,
+      "loseRadius": 330,
+      "forgetSeconds": 6.5,
       "attackRange": 60,
+      "wanderSpeed": 30,
+      "roamRadius": 1100,
+      "pauseSeconds": [
+        0.6,
+        2
+      ],
       "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
     }
   ],
@@ -854,6 +884,8 @@
       "firstBundleAtLevel": 1,
       "repeatingBundlesFromLevel": 5,
       "ambientFromLevel": 5
-    }
+    },
+    "awarenessRadius": 1400,
+    "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything."
   }
 }

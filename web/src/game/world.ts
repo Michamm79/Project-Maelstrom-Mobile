@@ -52,10 +52,25 @@ export interface Enemy {
   x: number;
   y: number;
   hp: number;
+  /** Where it entered the world; roam targets are chosen around this. */
   homeX: number;
   homeY: number;
   /** Canon: enemies do not know where the player is until they notice them. */
   aggro: boolean;
+  /**
+   * Seconds of pursuit left once the player is past loseRadius. Aggro is not a
+   * latch: an enemy that has lost you keeps coming for a while and then gives
+   * up and goes back to wandering, which is what makes backing off work.
+   */
+  alertFor: number;
+  /** The point it is currently ambling towards, and how long it is resting first. */
+  roamX: number;
+  roamY: number;
+  roamPause: number;
+  /** Winds up before it strikes, so a hit is something you can see coming. */
+  windUp: number;
+  /** Reeling from a hit: cannot move, and whatever it was winding up is lost. */
+  stagger: number;
   cooldown: number;
   hitFlash: number;
   knockX: number;
@@ -143,6 +158,20 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
   };
 }
 
+/** How close counts as having arrived at a roam target. */
+const ROAM_SEED = 0x9e3779b9;
+
+/** How close counts as having arrived at a roam target. */
+const ARRIVE_DISTANCE = 14;
+/** Share of the full shove that a combo-less hit delivers. */
+const COMBO_SHOVE_FLOOR = 0.4;
+
+/** How long a swing takes to draw. The renderer reads attackAnim against it. */
+export const SWING_SECONDS = 0.26;
+
+/** The tell before a blow lands, so a hit is something you can see coming. */
+export const WIND_UP_SECONDS = 0.42;
+
 export class World {
   readonly nodes: WorldNode[] = [];
   readonly props: Prop[] = [];
@@ -158,6 +187,8 @@ export class World {
 
   private elapsed = 0;
   private nextEnemyId = 0;
+  /** Its own stream, so wandering never perturbs the world's generation. */
+  private roamRng = new Rng(ROAM_SEED);
 
   constructor(private readonly content: Content) {
     const upp = content.unitsPerPixel;
@@ -207,6 +238,7 @@ export class World {
     this.absorbed.length = 0;
     this.elapsed = 0;
     this.nextEnemyId = 0;
+    this.roamRng = new Rng(ROAM_SEED);
     Object.assign(this.player, freshPlayer(this.content.progression.combat));
     this.populate();
   }
@@ -493,6 +525,12 @@ export class World {
       homeX: x,
       homeY: y,
       aggro: false,
+      alertFor: 0,
+      roamX: x,
+      roamY: y,
+      roamPause: 0,
+      windUp: 0,
+      stagger: 0,
       cooldown: 0,
       hitFlash: 0,
       knockX: 0,
@@ -536,7 +574,7 @@ export class World {
 
     const target = this.nearestTarget(attack.range);
     player.attackCooldown = attack.cooldownSeconds;
-    player.attackAnim = 0.2;
+    player.attackAnim = SWING_SECONDS;
     if (!target) {
       this.breakCombo();
       return { hit: [], killed: [], combo: 0 };
@@ -571,8 +609,24 @@ export class World {
       const length = Math.max(0.001, Math.hypot(dx, dy));
       enemy.hitFlash = 0.16;
       enemy.aggro = true;
-      enemy.knockX += (dx / length) * attack.knockback;
-      enemy.knockY += (dy / length) * attack.knockback;
+      const weight = Math.max(1, enemy.def.weight);
+      // Interrupts: whatever it was about to do, it is not doing it now.
+      enemy.stagger = Math.max(enemy.stagger, attack.staggerSeconds / weight);
+      enemy.windUp = 0;
+
+      /*
+       * The shove grows through the combo instead of being flat.
+       *
+       * Flat, it broke the combo outright: a full 46-unit push on the first hit
+       * put a goblin past the 46-unit reach that threw it, so the second swing
+       * could never land and Amorratua's "consecutive hits" hook was dead for
+       * tier 1. Ramped, early hits hold the target inside reach and the last
+       * one sends it - which is also the more satisfying shape.
+       */
+      const through = attack.comboMax > 0 ? player.combo / attack.comboMax : 1;
+      const shove = (attack.knockback * (COMBO_SHOVE_FLOOR + (1 - COMBO_SHOVE_FLOOR) * through)) / weight;
+      enemy.knockX += (dx / length) * shove;
+      enemy.knockY += (dy / length) * shove;
       const died = applyDamage(enemy, damage);
       this.events.push({ kind: 'enemy-hit', enemy, amount: damage });
       hit.push(enemy);
@@ -604,8 +658,12 @@ export class World {
       const enemy = hit.target;
       enemy.hitFlash = 0.18;
       enemy.aggro = true;
-      enemy.knockX += hit.pushX * combination.effect.knockback;
-      enemy.knockY += hit.pushY * combination.effect.knockback;
+      const heft = Math.max(1, enemy.def.weight);
+      enemy.stagger = Math.max(enemy.stagger, this.content.progression.combat.basicAttack.staggerSeconds / heft);
+      enemy.windUp = 0;
+      const push = combination.effect.knockback / heft;
+      enemy.knockX += hit.pushX * push;
+      enemy.knockY += hit.pushY * push;
       if (combination.effect.burnSeconds) enemy.burn = combination.effect.burnSeconds;
       const died = applyDamage(enemy, hit.damage);
       this.events.push({ kind: 'enemy-hit', enemy, amount: hit.damage });
@@ -637,32 +695,58 @@ export class World {
 
       if (enemy.dead || player.dead) continue;
 
+      const def = enemy.def;
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const distance = Math.hypot(dx, dy);
 
-      // Canon's stealth asymmetry: an enemy has to notice the player first, and
-      // loses them again at a longer range than it found them - so backing off
-      // actually works rather than tethering them to you forever.
-      if (!enemy.aggro && distance <= enemy.def.aggroRadius) enemy.aggro = true;
-      else if (enemy.aggro && distance > enemy.def.aggroRadius * 2.2) enemy.aggro = false;
-
-      const targetX = enemy.aggro ? player.x : enemy.homeX;
-      const targetY = enemy.aggro ? player.y : enemy.homeY;
-      const tx = targetX - enemy.x;
-      const ty = targetY - enemy.y;
-      const toTarget = Math.hypot(tx, ty);
-
-      if (toTarget > (enemy.aggro ? enemy.def.attackRange * 0.85 : 6)) {
-        enemy.x += (tx / toTarget) * enemy.def.speed * dt;
-        enemy.y += (ty / toTarget) * enemy.def.speed * dt;
-        enemy.facing = Math.atan2(ty, tx);
+      /*
+       * Canon's asymmetry, the right way round: the program does not know where
+       * the intruder is. So noticing is an encounter - you have to be close -
+       * and it decays rather than latching.
+       *
+       * This used to be a detection sweep of 220-360uu, most of a screen, with
+       * the enemy then walking the exact line to the player's current position.
+       * That is a lock-on however it is labelled: there was no way to be near
+       * one without being found, and no way to lose one except by outrunning a
+       * radius. Now they amble between roam targets and find the player by
+       * bumping into them, which is also what makes hunting one down a thing
+       * the player can choose to do.
+       */
+      if (distance <= def.noticeRadius) {
+        enemy.aggro = true;
+        enemy.alertFor = def.forgetSeconds;
+      } else if (enemy.aggro && distance > def.loseRadius) {
+        enemy.alertFor -= dt;
+        if (enemy.alertFor <= 0) {
+          enemy.aggro = false;
+          this.chooseRoam(enemy);
+        }
       }
 
+      enemy.stagger = Math.max(0, enemy.stagger - dt);
       enemy.cooldown = Math.max(0, enemy.cooldown - dt);
-      if (enemy.aggro && distance <= enemy.def.attackRange && enemy.cooldown <= 0) {
-        enemy.cooldown = 1.2;
-        this.hurtPlayer(enemy.def.damage, enemy);
+
+      // Reeling: it takes the shove whole instead of walking through it, which
+      // is what makes the knockback something you can see.
+      if (enemy.stagger > 0) continue;
+
+      if (enemy.aggro) this.pursue(enemy, dt, dx, dy, distance);
+      else this.wander(enemy, dt);
+
+      enemy.windUp = Math.max(0, enemy.windUp - dt);
+      if (enemy.aggro && distance <= def.attackRange && enemy.cooldown <= 0) {
+        // The wind-up is the tell. A hit that lands on the same frame the enemy
+        // arrives is one the player had no way to read.
+        if (enemy.windUp <= 0) {
+          enemy.windUp = WIND_UP_SECONDS;
+        } else if (enemy.windUp <= dt) {
+          enemy.cooldown = 1.2;
+          this.hurtPlayer(def.damage, enemy);
+        }
+      } else if (!enemy.aggro || distance > def.attackRange) {
+        // Stepped out of reach mid-swing: the blow does not follow you.
+        enemy.windUp = 0;
       }
     }
 
@@ -674,6 +758,68 @@ export class World {
         this.enemies.splice(i, 1);
       }
     }
+  }
+
+  /** Closing on a player it can currently see. */
+  private pursue(enemy: Enemy, dt: number, dx: number, dy: number, distance: number): void {
+    // Stop at the edge of its reach rather than walking into the player.
+    const stopAt = enemy.def.attackRange * 0.85;
+    if (distance <= stopAt) {
+      enemy.facing = Math.atan2(dy, dx);
+      return;
+    }
+    enemy.x += (dx / distance) * enemy.def.speed * dt;
+    enemy.y += (dy / distance) * enemy.def.speed * dt;
+    enemy.facing = Math.atan2(dy, dx);
+  }
+
+  /** Ambling between roam targets, with a rest at each one. */
+  private wander(enemy: Enemy, dt: number): void {
+    if (enemy.roamPause > 0) {
+      enemy.roamPause -= dt;
+      return;
+    }
+
+    const tx = enemy.roamX - enemy.x;
+    const ty = enemy.roamY - enemy.y;
+    const toTarget = Math.hypot(tx, ty);
+
+    if (toTarget <= ARRIVE_DISTANCE) {
+      // Destructured defensively: a def assembled by hand - a test fixture, a
+      // half-migrated save, content mid-edit - used to throw here and take the
+      // whole world update with it, which reads as the game freezing rather
+      // than as one enemy being wrong.
+      const pause = enemy.def.pauseSeconds ?? [];
+      enemy.roamPause = this.roamRng.range(pause[0] ?? 0.6, pause[1] ?? 2.2);
+      this.chooseRoam(enemy);
+      return;
+    }
+
+    enemy.x += (tx / toTarget) * enemy.def.wanderSpeed * dt;
+    enemy.y += (ty / toTarget) * enemy.def.wanderSpeed * dt;
+    enemy.facing = Math.atan2(ty, tx);
+  }
+
+  /**
+   * A new point to drift to, around where this enemy entered the world and
+   * inside the boundary - the Coliseum is bounded, so nothing wanders out of it.
+   */
+  private chooseRoam(enemy: Enemy): void {
+    const angle = this.roamRng.range(0, Math.PI * 2);
+    // Square-rooted so targets spread over the area rather than bunching at the
+    // centre, the same reason the props scatter that way.
+    const reach = Math.sqrt(this.roamRng.range(0.05, 1)) * enemy.def.roamRadius;
+    let x = enemy.homeX + Math.cos(angle) * reach;
+    let y = enemy.homeY + Math.sin(angle) * reach;
+
+    const fromCentre = Math.hypot(x, y);
+    const limit = this.boundaryRadius - 40;
+    if (fromCentre > limit) {
+      x = (x / fromCentre) * limit;
+      y = (y / fromCentre) * limit;
+    }
+    enemy.roamX = x;
+    enemy.roamY = y;
   }
 
   private hurtPlayer(amount: number, enemy: Enemy): void {
