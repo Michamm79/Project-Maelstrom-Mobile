@@ -124,14 +124,14 @@ npm run dev          # http://localhost:5173 — open it on your phone over the 
 ```
 
 ```bash
-npm test             # 126 unit tests over the core systems
+npm test             # 127 unit tests over the core systems
 npm run build        # content + icons + typecheck + bundle + service worker
 npm run smoke        # builds, then drives the real game in headless Chromium
 npm run screenshots  # regenerates docs/screenshots/
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
-browser and asserts **95 behaviours** — playing from the title screen through
+browser and asserts **96 behaviours** — playing from the title screen through
 the opening, gathering, crafting, combat and a restart; driving **real
 multi-touch through CDP**, because a browser does not synthesise a `click` for a
 touch inside a multi-touch sequence and a click-bound control silently does
