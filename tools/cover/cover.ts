@@ -491,42 +491,36 @@ function tracked(
   }
 }
 
+/**
+ * The name, and nothing else.
+ *
+ * There was a tagline under this. A cover earns a tagline once the game has
+ * settled on what it is promising; until then it is a line of text competing
+ * with the only two words that have to be legible at the size a cover is
+ * actually seen. Two lines also let the plate sit lower and shorter, so less of
+ * the maelstrom is buried under it.
+ */
 function drawTitle(ctx: CanvasRenderingContext2D, S: number): void {
   const cx = S / 2;
 
   // A plate under the type, so the title holds against whatever is behind it.
-  const plate = ctx.createLinearGradient(0, S * 0.66, 0, S);
+  const plate = ctx.createLinearGradient(0, S * 0.7, 0, S);
   plate.addColorStop(0, 'rgba(6,8,12,0)');
   plate.addColorStop(0.45, 'rgba(6,8,12,0.72)');
   plate.addColorStop(1, 'rgba(6,8,12,0.94)');
   ctx.fillStyle = plate;
-  ctx.fillRect(0, S * 0.66, S, S * 0.34);
+  ctx.fillRect(0, S * 0.7, S, S * 0.3);
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 
   ctx.fillStyle = withAlpha(PULL, 0.72);
   ctx.font = `600 ${S * 0.026}px "Liberation Sans", "DejaVu Sans", sans-serif`;
-  tracked(ctx, 'PROJECT', cx, S * 0.792, S * 0.022);
+  tracked(ctx, 'PROJECT', cx, S * 0.845, S * 0.022);
 
   ctx.fillStyle = '#f2f6fb';
   ctx.font = `700 ${S * 0.079}px "Liberation Sans", "DejaVu Sans", sans-serif`;
-  tracked(ctx, 'MAELSTROM', cx, S * 0.874, S * 0.0115);
-
-  // Rules either side of the tagline, kept short so the line reads as one unit.
-  const ruleY = S * 0.915;
-  ctx.strokeStyle = withAlpha(PULL, 0.28);
-  ctx.lineWidth = S / 900;
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + side * S * 0.19, ruleY);
-    ctx.lineTo(cx + side * S * 0.33, ruleY);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = 'rgba(190,205,222,0.92)';
-  ctx.font = `400 ${S * 0.0245}px "Liberation Sans", "DejaVu Sans", sans-serif`;
-  tracked(ctx, 'YOU WOKE HERE. NOBODY TOLD YOU WHY.', cx, ruleY + S * 0.009, S * 0.0026);
+  tracked(ctx, 'MAELSTROM', cx, S * 0.928, S * 0.0115);
 }
 
 export async function drawCover(canvas: HTMLCanvasElement, size: number, withTitle: boolean): Promise<void> {
