@@ -24,6 +24,8 @@ import { InputController } from './input';
 import { TitleScreen } from './title';
 import { WaveDirector } from './waves';
 import { OpeningScene } from './opening';
+import { Sound } from './sound';
+import { Funnel } from '../core/funnel';
 import type { CombinationId, RecipeId } from '../core/types';
 
 export class Game {
@@ -33,6 +35,8 @@ export class Game {
   private readonly input: InputController;
   private readonly title: TitleScreen;
   private readonly opening: OpeningScene;
+  private readonly sound = new Sound();
+  private readonly funnel = new Funnel();
   private readonly waves: WaveDirector;
 
   private readonly inventory = new Inventory(content as never);
@@ -72,6 +76,12 @@ export class Game {
       onAttack: () => this.attack(),
       onSkill: (id) => this.useSkill(id),
       onTogglePull: () => this.togglePull(),
+      onToggleMute: () => {
+        // Unlock first: the very first thing a player touches may be the mute
+        // button, and unmuting a context that was never created does nothing.
+        this.sound.unlock();
+        return this.sound.toggleMute();
+      },
     });
 
     this.input = new InputController(canvas);
@@ -79,10 +89,17 @@ export class Game {
 
     this.opening = new OpeningScene(uiRoot);
 
+    // Every path out of the title screen is a genuine user gesture, which is
+    // the only moment a browser will let audio start.
     this.title = new TitleScreen(uiRoot, {
-      onContinue: () => this.resume(),
+      onContinue: () => {
+        this.sound.unlock();
+        this.resume();
+      },
       onNewGame: (guided: boolean) => {
+        this.sound.unlock();
         clearSave();
+        this.funnel.mark('restarted');
         this.resetRun();
         this.begin(guided);
       },
@@ -102,6 +119,7 @@ export class Game {
     // markSeen, not award: this suppresses the payout, it does not collect it.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
 
+    this.ui.setMuteLabel(this.sound.isMuted);
     this.ui.bind(this.hudState());
     // currentBiome is deliberately left empty: refreshPlace() skips when the
     // biome has not changed, so seeding it here meant the place card never got
@@ -129,6 +147,10 @@ export class Game {
   private attack(): void {
     const result = this.world.swing();
     if (!result) return;
+    this.sound.play(result.hit.length ? 'hit' : 'ui', 1 + result.combo * 0.12);
+    if (result.hit.length) this.funnel.mark('struck');
+    if (result.killed.length) this.funnel.mark('killed');
+    for (let i = 0; i < result.killed.length; i++) this.sound.play('kill');
     this.ui.setCombo(result.combo);
     if (result.killed.length) this.waves.notifyKills(result.killed.length);
     if (result.hit.length) this.tutorialProgress.struck += 1;
@@ -156,8 +178,10 @@ export class Game {
     // The waking scene comes before the first card, and holds the world while
     // it plays. It runs for whichever opening was chosen: skipping the guide
     // skips the instruction, not the fiction.
+    this.funnel.mark('began');
     this.uiRoot.classList.add('waking');
     this.opening.play(content.opening, () => {
+      this.funnel.mark('wokeUp');
       this.uiRoot.classList.remove('waking');
       this.syncObjective();
     });
@@ -256,6 +280,8 @@ export class Game {
       pullSpeed: 'pull speed',
     };
     const stat = STAT_NAMES[recipe.effect.stat] ?? recipe.effect.stat;
+    this.sound.play('craft');
+    this.funnel.mark('crafted');
     this.ui.toast(`${recipe.name}: ${stat} +${recipe.effect.amount}`, 'good');
     this.tutorialProgress.crafted += 1;
     this.awardXp(this.progression.award('firstCraft', recipe.id), `First craft: ${recipe.name}`);
@@ -279,6 +305,8 @@ export class Game {
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
+    this.sound.play('cast');
+    this.funnel.mark('cast');
     this.cooldowns.set(combination.id, combination.cooldownSeconds);
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
@@ -320,6 +348,9 @@ export class Game {
     const before = this.progression.levelAt(this.progression.xp - amount);
     this.ui.toast(message, 'good');
     if (after > before) {
+      if (after >= 1) this.funnel.mark('reachedLevel1');
+      if (after >= content.progression.alchemyUnlockLevel) this.funnel.mark('reachedLevel2');
+      this.sound.play('level');
       this.onLevelUp(before, after);
       // The cast bar is built from what the level unlocks, so it has to be
       // rebuilt here. Without this the combinations stayed invisible until the
@@ -397,10 +428,14 @@ export class Game {
 
     const before = { x: this.world.player.x, y: this.world.player.y };
     this.world.movePlayer(dt, move.x, move.y, player.moveSpeed);
-    this.tutorialProgress.travelled += Math.hypot(
-      this.world.player.x - before.x,
-      this.world.player.y - before.y,
-    );
+    const walked = Math.hypot(this.world.player.x - before.x, this.world.player.y - before.y);
+    this.tutorialProgress.travelled += walked;
+    // Footfalls come off distance rather than time, so slow ground - the
+    // Wetland, the Mountain - sounds heavy rather than just being slow.
+    if (walked > 0.1) {
+      this.sound.play('step');
+      this.funnel.mark('walked');
+    }
 
     this.world.updatePull(
       dt,
@@ -410,6 +445,11 @@ export class Game {
       this.inventory.free,
     );
 
+    if (this.world.absorbed.length) {
+      this.sound.play('absorb');
+      this.funnel.mark('gathered');
+      if (wasMoving) this.funnel.mark('gatheredWhileMoving');
+    }
     for (const material of this.world.absorbed) {
       const taken = this.inventory.add(material, 1);
       if (taken === 0) {
@@ -419,6 +459,8 @@ export class Game {
       this.tutorialProgress.gathered += 1;
       if (wasMoving) this.tutorialProgress.gatheredMoving += 1;
       this.tutorialProgress.distinctHeld = this.inventory.distinctCount;
+      // The carry card's bar, and the last quiet milestone before the warning.
+      if (this.inventory.distinctCount >= 3) this.funnel.mark('heldThreeMaterials');
       this.awardXp(
         this.progression.award('firstMaterial', material),
         `New material: ${content.material(material).name}`,
@@ -452,17 +494,34 @@ export class Game {
     this.sinceSave += dt;
     if (this.sinceSave > 5) {
       this.sinceSave = 0;
+      this.funnel.tick(this.playtimeMs);
       this.persist();
     }
   }
 
+  /** Where players stop, readable from the console: maelstrom.funnelReport(). */
+  funnelReport(): string {
+    return this.funnel.report();
+  }
+
   private drainEvents(): void {
     for (const event of this.world.events) {
-      if (event.kind === 'player-died') this.ui.toast('You fell. Recovering...', 'bad');
+      if (event.kind === 'player-hit') this.sound.play('hurt');
+      if (event.kind === 'player-died') {
+        this.sound.play('hurt');
+        this.funnel.mark('died');
+        this.ui.toast('You fell. Recovering...', 'bad');
+      }
     }
     this.world.events.length = 0;
 
-    for (const message of this.waves.drainMessages()) this.ui.toast(message, 'big');
+    for (const message of this.waves.drainMessages()) {
+      // Canon calls the warning unmistakable; it is the only cue that is meant
+      // to be unpleasant.
+      this.sound.play('warn');
+      this.funnel.mark('sawWarning');
+      this.ui.toast(message, 'big');
+    }
     const cleared = this.waves.takeClearedWaves();
     for (let i = 0; i < cleared; i++) {
       this.awardXp(
@@ -487,10 +546,27 @@ export class Game {
 
     if (disc) {
       this.ui.setPlace(disc.name, disc.mood);
+      if (disc.id !== content.spawnBiome.id) this.funnel.mark('leftSpawnBiome');
+      if (this.progression.countSeen('firstBiome') >= content.biomes.length) this.funnel.mark('sawAllBiomes');
       this.awardXp(this.progression.award('firstBiome', disc.id), `Reached ${disc.name}`);
     } else {
       this.ui.setPlace('The Coliseum', 'Forest, between the regions.');
     }
+
+    /*
+     * Retune the ambient bed to the region.
+     *
+     * Pitch and brightness are derived from the terrain rather than authored
+     * per biome: fog muffles, so it closes the filter, and slow ground sits
+     * lower. That way a new region gets a sound for free the moment it gets
+     * terrain, and the two can never describe different places.
+     */
+    const terrain = this.world.terrainAt(this.world.player.x, this.world.player.y);
+    this.sound.setBiome(
+      44 + (1 - terrain.moveScale) * 90,
+      2400 - terrain.fog * 2100,
+      disc ? 0.012 + terrain.fog * 0.05 : 0.008,
+    );
   }
 
   private syncObjective(): void {
@@ -508,5 +584,6 @@ export class Game {
   destroy(): void {
     cancelAnimationFrame(this.raf);
     this.input.destroy();
+    this.sound.dispose();
   }
 }

@@ -67,6 +67,32 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Above this average frame time the haze starts giving way to the frame rate. */
+const SLOW_FRAME_MS = 22;
+/** And below this it comes back. The gap is the hysteresis. */
+const GOOD_FRAME_MS = 18;
+
+/** Side of the baked haze texture. Detail-free, so it can be small. */
+const FOG_TEXTURE = 192;
+
+function bakeFog(tint: string, strength: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = FOG_TEXTURE;
+  canvas.height = FOG_TEXTURE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const half = FOG_TEXTURE / 2;
+  const haze = ctx.createRadialGradient(half, half, half * 0.12, half, half, half * 0.72);
+  haze.addColorStop(0, withAlpha(tint, 0));
+  haze.addColorStop(0.55, withAlpha(tint, strength * 0.55));
+  haze.addColorStop(1, withAlpha(tint, strength));
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, 0, FOG_TEXTURE, FOG_TEXTURE);
+  return canvas;
+}
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly floaters: Floater[] = [];
@@ -74,6 +100,19 @@ export class Renderer {
   private height = 0;
   private dpr = 1;
   private zoom = 1;
+  /** The haze, baked at low resolution and stretched. See drawFog. */
+  private fog: HTMLCanvasElement | null = null;
+  private fogKey = '';
+  /**
+   * Rolling frame time, and how much of the haze the device can afford.
+   *
+   * The fog is one full-screen alpha blend, which is nearly free on a GPU and
+   * measurably not on a software rasteriser - 10fps on SwiftShader here. A
+   * phone that cannot afford it should lose the atmosphere rather than the
+   * frame rate, so this backs it off and restores it when there is headroom.
+   */
+  private frameMs = 16.7;
+  private fogQuality = 1;
 
   private readonly sheet = new Image();
   private sheetReady = false;
@@ -139,6 +178,11 @@ export class Renderer {
   }
 
   update(dt: number): void {
+    // Smoothed hard, so one slow frame during a load never dims the world.
+    this.frameMs += (Math.min(100, dt * 1000) - this.frameMs) * 0.05;
+    if (this.frameMs > SLOW_FRAME_MS) this.fogQuality = Math.max(0, this.fogQuality - dt * 0.6);
+    else if (this.frameMs < GOOD_FRAME_MS) this.fogQuality = Math.min(1, this.fogQuality + dt * 0.2);
+
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const floater = this.floaters[i];
       if (!floater) continue;
@@ -177,6 +221,7 @@ export class Renderer {
     this.drawPullRing(world, state);
     this.drawSwing(world);
     this.drawPlayer(world);
+    this.drawFog(world, camera);
     this.drawFloaters();
 
     ctx.restore();
@@ -261,34 +306,153 @@ export class Renderer {
     ctx.stroke();
   }
 
+  /**
+   * Scenery, drawn per kind.
+   *
+   * Three shapes tinted by the local accent used to serve the whole Coliseum,
+   * which is why every region looked like the spawn in a different colour. The
+   * kinds are what actually distinguish a snowfield from a server floor.
+   */
   private drawProps(world: World, camera: { x: number; y: number }): void {
     const ctx = this.ctx;
     const bounds = this.visible(camera, 40);
 
-    for (const prop of world.props) {
-      if (prop.x < bounds.left || prop.x > bounds.right || prop.y < bounds.top || prop.y > bounds.bottom) {
-        continue;
-      }
+    for (const prop of world.propsIn(bounds.left, bounds.top, bounds.right, bounds.bottom)) {
       const disc = world.biomeAt(prop.x, prop.y);
       const base = disc ? disc.palette.accent : '#4c7a4a';
-      ctx.fillStyle = withAlpha(shade(base, prop.tone), 0.45);
+      const tint = shade(base, prop.tone);
+      const s = prop.size;
 
-      if (prop.kind === 'tuft') {
-        ctx.beginPath();
-        ctx.ellipse(prop.x, prop.y, prop.size * 0.5, prop.size * 0.28, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (prop.kind === 'stone') {
-        ctx.beginPath();
-        ctx.arc(prop.x, prop.y, prop.size * 0.36, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.moveTo(prop.x, prop.y - prop.size);
-        ctx.lineTo(prop.x + prop.size * 0.34, prop.y);
-        ctx.lineTo(prop.x - prop.size * 0.34, prop.y);
-        ctx.closePath();
-        ctx.fill();
+      ctx.save();
+      ctx.translate(prop.x, prop.y);
+      ctx.fillStyle = withAlpha(tint, 0.45);
+
+      switch (prop.kind) {
+        case 'stone':
+          ctx.beginPath();
+          ctx.arc(0, 0, s * 0.36, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        case 'tree':
+          ctx.beginPath();
+          ctx.moveTo(0, -s);
+          ctx.lineTo(s * 0.34, 0);
+          ctx.lineTo(-s * 0.34, 0);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        // Wind-scalloped snow: a low mound with a bright lip facing the light.
+        case 'drift':
+          ctx.fillStyle = withAlpha('#e8f2fb', 0.3);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.72, s * 0.3, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = withAlpha('#ffffff', 0.34);
+          ctx.beginPath();
+          ctx.ellipse(-s * 0.1, -s * 0.1, s * 0.46, s * 0.14, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        // Bare rock breaking the snow: angular, never rounded.
+        case 'crag':
+          ctx.fillStyle = withAlpha(shade(base, -0.5), 0.55);
+          ctx.beginPath();
+          ctx.moveTo(-s * 0.5, s * 0.28);
+          ctx.lineTo(-s * 0.18, -s * 0.62);
+          ctx.lineTo(s * 0.16, -s * 0.2);
+          ctx.lineTo(s * 0.52, s * 0.3);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        // Glacite showing through. It is the region's whole reason to exist,
+        // so it is the one prop that emits rather than reflects.
+        case 'shard':
+          ctx.fillStyle = withAlpha('#bfe9ff', 0.5);
+          ctx.beginPath();
+          ctx.moveTo(0, -s * 0.8);
+          ctx.lineTo(s * 0.22, 0);
+          ctx.lineTo(0, s * 0.34);
+          ctx.lineTo(-s * 0.22, 0);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        // Sand ridge: long, shallow, and lying across the wind.
+        case 'dune':
+          ctx.fillStyle = withAlpha(shade(base, 0.12), 0.24);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 1.15, s * 0.22, 0.3, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        case 'bone':
+          ctx.fillStyle = withAlpha('#e6dcc4', 0.42);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.42, s * 0.1, -0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(-s * 0.3, -s * 0.2, s * 0.1, 0, Math.PI * 2);
+          ctx.arc(s * 0.3, s * 0.2, s * 0.1, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        // Standing water. Darker than the ground rather than lighter, which is
+        // what stops the Wetland reading as a field with puddles painted on.
+        case 'pool':
+          ctx.fillStyle = withAlpha('#16333a', 0.5);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.9, s * 0.45, prop.tone, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = withAlpha('#9fd8e8', 0.14);
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          break;
+
+        case 'reed':
+          ctx.strokeStyle = withAlpha(tint, 0.5);
+          ctx.lineWidth = Math.max(1, s * 0.09);
+          for (const lean of [-0.22, 0, 0.26]) {
+            ctx.beginPath();
+            ctx.moveTo(lean * s * 0.4, 0);
+            ctx.quadraticCurveTo(lean * s, -s * 0.6, lean * s * 1.5 + s * 0.06, -s * 1.05);
+            ctx.stroke();
+          }
+          break;
+
+        // A rack, seen from above: a dark block with a column of live lights.
+        case 'rack':
+          ctx.fillStyle = withAlpha('#0f1020', 0.62);
+          ctx.fillRect(-s * 0.46, -s * 0.6, s * 0.92, s * 1.2);
+          ctx.fillStyle = withAlpha('#7fd8d8', 0.55);
+          for (let i = 0; i < 4; i++) {
+            const lit = ((prop.tone * 40 + i) | 0) % 3 !== 0;
+            if (!lit) continue;
+            ctx.fillRect(-s * 0.3, -s * 0.44 + i * s * 0.28, s * 0.6, s * 0.08);
+          }
+          break;
+
+        case 'conduit':
+          ctx.strokeStyle = withAlpha('#7fd8d8', 0.2);
+          ctx.lineWidth = Math.max(1.5, s * 0.16);
+          ctx.beginPath();
+          ctx.moveTo(-s * 0.8, -s * 0.2);
+          ctx.lineTo(s * 0.1, -s * 0.2);
+          ctx.lineTo(s * 0.1, s * 0.7);
+          ctx.stroke();
+          break;
+
+        case 'tuft':
+        default:
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.5, s * 0.28, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
       }
+
+      ctx.restore();
     }
   }
 
@@ -389,8 +553,12 @@ export class Renderer {
           const reach = Math.hypot(enemy.x - world.player.x, enemy.y - world.player.y);
           // The tutorial bundle drops the limit entirely, so the first fight is
           // never a search. After it, awareness is local again.
-          const sense = state.showEnemies ? Infinity : this.content.waves.awarenessRadius;
-          const limit = Number.isFinite(sense) ? sense : this.content.waves.awarenessRadius;
+          // Scaled by where the player is standing: the Wetland is "low
+          // visibility" and the Desert is "visible from far off", and both of
+          // those cut in the player's direction as well as the enemies'.
+          const sight = world.terrainAt(world.player.x, world.player.y).sight;
+          const sense = state.showEnemies ? Infinity : this.content.waves.awarenessRadius * sight;
+          const limit = Number.isFinite(sense) ? sense : this.content.waves.awarenessRadius * sight;
           if (reach <= sense) this.drawOffscreenMarker(enemy, world, Math.min(1, reach / limit));
         }
         continue;
@@ -489,6 +657,45 @@ export class Renderer {
     ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.restore();
+  }
+
+  /**
+   * The haze some regions sit under.
+   *
+   * Drawn over the world and under the floaters, as a radial wash that is
+   * thinnest around the player: coolant fog and marsh mist are supposed to
+   * close the distance down, not blind you where you stand. Strength comes
+   * from the blended terrain, so it fades in across the border rather than
+   * switching on.
+   */
+  private drawFog(world: World, camera: { x: number; y: number }): void {
+    const terrain = world.terrainAt(world.player.x, world.player.y);
+    const strength = terrain.fog * this.fogQuality;
+    if (strength <= 0.01) return;
+
+    const disc = world.biomeAt(world.player.x, world.player.y);
+    const ctx = this.ctx;
+    const reach = Math.max(this.width, this.height) / this.zoom;
+
+    /*
+     * Baked small and stretched, rather than filled at full resolution.
+     *
+     * Measured: a screen-sized radial gradient fill cost 10fps on its own at
+     * DPR 2 - about 1.5 million gradient-evaluated pixels every frame, while
+     * the props and the nodes together cost nothing. Haze has no detail in it,
+     * so a 192px texture scaled up is indistinguishable and turns the per-frame
+     * cost into one blit.
+     */
+    const tint = disc?.palette.fog ?? '#101018';
+    // Quantised, or easing the quality would rebake the texture every frame.
+    const key = `${tint}|${strength.toFixed(2)}`;
+    if (key !== this.fogKey) {
+      this.fog = bakeFog(tint, strength);
+      this.fogKey = key;
+    }
+    if (!this.fog) return;
+
+    ctx.drawImage(this.fog, camera.x - reach, camera.y - reach, reach * 2, reach * 2);
   }
 
   // ---------------------------------------------------------------- swing

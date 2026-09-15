@@ -15,7 +15,7 @@
 import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
 import { abilityTargets, applyDamage } from '../core/combat';
-import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId } from '../core/types';
+import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId, TerrainDef } from '../core/types';
 
 /** Screen units travelled per walk-cycle frame. */
 const STEP_DISTANCE = 13;
@@ -91,7 +91,7 @@ export interface Prop {
   x: number;
   y: number;
   size: number;
-  kind: 'tuft' | 'stone' | 'spire';
+  kind: 'tuft' | 'stone' | 'tree' | 'drift' | 'crag' | 'shard' | 'dune' | 'bone' | 'reed' | 'pool' | 'rack' | 'conduit';
   tone: number;
 }
 
@@ -130,7 +130,29 @@ export interface BiomeDisc {
   radius: number;
   palette: { ground: string; groundAlt: string; accent: string; fog: string };
   mood: string;
+  terrain: TerrainDef;
 }
+
+/** What the connective forest between the regions does: nothing. */
+const NEUTRAL: TerrainDef = {
+  moveScale: 1,
+  concealment: 1,
+  sight: 1,
+  fog: 0,
+  propDensity: 1,
+  props: ['tuft', 'stone', 'tree'],
+};
+
+/** Bucket size for the prop index, in world units: about a third of a screen. */
+const PROP_CELL = 220;
+
+/** Cantor-ish pairing, so a cell is one number rather than a string key. */
+function propKey(cx: number, cy: number): number {
+  return (cx + 4096) * 8192 + (cy + 4096);
+}
+
+/** How wide the blend between a region and the forest is, in world units. */
+const TERRAIN_FEATHER = 90;
 
 /** The player as they wake: one definition, so reset() cannot drift from it. */
 function freshPlayer(combat: Content['progression']['combat']): Player {
@@ -158,7 +180,7 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
   };
 }
 
-/** How close counts as having arrived at a roam target. */
+/** Seeds the wander stream, kept apart from the world's generation stream. */
 const ROAM_SEED = 0x9e3779b9;
 
 /** How close counts as having arrived at a roam target. */
@@ -175,6 +197,13 @@ export const WIND_UP_SECONDS = 0.42;
 export class World {
   readonly nodes: WorldNode[] = [];
   readonly props: Prop[] = [];
+  /**
+   * Props bucketed by cell, so drawing walks the handful in view instead of
+   * every one in the world. At 9000 props the linear scan cost about 10fps on
+   * its own, and the scatter is fixed at generation - nothing moves - so the
+   * index never needs rebuilding.
+   */
+  private readonly propGrid = new Map<number, Prop[]>();
   readonly enemies: Enemy[] = [];
   readonly discs: BiomeDisc[] = [];
   readonly player: Player;
@@ -203,6 +232,7 @@ export class World {
         radius: b.radius / upp,
         palette: b.palette,
         mood: b.mood,
+        terrain: b.terrain,
       });
     }
 
@@ -233,6 +263,7 @@ export class World {
   reset(): void {
     this.nodes.length = 0;
     this.props.length = 0;
+    this.propGrid.clear();
     this.enemies.length = 0;
     this.events.length = 0;
     this.absorbed.length = 0;
@@ -253,28 +284,113 @@ export class World {
     return null;
   }
 
+  /** Props overlapping a world rectangle, from the bucket index. */
+  propsIn(left: number, top: number, right: number, bottom: number): Prop[] {
+    const found: Prop[] = [];
+    const x0 = Math.floor(left / PROP_CELL);
+    const x1 = Math.floor(right / PROP_CELL);
+    const y0 = Math.floor(top / PROP_CELL);
+    const y1 = Math.floor(bottom / PROP_CELL);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const cell = this.propGrid.get(propKey(cx, cy));
+        if (cell) found.push(...cell);
+      }
+    }
+    return found;
+  }
+
+  /**
+   * What the ground does at a point, blended across the disc edge.
+   *
+   * A hard lookup would snap the player's speed and the enemies' reach the
+   * instant they crossed a circle, which reads as a bug rather than as a
+   * border. Over TERRAIN_FEATHER units the values ease back to neutral, so
+   * walking into the Wetland slows you down over a couple of steps.
+   */
+  terrainAt(x: number, y: number): TerrainDef {
+    for (const disc of this.discs) {
+      const from = Math.hypot(x - disc.x, y - disc.y);
+      if (from > disc.radius) continue;
+      const depth = Math.min(1, (disc.radius - from) / TERRAIN_FEATHER);
+      if (depth >= 1) return disc.terrain;
+      const t = disc.terrain;
+      return {
+        moveScale: NEUTRAL.moveScale + (t.moveScale - NEUTRAL.moveScale) * depth,
+        concealment: NEUTRAL.concealment + (t.concealment - NEUTRAL.concealment) * depth,
+        sight: NEUTRAL.sight + (t.sight - NEUTRAL.sight) * depth,
+        fog: t.fog * depth,
+        propDensity: t.propDensity,
+        props: t.props,
+      };
+    }
+    return NEUTRAL;
+  }
+
   disc(id: BiomeId): BiomeDisc {
     const d = this.discs.find((c) => c.id === id);
     if (!d) throw new Error(`unknown biome "${id}"`);
     return d;
   }
 
+  /**
+   * Scenery, drawn from whatever grows where it lands.
+   *
+   * This used to scatter grass tufts, stones and trees uniformly across the
+   * whole Coliseum and tint them with the local accent colour, so the Snowy
+   * Mountain had grass and the Data-Center had trees - just blue ones and
+   * purple ones. Each region names its own prop kinds now, which is most of
+   * what makes crossing a border look like arriving somewhere.
+   */
   private generateProps(rng: Rng): void {
-    const count = 900;
-    const kinds: Prop['kind'][] = ['tuft', 'stone', 'spire'];
+    /*
+     * 900 put 1.7 props on a screen, across a world of 116 million square
+     * units. That is not scenery, it is the occasional lonely shrub - and it
+     * is why every region read as bare ground however distinct its palette
+     * was. 9000 puts about 17 on screen, which is ground cover.
+     *
+     * The cost is a bounds comparison per prop per frame and roughly 17 fills;
+     * the draw is culled, so the scatter size is bounded by memory, not by
+     * frame time.
+     */
+    const count = 9000;
     for (let i = 0; i < count; i++) {
       const angle = rng.range(0, Math.PI * 2);
       // Square-root so props spread evenly over area rather than bunching at
       // the centre, which is what a uniform radius would do.
       const r = Math.sqrt(rng.range(0, 1)) * this.boundaryRadius;
-      this.props.push({
-        x: Math.cos(angle) * r,
-        y: Math.sin(angle) * r,
-        size: rng.range(9, 26),
-        kind: rng.weighted(kinds, (k) => (k === 'tuft' ? 6 : k === 'stone' ? 3 : 1)),
-        tone: rng.range(-0.25, 0.2),
-      });
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+
+      const terrain = this.terrainAt(x, y);
+      // Density is a rejection roll rather than a per-biome count, so the
+      // Desert thins out and the Wetland crowds without either needing its own
+      // scatter pass.
+      if (terrain.propDensity < 1 && rng.next() > terrain.propDensity) continue;
+
+      const kinds = terrain.props as Prop['kind'][];
+      const kind = kinds[rng.int(0, kinds.length)] ?? 'tuft';
+      this.addProp({ x, y, size: rng.range(9, 26), kind, tone: rng.range(-0.25, 0.2) });
+      // Over-dense regions get a second prop near the first, which reads as
+      // undergrowth rather than as a denser uniform sprinkle.
+      if (terrain.propDensity > 1 && rng.next() < terrain.propDensity - 1) {
+        this.addProp({
+          x: x + rng.range(-26, 26),
+          y: y + rng.range(-26, 26),
+          size: rng.range(8, 20),
+          kind: kinds[rng.int(0, kinds.length)] ?? 'tuft',
+          tone: rng.range(-0.25, 0.2),
+        });
+      }
     }
+  }
+
+  private addProp(prop: Prop): void {
+    this.props.push(prop);
+    const key = propKey(Math.floor(prop.x / PROP_CELL), Math.floor(prop.y / PROP_CELL));
+    const cell = this.propGrid.get(key);
+    if (cell) cell.push(prop);
+    else this.propGrid.set(key, [prop]);
   }
 
   private pushNode(rng: Rng, material: MaterialId, biome: BiomeId, x: number, y: number): void {
@@ -463,6 +579,9 @@ export class World {
   // ---------------------------------------------------------------- movement
 
   movePlayer(dt: number, dirX: number, dirY: number, speed: number): void {
+    // The Wetland is "slow going" and the Snowy Mountain is deep: the mood
+    // lines said so long before anything made them true.
+    speed *= this.terrainAt(this.player.x, this.player.y).moveScale;
     const length = Math.hypot(dirX, dirY);
     this.player.moving = length > 0.01;
 
@@ -677,6 +796,7 @@ export class World {
 
   private updateEnemies(dt: number): void {
     const player = this.player;
+    const cover = this.terrainAt(player.x, player.y).concealment;
     for (const enemy of this.enemies) {
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
 
@@ -713,10 +833,14 @@ export class World {
        * bumping into them, which is also what makes hunting one down a thing
        * the player can choose to do.
        */
-      if (distance <= def.noticeRadius) {
+      // Scaled by the ground the PLAYER is standing on, not the enemy: this is
+      // how visible the player is, so the Wetland's cover and the Desert's
+      // exposure are properties of where you chose to stand.
+      const notice = def.noticeRadius * cover;
+      if (distance <= notice) {
         enemy.aggro = true;
         enemy.alertFor = def.forgetSeconds;
-      } else if (enemy.aggro && distance > def.loseRadius) {
+      } else if (enemy.aggro && distance > def.loseRadius * cover) {
         enemy.alertFor -= dt;
         if (enemy.alertFor <= 0) {
           enemy.aggro = false;

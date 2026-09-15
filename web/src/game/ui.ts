@@ -37,6 +37,8 @@ export interface UiHooks {
   onAttack(): void;
   onSkill(id: CombinationId): void;
   onTogglePull(): void;
+  /** Returns the new muted state, so the button can label itself from truth. */
+  onToggleMute(): boolean;
 }
 
 type Tone = 'info' | 'good' | 'bad' | 'big';
@@ -98,6 +100,7 @@ export class Ui {
   };
   private readonly carry = el('div', 'carry');
   private readonly menuBtn = el('button', 'nav-btn');
+  private readonly muteBtn = el('button', 'mute-btn');
   /** Counts what can be made or cast right now, so the menu is worth opening. */
   private readonly menuBadge = el('i', 'badge');
   private readonly sheet = el('div', 'sheet');
@@ -145,7 +148,11 @@ export class Ui {
     levelRow.append(this.levelText);
     this.levelChip.append(levelRow, xp);
 
-    bar.append(this.place, this.vitals, this.levelChip);
+    // Top right, next to the level: a sound toggle has to be findable without
+    // opening a menu, and it is the one control a player reaches for in a hurry
+    // when the room they are in turns out not to be theirs.
+    onPress(this.muteBtn, () => this.setMuteLabel(this.hooks.onToggleMute()));
+    bar.append(this.place, this.vitals, this.levelChip, this.muteBtn);
     this.root.append(bar, this.objective);
     this.objective.hidden = true;
   }
@@ -192,6 +199,13 @@ export class Ui {
 
     wrap.append(this.skillArc, this.pullBtn, this.attackBtn);
     this.root.append(wrap);
+  }
+
+  /** Draws the speaker from the real muted state rather than a local guess. */
+  setMuteLabel(muted: boolean): void {
+    this.muteBtn.textContent = muted ? '🔇' : '🔊';
+    this.muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+    this.muteBtn.classList.toggle('off', muted);
   }
 
   /** True while the attack button is down, so the game can chain swings. */

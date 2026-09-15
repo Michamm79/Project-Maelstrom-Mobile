@@ -233,3 +233,113 @@ describe('the basic attack', () => {
     expect(peak).toBeGreaterThan(def.attackRange);
   });
 });
+
+/**
+ * Terrain: the biomes were a palette and a loot table.
+ *
+ * Every region stated a mechanical identity in its own mood line - "cover in
+ * every direction", "nowhere to hide", "slow going" - and none of it existed,
+ * so the Wetland played exactly like the Desert. These check the lines are true
+ * in the simulation rather than only in the prose.
+ */
+describe('the ground under the player', () => {
+  function at(id: string) {
+    const disc = world.disc(id as never);
+    return world.terrainAt(disc.x, disc.y);
+  }
+
+  it('leaves the spawn neutral, since it is the baseline', () => {
+    const spawn = at('plains_forest');
+    expect(spawn.moveScale).toBe(1);
+    expect(spawn.concealment).toBe(1);
+    expect(spawn.sight).toBe(1);
+    expect(spawn.fog).toBe(0);
+  });
+
+  it('makes the Wetland slow going, as its mood line says', () => {
+    expect(at('wetland').moveScale).toBeLessThan(at('plains_forest').moveScale);
+  });
+
+  it('actually slows the player down there', () => {
+    const spawn = world.disc('plains_forest');
+    world.player.x = spawn.x;
+    world.player.y = spawn.y;
+    const before = { x: world.player.x, y: world.player.y };
+    world.movePlayer(1, 1, 0, 100);
+    const onPlains = world.player.x - before.x;
+
+    const marsh = world.disc('wetland');
+    world.player.x = marsh.x;
+    world.player.y = marsh.y;
+    const from = world.player.x;
+    world.movePlayer(1, 1, 0, 100);
+    const inMarsh = world.player.x - from;
+
+    expect(inMarsh).toBeGreaterThan(0);
+    expect(inMarsh).toBeLessThan(onPlains);
+  });
+
+  it('gives the Wetland cover and the Desert exposure', () => {
+    expect(at('wetland').concealment).toBeLessThan(1);
+    expect(at('desert').concealment).toBeGreaterThan(1);
+  });
+
+  it('hides the player in cover and reveals them in the open', () => {
+    const def = goblin();
+    // The same standoff distance in both places: only the ground differs.
+    const gap = def.noticeRadius + 10;
+
+    const marsh = world.disc('wetland');
+    world.player.x = marsh.x;
+    world.player.y = marsh.y;
+    const hidden = world.spawn(def, marsh.x + gap, marsh.y);
+    world.update(1 / 60);
+    expect(hidden.aggro).toBe(false);
+
+    world.enemies.length = 0;
+    const dunes = world.disc('desert');
+    world.player.x = dunes.x;
+    world.player.y = dunes.y;
+    const exposed = world.spawn(def, dunes.x + gap, dunes.y);
+    world.update(1 / 60);
+    expect(exposed.aggro).toBe(true);
+  });
+
+  it('blends across the border rather than snapping', () => {
+    const marsh = world.disc('wetland');
+    // Just inside the rim: the feather should leave it part way to neutral.
+    const edge = world.terrainAt(marsh.x + marsh.radius - 20, marsh.y);
+    const middle = world.terrainAt(marsh.x, marsh.y);
+    expect(edge.moveScale).toBeGreaterThan(middle.moveScale);
+    expect(edge.moveScale).toBeLessThan(1);
+  });
+
+  it('leaves the forest between regions neutral', () => {
+    const between = world.terrainAt(world.boundaryRadius * 0.62, 0);
+    expect(between.moveScale).toBe(1);
+    expect(between.fog).toBe(0);
+  });
+
+  it('scatters different scenery in each region', () => {
+    const kindsIn = (id: string) => {
+      const d = world.disc(id as never);
+      return new Set(
+        world.props
+          .filter((p) => Math.hypot(p.x - d.x, p.y - d.y) < d.radius * 0.8)
+          .map((p) => p.kind),
+      );
+    };
+    const snow = kindsIn('snowy_mountain');
+    const marsh = kindsIn('wetland');
+    expect(snow.size).toBeGreaterThan(0);
+    expect(marsh.size).toBeGreaterThan(0);
+    // No shared scenery at all: a snowfield has nothing a marsh has.
+    for (const kind of snow) expect(marsh.has(kind)).toBe(false);
+  });
+
+  it('puts enough scenery on screen to read as ground cover', () => {
+    // A screen is about 315x700 world units at the shipped zoom.
+    const inView = world.propsIn(-158, -350, 158, 350).length;
+    expect(inView).toBeGreaterThan(5);
+  });
+});

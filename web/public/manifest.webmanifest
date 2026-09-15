@@ -1,11 +1,14 @@
 {
   "name": "Project Maelstrom",
   "short_name": "Maelstrom",
-  "description": "Gather, transmute and alchemise. A touch-first orb crafting game.",
+  "description": "Wake in a bounded arena. Gather with the gauntlets, craft, and learn what the program wants.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
+  "categories": [
+    "games"
+  ],
   "background_color": "#0d1117",
   "theme_color": "#0d1117",
   "icons": [
@@ -20,6 +23,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

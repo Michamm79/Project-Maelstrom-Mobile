@@ -130,16 +130,22 @@ writeFileSync(join(OUT, 'favicon.svg'), favicon);
 const manifest = {
   name: 'Project Maelstrom',
   short_name: 'Maelstrom',
-  description: 'Gather, transmute and alchemise. A touch-first orb crafting game.',
+  description: 'Wake in a bounded arena. Gather with the gauntlets, craft, and learn what the program wants.',
   start_url: './',
   scope: './',
   display: 'standalone',
-  orientation: 'portrait',
+  // "any", not "portrait". The HUD relays and the camera rotates, so locking
+  // this was quietly undoing all of that the moment anyone installed the game.
+  orientation: 'any',
+  categories: ['games'],
   background_color: '#0d1117',
   theme_color: '#0d1117',
   icons: [
     { src: './icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: './icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    // A maskable copy, or Android crops the art inside its own safe zone and
+    // the icon arrives with its corners cut off.
+    { src: './icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
   ],
 };
 writeFileSync(join(OUT, 'manifest.webmanifest'), JSON.stringify(manifest, null, 2) + '\n');

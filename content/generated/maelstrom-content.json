@@ -453,6 +453,19 @@
       },
       "nodeCount": 240,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 1,
+        "concealment": 1,
+        "sight": 1,
+        "fog": 0,
+        "propDensity": 1,
+        "props": [
+          "tuft",
+          "tuft",
+          "stone",
+          "tree"
+        ]
+      },
       "materials": [
         "heartwood_burl",
         "riverglass",
@@ -481,6 +494,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.86,
+        "concealment": 1.05,
+        "sight": 0.92,
+        "fog": 0.2,
+        "propDensity": 0.85,
+        "props": [
+          "drift",
+          "crag",
+          "shard"
+        ]
+      },
       "materials": [
         "rimeshard",
         "coldiron_ore",
@@ -506,6 +531,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.94,
+        "concealment": 1.45,
+        "sight": 1.3,
+        "fog": 0,
+        "propDensity": 0.6,
+        "props": [
+          "dune",
+          "stone",
+          "bone"
+        ]
+      },
       "materials": [
         "sunfused_glass",
         "dustbloom",
@@ -531,6 +568,19 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.78,
+        "concealment": 0.6,
+        "sight": 0.7,
+        "fog": 0.3,
+        "propDensity": 1.35,
+        "props": [
+          "reed",
+          "reed",
+          "pool",
+          "tuft"
+        ]
+      },
       "materials": [
         "bogiron_nodule",
         "marshgas_bladder",
@@ -556,6 +606,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 1,
+        "concealment": 0.8,
+        "sight": 0.72,
+        "fog": 0.42,
+        "propDensity": 1.1,
+        "props": [
+          "rack",
+          "conduit",
+          "tuft"
+        ]
+      },
       "materials": [
         "coolant_residue",
         "capacitor_core",

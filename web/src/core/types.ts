@@ -47,6 +47,28 @@ export interface MaterialDef {
 }
 
 /** A region of the Coliseum. Not a level: there is one continuous world. */
+/**
+ * What a region does to the player standing in it.
+ *
+ * Every biome already claimed a mechanical identity in its mood line and none
+ * of it existed, so the Wetland's "cover in every direction" played exactly
+ * like the Desert's "nowhere to hide". These make the lines true.
+ */
+export interface TerrainDef {
+  /** Multiplies walking speed. */
+  moveScale: number;
+  /** Multiplies how far enemies notice the player here: under 1 is cover. */
+  concealment: number;
+  /** Multiplies how far the player senses enemies. */
+  sight: number;
+  /** 0..1 haze, drawn in the palette's fog colour. */
+  fog: number;
+  /** Relative scatter density for props. */
+  propDensity: number;
+  /** Which prop kinds grow here. Repeats weight a kind more heavily. */
+  props: readonly string[];
+}
+
 export interface BiomeDef {
   id: BiomeId;
   name: string;
@@ -62,6 +84,7 @@ export interface BiomeDef {
   respawnSeconds: number;
   /** Derived at build time from every material that belongs here. */
   materials: readonly MaterialId[];
+  terrain: TerrainDef;
 }
 
 export interface ColiseumDef {

@@ -1,0 +1,149 @@
+/**
+ * Where players stop.
+ *
+ * Deliberately NOT a third-party analytics SDK. Dropping one of those into a
+ * game aimed at the public means shipping someone else's tracker to every
+ * player, taking on a consent obligation, and adding more script weight than
+ * the entire game currently occupies - to answer questions that are mostly
+ * answerable from the device itself.
+ *
+ * So: nothing leaves the device. This records a small set of first-time
+ * milestones and counters in localStorage, and `report()` prints them. If a
+ * hosted funnel is wanted later, this is the shape the events would take and
+ * one send() is the only thing missing - but that is a decision with privacy
+ * consequences and it belongs to the author, not to this file.
+ */
+
+const STORAGE_KEY = 'maelstrom.funnel.v1';
+
+/**
+ * The milestones worth knowing about, in the order a player meets them. The
+ * useful question is never "how many sessions" - it is which of these is the
+ * one where the numbers fall off a cliff.
+ */
+export const STEPS = [
+  'loaded',
+  'began',
+  'wokeUp',
+  'walked',
+  'gathered',
+  'gatheredWhileMoving',
+  'heldThreeMaterials',
+  'crafted',
+  'reachedLevel1',
+  'sawWarning',
+  'struck',
+  'killed',
+  'reachedLevel2',
+  'cast',
+  'leftSpawnBiome',
+  'sawAllBiomes',
+  'died',
+  'restarted',
+] as const;
+
+export type Step = (typeof STEPS)[number];
+
+interface Record_ {
+  /** Milestone -> ms since the run's first load. First time only. */
+  first: Partial<Record<Step, number>>;
+  /** Milestone -> how many times it has happened, across all sessions. */
+  count: Partial<Record<Step, number>>;
+  sessions: number;
+  /** Total play time in ms, so a drop-off can be read against effort spent. */
+  playedMs: number;
+  startedAt: number;
+}
+
+function blank(): Record_ {
+  return { first: {}, count: {}, sessions: 0, playedMs: 0, startedAt: Date.now() };
+}
+
+export class Funnel {
+  private data: Record_ = blank();
+  private readonly openedAt = Date.now();
+
+  constructor() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<Record_>;
+        this.data = {
+          first: parsed.first ?? {},
+          count: parsed.count ?? {},
+          sessions: parsed.sessions ?? 0,
+          playedMs: parsed.playedMs ?? 0,
+          startedAt: parsed.startedAt ?? Date.now(),
+        };
+      }
+    } catch {
+      // A blocked or corrupt store just means starting the record over; it is
+      // never worth interrupting play for.
+    }
+    this.data.sessions += 1;
+    this.mark('loaded');
+  }
+
+  /** Record a milestone. Safe to call every frame: the first time is what counts. */
+  mark(step: Step): void {
+    this.data.count[step] = (this.data.count[step] ?? 0) + 1;
+    if (this.data.first[step] === undefined) {
+      this.data.first[step] = Date.now() - this.data.startedAt;
+      this.save();
+    }
+  }
+
+  /** Called on the same cadence as the save, so it survives a closed tab. */
+  tick(playedMs: number): void {
+    this.data.playedMs = playedMs;
+    this.save();
+  }
+
+  /**
+   * The funnel as a table, for the author to read.
+   *
+   * Reachable from the console as `maelstrom.funnel.report()`. Printed rather
+   * than uploaded, which is the whole point of this file.
+   */
+  report(): string {
+    const lines = [
+      `sessions ${this.data.sessions}   played ${(this.data.playedMs / 60000).toFixed(1)} min`,
+      '',
+      'step                     first seen   times',
+    ];
+    for (const step of STEPS) {
+      const at = this.data.first[step];
+      const when = at === undefined ? '        -' : `${(at / 1000).toFixed(0).padStart(8)}s`;
+      const n = this.data.count[step] ?? 0;
+      lines.push(`${step.padEnd(22)} ${when}   ${String(n).padStart(5)}`);
+    }
+    // The first step never reached is the one that matters.
+    const stalled = STEPS.find((s) => this.data.first[s] === undefined);
+    lines.push('', stalled ? `stopped before: ${stalled}` : 'reached every milestone');
+    return lines.join('\n');
+  }
+
+  /** Everything recorded, for a caller that wants to do its own analysis. */
+  toJSON(): Record_ {
+    return { ...this.data, playedMs: this.data.playedMs };
+  }
+
+  reset(): void {
+    this.data = blank();
+    this.data.sessions = 1;
+    this.save();
+  }
+
+  /** How long this particular session has been open. */
+  get sessionMs(): number {
+    return Date.now() - this.openedAt;
+  }
+
+  private save(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    } catch {
+      // Full or blocked. The run continues either way.
+    }
+  }
+}

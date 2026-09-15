@@ -465,6 +465,57 @@ const swing = await peek(() => {
 });
 check('a swing has an animation to draw', swing > 0, `attackAnim ${swing.toFixed(2)}s`);
 
+// ---------------------------------------------------------------- sound
+
+// Browsers refuse audio before a gesture, so the context must not exist until
+// the player presses something - and must exist afterwards.
+const audio = await peek(() => {
+  const g = window.maelstrom;
+  return { state: g.sound?.ctx?.state ?? 'none', muted: g.sound?.isMuted };
+});
+check('audio starts only after a real press', audio.state === 'running', `context ${audio.state}`);
+check('and it is not muted by default', audio.muted === false);
+check('there is a mute control without opening a menu', await page.locator('.mute-btn').isVisible());
+
+const muteRound = await peek(async () => {
+  const g = window.maelstrom;
+  const before = g.sound.isMuted;
+  g.ui.hooks?.onToggleMute?.();
+  return { before, after: g.sound.isMuted };
+});
+check(
+  'the mute button actually mutes',
+  muteRound.before === false && muteRound.after === true,
+  `${muteRound.before} -> ${muteRound.after}`,
+);
+await page.locator('.mute-btn').click();
+await page.waitForTimeout(150);
+check('and unmutes again', (await peek(() => window.maelstrom.sound.isMuted)) === false);
+
+// ---------------------------------------------------------------- funnel
+
+// Local-first by design: this is the check that it stays that way. A funnel
+// that quietly grew a third-party SDK would be a privacy decision made by
+// accident rather than by the author.
+const funnel = await peek(() => {
+  const g = window.maelstrom;
+  const report = g.funnelReport();
+  const scripts = [...document.querySelectorAll('script[src]')].map((s) => s.src);
+  return {
+    hasReport: typeof report === 'string' && report.includes('sessions'),
+    reached: /began|walked|gathered/.test(report),
+    offsite: scripts.filter((src) => !src.startsWith(location.origin)),
+    stored: Object.keys(localStorage).filter((k) => k.startsWith('maelstrom.funnel')),
+  };
+});
+check('the funnel records where players stop', funnel.hasReport && funnel.reached);
+check('it is kept on the device', funnel.stored.length === 1, funnel.stored.join(','));
+check(
+  'and nothing third-party is loaded',
+  funnel.offsite.length === 0,
+  funnel.offsite.join(', ') || 'no offsite scripts',
+);
+
 // The player's half of the asymmetry. Enemies notice only at an encounter
 // distance now, so without this the player would be exactly as blind as they are.
 const sensing = await peek(() => {

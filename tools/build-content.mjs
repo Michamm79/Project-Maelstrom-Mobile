@@ -94,6 +94,50 @@ for (const b of biomes) {
 }
 if (!biomeIds.has('plains_forest')) fail('there is no "plains_forest" biome, and canon makes it the permanent spawn');
 
+/*
+ * Terrain. These are the numbers that stop a biome being a palette with a loot
+ * table, so a missing or absurd one is a region that silently plays like the
+ * spawn no matter what its mood line claims.
+ */
+const PROP_KINDS = new Set(['tuft', 'stone', 'tree', 'drift', 'crag', 'shard', 'dune', 'bone', 'reed', 'pool', 'rack', 'conduit']);
+for (const b of biomes) {
+  const t = b.terrain;
+  if (!t) {
+    fail(`biome "${b.id}" has no terrain, so it will play exactly like the spawn`);
+    continue;
+  }
+  for (const [key, min, max] of [['moveScale', 0.5, 1.2], ['concealment', 0.3, 2], ['sight', 0.4, 2], ['propDensity', 0.1, 3]]) {
+    const v = t[key];
+    if (typeof v !== 'number' || v < min || v > max) {
+      fail(`biome "${b.id}" has ${key} ${v}; outside ${min}..${max} it stops being a flavour and becomes a wall`);
+    }
+  }
+  if (typeof t.fog !== 'number' || t.fog < 0 || t.fog > 0.6) {
+    fail(`biome "${b.id}" has fog ${t.fog}; past 0.6 the player cannot see the game`);
+  }
+  if (!Array.isArray(t.props) || t.props.length === 0) fail(`biome "${b.id}" scatters no props, so it will read as bare ground`);
+  else for (const kind of t.props) {
+    if (!PROP_KINDS.has(kind)) fail(`biome "${b.id}" wants prop "${kind}", which nothing knows how to draw`);
+  }
+}
+
+// The spawn is the baseline every other region is read against, so it is the
+// one that has to be neutral - a "slow going" Wetland means nothing if the
+// Plains are slower still.
+const spawnTerrain = biomes.find((b) => b.id === 'plains_forest')?.terrain;
+if (spawnTerrain) {
+  for (const key of ['moveScale', 'concealment', 'sight']) {
+    if (spawnTerrain[key] !== 1) fail(`plains_forest has ${key} ${spawnTerrain[key]}; the spawn is the baseline and must be 1`);
+  }
+  if (spawnTerrain.fog !== 0) fail('plains_forest has fog; canon calls the spawn open and bright');
+}
+
+// Somebody has to be cover and somebody has to be exposure, or the concealment
+// axis is authored and unused.
+const conceal = biomes.map((b) => b.terrain?.concealment ?? 1);
+if (!conceal.some((c) => c < 0.9)) fail('no biome offers cover; the concealment axis exists but nothing uses it');
+if (!conceal.some((c) => c > 1.1)) fail('no biome is exposed; the concealment axis exists but nothing uses it');
+
 // ---------------------------------------------------------------- materials
 
 const materialIds = new Set();
