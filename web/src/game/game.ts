@@ -25,11 +25,13 @@ import { TitleScreen } from './title';
 import { WaveDirector } from './waves';
 import { OpeningScene } from './opening';
 import { Sound } from './sound';
+import { Screen } from './screen';
 import { Funnel } from '../core/funnel';
 import type { CombinationId, RecipeId } from '../core/types';
 
 export class Game {
   private readonly world: World;
+  private readonly screen: Screen;
   private readonly renderer: Renderer;
   private readonly ui: Ui;
   private readonly input: InputController;
@@ -65,12 +67,19 @@ export class Game {
   constructor(
     canvas: HTMLCanvasElement,
     private readonly uiRoot: HTMLElement,
+    app: HTMLElement,
   ) {
     this.world = new World(content);
-    this.renderer = new Renderer(canvas, content);
+    /*
+     * First, and before anything that measures: the screen decides how big the
+     * app box is and which way up it sits, so a renderer built ahead of it
+     * would size its backing store to a box that is about to change shape.
+     */
+    this.screen = new Screen(app);
+    this.renderer = new Renderer(canvas, content, this.screen);
     this.waves = new WaveDirector(content, this.world);
 
-    this.ui = new Ui(uiRoot, content, {
+    this.ui = new Ui(uiRoot, content, this.screen, {
       onCraft: (id) => this.craft(id),
       onSelectCombination: (id) => this.selectCombination(id),
       onAttack: () => this.attack(),
@@ -84,7 +93,7 @@ export class Game {
       },
     });
 
-    this.input = new InputController(canvas);
+    this.input = new InputController(canvas, this.screen);
     this.ui.setPullActive(this.pulling);
 
     this.opening = new OpeningScene(uiRoot);
@@ -94,10 +103,12 @@ export class Game {
     this.title = new TitleScreen(uiRoot, {
       onContinue: () => {
         this.sound.unlock();
+        this.goLandscape();
         this.resume();
       },
       onNewGame: (guided: boolean) => {
         this.sound.unlock();
+        this.goLandscape();
         clearSave();
         this.funnel.mark('restarted');
         this.resetRun();
@@ -127,6 +138,18 @@ export class Game {
     // it makes the award() call below a no-op on its own.
     this.refreshPlace();
     this.title.show(restored !== null && restored.started, restored ? this.runSummary() : null);
+  }
+
+  /**
+   * Ask the device for landscape, on the same gesture that starts the audio.
+   *
+   * Both have to ride a real press, and this is the only one the player makes
+   * before the world appears. Deliberately not awaited: the lock resolves a
+   * frame or two later on the platforms that grant it, and the run should not
+   * wait on the platforms that never will.
+   */
+  private goLandscape(): void {
+    void this.screen.requestNative();
   }
 
   // ---------------------------------------------------------------- controls

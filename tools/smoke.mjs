@@ -56,6 +56,26 @@ const browser = await chromium.launch(
   existsSync(EXECUTABLE) ? { executablePath: EXECUTABLE } : {},
 );
 const context = await browser.newContext({ ...devices['Pixel 7'] });
+/*
+ * Everything below this line drives the game in an UPRIGHT box.
+ *
+ * The default is now to hold the game sideways, which on a portrait phone means
+ * rotating the app box - and then "the left half of the screen" is no longer
+ * the left half of the viewport. Rather than re-deriving every drag in this
+ * file against a transform, the main pass turns the preference off and a
+ * dedicated section at the end drives the rotated layout on its own, including
+ * a check that leaving the preference alone is what rotates it.
+ */
+await context.addInitScript(() => {
+  try {
+    localStorage.setItem(
+      'maelstrom.screen.v1',
+      JSON.stringify({ landscape: false, turn: 'cw', view: 'normal' }),
+    );
+  } catch {
+    /* a browser with storage blocked still gets the default, which is fine */
+  }
+});
 const page = await context.newPage();
 
 const errors = [];
@@ -323,9 +343,13 @@ check(
 await page.locator('.nav-btn').click();
 await page.waitForTimeout(300);
 check('the menu opens', await page.locator('.sheet.on').isVisible());
+// Canon puts everything the player works with in one place, so both
+// disciplines have to be tabs of the same sheet rather than two screens. The
+// third tab is where the game's own screen settings live, which belong here for
+// the same reason: this is the only menu there is.
 check(
   'it is one menu holding both disciplines',
-  (await page.locator('.sheet .tabs button').allTextContents()).join(',') === 'Craft,Alchemy',
+  (await page.locator('.sheet .tabs button').allTextContents()).join(',') === 'Craft,Alchemy,Screen',
 );
 // GDD 6.1 has the world keep running here; the author asked for a pause, so the
 // flag in content decides and this checks whichever is configured rather than
@@ -667,6 +691,20 @@ check(
   `portrait ${spans.portrait.w}x${spans.portrait.h}, landscape ${spans.landscape.w}x${spans.landscape.h}`,
 );
 
+/*
+ * And it is not a letterbox any more.
+ *
+ * The complaint that started this: 700 units across the long axis put 700x315
+ * on a phone held sideways, which read as a slot rather than a playfield. The
+ * floor is here rather than the exact number so the view setting stays free to
+ * be retuned without rewriting the check.
+ */
+check(
+  'the playfield is not a letterbox',
+  spans.landscape.h >= 380,
+  `${spans.landscape.w}x${spans.landscape.h} world units`,
+);
+
 await page.setViewportSize({ width: 412, height: 915 });
 await page.waitForTimeout(300);
 
@@ -825,6 +863,171 @@ check('only the spawn marker survives', afterRestart.seen === 1, `${afterRestart
 check('and it wakes up again', await page.locator('.opening').isVisible());
 await page.locator('.opening').dispatchEvent('pointerdown');
 await page.waitForTimeout(300);
+
+// ------------------------------------------------------------ forced landscape
+
+/*
+ * The other half of the game: a portrait phone that will not rotate.
+ *
+ * A fresh context, so nothing has stored a preference and the default is what
+ * is under test. Chromium grants neither the orientation lock nor a useful
+ * fullscreen here, which is exactly the situation on an iPhone and on any
+ * device whose owner has rotation lock switched on - so this drives the
+ * transform fallback, which is the path that has to be right.
+ */
+{
+  const rotatedContext = await browser.newContext({ ...devices['Pixel 7'] });
+  const rot = await rotatedContext.newPage();
+  const rotErrors = [];
+  rot.on('pageerror', (e) => rotErrors.push(String(e)));
+  await rot.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await rot.waitForTimeout(700);
+
+  const shape = await rot.evaluate(() => {
+    const app = document.querySelector('#app');
+    const canvas = document.querySelector('#stage');
+    const view = window.maelstrom.renderer.view;
+    return {
+      rot: app.dataset.rot ?? null,
+      app: [app.clientWidth, app.clientHeight],
+      backing: [canvas.width, canvas.height],
+      squat: 'squat' in document.documentElement.dataset,
+      view: [Math.round(view.width), Math.round(view.height)],
+    };
+  });
+
+  check('a portrait phone gets a landscape game by default', shape.rot === 'cw', String(shape.rot));
+  check('the game box is landscape-shaped', shape.app[0] > shape.app[1], shape.app.join('x'));
+  /*
+   * The one that would be invisible in a screenshot and obvious on a phone.
+   * The backing store is sized from the layout box, and a bounding rect reports
+   * a rotated element's axis-aligned cover - so reading the wrong one leaves a
+   * portrait canvas stretched across a landscape box, which is the original
+   * "the art is set for vertical" bug wearing a new hat.
+   */
+  check('the canvas backing store is landscape too', shape.backing[0] > shape.backing[1], shape.backing.join('x'));
+  check('the HUD is told the BOX is squat, not the viewport', shape.squat);
+  check('the rotated view is as wide as the upright one', shape.view[0] >= 880, shape.view.join('x'));
+
+  // No two controls may collide in the rotated layout either.
+  const overlaps = await rot.evaluate((selectors) => {
+    const boxes = [];
+    for (const sel of selectors) {
+      for (const el of document.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) boxes.push({ sel, r, el });
+      }
+    }
+    const hits = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (w > 2 && h > 2) hits.push(`${a.sel} x ${b.sel}`);
+      }
+    }
+    return hits;
+  }, HUD);
+  check('rotated: no two HUD controls overlap', overlaps.length === 0, overlaps.join('; '));
+
+  await rot.locator('.title .tbtn.primary').click();
+  await rot.waitForTimeout(400);
+  await rot.locator('.opening').dispatchEvent('pointerdown');
+  await rot.waitForTimeout(900);
+
+  /*
+   * The steering, in the player's terms rather than the transform's.
+   *
+   * Turned clockwise the game's top edge runs along the phone's left, so a
+   * thumb dragged toward the phone's left has to walk the player UP the world.
+   * Get the inverse wrong and this is the symptom: the stick reads as if it
+   * were mounted sideways, which no screenshot would ever show.
+   */
+  const rotCdp = await rotatedContext.newCDPSession(rot);
+  const walk = async (from, to) => {
+    const before = await rot.evaluate(() => ({ x: window.maelstrom.world.player.x, y: window.maelstrom.world.player.y }));
+    await rotCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from[0], y: from[1], id: 1 }] });
+    await rotCdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: to[0], y: to[1], id: 1 }] });
+    await rot.waitForTimeout(500);
+    await rotCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const after = await rot.evaluate(() => ({ x: window.maelstrom.world.player.x, y: window.maelstrom.world.player.y }));
+    return { dx: after.x - before.x, dy: after.y - before.y };
+  };
+
+  const up = await walk([206, 700], [140, 700]);
+  check(
+    'rotated: dragging toward the phone left walks the player up the world',
+    up.dy < -15 && Math.abs(up.dx) < Math.abs(up.dy),
+    `dx ${up.dx.toFixed(0)} dy ${up.dy.toFixed(0)}`,
+  );
+
+  const left = await walk([206, 700], [206, 830]);
+  check(
+    'rotated: dragging toward the phone bottom walks the player left',
+    left.dx < -15 && Math.abs(left.dy) < Math.abs(left.dx),
+    `dx ${left.dx.toFixed(0)} dy ${left.dy.toFixed(0)}`,
+  );
+
+  // The action half has to stay the action half: a press over there must not
+  // grab the stick, which is precisely what a swapped axis would cause.
+  const stuck = await rot.evaluate(() => Boolean(window.maelstrom.input.origin));
+  check('rotated: the stick lets go', !stuck);
+
+  await rot.screenshot({ path: join(SHOTS, '09-rotated.png') });
+
+  // ---- the Screen tab
+  await rot.locator('.nav-btn').click();
+  await rot.waitForTimeout(250);
+  await rot.locator('.tabs button[data-tab="screen"]').click();
+  await rot.waitForTimeout(200);
+
+  const steps = [];
+  for (const label of ['Close', 'Normal', 'Wide']) {
+    await rot.locator('.setchip', { hasText: label }).first().click();
+    await rot.waitForTimeout(150);
+    steps.push(await rot.evaluate(() => Math.round(window.maelstrom.renderer.view.width)));
+  }
+  check(
+    'every view setting shows a different amount of world',
+    new Set(steps).size === 3 && steps[0] < steps[1] && steps[1] < steps[2],
+    steps.join(' -> '),
+  );
+
+  /*
+   * The turn-direction row only appears when we are the ones turning the box.
+   * When the device rotates itself there is nothing to choose, and offering the
+   * choice anyway would invite the player to break a layout that was correct.
+   */
+  // Anchored, because "Turn the phone" is also the caption on the row above and
+  // a loose match would find both.
+  const turnRow = await rot.locator('.setrow', { hasText: /^Turn/ }).count();
+  check('the turn-direction choice is offered while we are rotating', turnRow === 1);
+
+  await rot.locator('.setchip', { hasText: 'Left' }).first().click();
+  await rot.waitForTimeout(250);
+  const flipped = await rot.evaluate(() => document.querySelector('#app').dataset.rot);
+  check('flipping the turn direction turns the box the other way', flipped === 'ccw', String(flipped));
+
+  // And switching it off gives the phone back to the player.
+  await rot.locator('.setchip', { hasText: 'Off' }).first().click();
+  await rot.waitForTimeout(300);
+  const released = await rot.evaluate(() => {
+    const app = document.querySelector('#app');
+    const canvas = document.querySelector('#stage');
+    return { rot: app.dataset.rot ?? null, backing: [canvas.width, canvas.height] };
+  });
+  check(
+    'turning the setting off hands the phone back',
+    released.rot === null && released.backing[1] > released.backing[0],
+    JSON.stringify(released),
+  );
+
+  check('no uncaught errors in the rotated layout', rotErrors.length === 0, rotErrors.slice(0, 3).join(' | '));
+  await rotatedContext.close();
+}
 
 // ---------------------------------------------------------------- the end
 

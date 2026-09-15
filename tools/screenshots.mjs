@@ -34,12 +34,33 @@ const url = `http://localhost:${server.address().port}/`;
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 
-async function phone(landscape = false) {
+/**
+ * A phone, held the way the game is meant to be held.
+ *
+ * Landscape by default, because that is now what a player gets: the game asks
+ * the device to turn, and turns its own box when the device will not. Passing
+ * `portrait` switches the preference off first, which is the other thing a
+ * player can choose - and is also the only way to get an upright shot, since a
+ * portrait viewport with the setting on produces a sideways picture.
+ */
+async function phone(portrait = false) {
   const page = await browser.newPage({
-    viewport: landscape ? { width: 915, height: 412 } : { width: 412, height: 915 },
+    viewport: portrait ? { width: 412, height: 915 } : { width: 915, height: 412 },
     deviceScaleFactor: 2,
     hasTouch: true,
   });
+  if (portrait) {
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem(
+          'maelstrom.screen.v1',
+          JSON.stringify({ landscape: false, turn: 'cw', view: 'normal' }),
+        );
+      } catch {
+        /* storage blocked; the shot comes out rotated and the run says so */
+      }
+    });
+  }
   await page.goto(url);
   return page;
 }
@@ -169,7 +190,7 @@ for (const [file, biome, note] of [
   await page.close();
 }
 
-// 8. Landscape, because the HUD relays rather than squashing
+// 8. Upright, for a player who turns the sideways setting off
 {
   const page = await phone(true);
   await page.locator('.title .tbtn.primary').click();
@@ -187,8 +208,8 @@ for (const [file, biome, note] of [
   });
   await settle(page);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(OUT, '08-landscape.png') });
-  shots.push('08-landscape.png — landscape: the HUD relays, the camera rotates');
+  await page.screenshot({ path: join(OUT, '08-portrait.png') });
+  shots.push('08-portrait.png — upright, with the sideways setting turned off');
   await page.close();
 }
 

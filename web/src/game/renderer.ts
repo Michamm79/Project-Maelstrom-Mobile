@@ -15,6 +15,7 @@ import { drawCreature, isCreature } from './creatures';
 import { SWING_SECONDS, WIND_UP_SECONDS, type BiomeDisc, type World } from './world';
 import type { Content } from '../core/content';
 import type { InputController } from './input';
+import type { Screen } from './screen';
 
 /** Sprite sheet geometry. Rows match the order make-sprites.mjs emits. */
 const SPRITE_W = 16;
@@ -25,8 +26,9 @@ const SPRITE_SCALE = 2;
 /** The connective terrain between the regions. Canon: forest, not a void. */
 const BETWEEN = { ground: '#232f22', groundAlt: '#293626', fog: '#0f150e' };
 
-/**
- * How much world the *longer* screen axis shows, in world units.
+/*
+ * How much world the *longer* screen axis shows lives in `screen.ts`, because
+ * the player can change it.
  *
  * The camera used to draw one world unit per CSS pixel, which meant the amount
  * of world on screen was whatever the device happened to be. Turning a phone
@@ -38,9 +40,27 @@ const BETWEEN = { ground: '#232f22', groundAlt: '#293626', fog: '#0f150e' };
  * view, turned. It is purely presentational - the simulation is all in world
  * units, so nothing about reach, speed or spawn density changes with it.
  */
-const LONG_SPAN = 700;
-const ZOOM_MIN = 0.9;
+
+/**
+ * Legibility floor and ceiling on that zoom.
+ *
+ * The floor was 0.9, which quietly capped the widest view setting on a phone:
+ * 1080 units across a 915px screen needs 0.847, so asking for Wide gave back
+ * the same 1017 as the step below it. 0.8 draws the character at 38px, which
+ * is still a clear silhouette, and lets the setting mean what it says.
+ */
+const ZOOM_MIN = 0.8;
 const ZOOM_MAX = 2.2;
+
+/**
+ * Screen pixels per world unit, for a box of this size showing this span.
+ *
+ * Exported so the relationship can be asserted without a canvas: the clamp is
+ * the part that bites, and it used to silently swallow a whole view setting.
+ */
+export function zoomFor(width: number, height: number, span: number): number {
+  return clamp(Math.max(width, height) / span, ZOOM_MIN, ZOOM_MAX);
+}
 
 interface Floater {
   x: number;
@@ -118,9 +138,12 @@ export class Renderer {
   private sheetReady = false;
   private readonly boxWatcher: ResizeObserver;
 
+  private readonly unwatchScreen: () => void;
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly content: Content,
+    private readonly screen: Screen,
   ) {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('2D canvas context unavailable');
@@ -150,6 +173,10 @@ export class Renderer {
     this.boxWatcher = new ResizeObserver(() => this.resize());
     this.boxWatcher.observe(canvas);
     window.addEventListener('orientationchange', this.onViewportChange);
+    // Turning the box sideways changes its size, so the observer above would
+    // catch that on its own; changing the view setting does not, and a zoom
+    // that only took effect on the next rotation would look broken.
+    this.unwatchScreen = this.screen.onChange(() => this.resize());
   }
 
   private readonly onViewportChange = (): void => {
@@ -158,18 +185,27 @@ export class Renderer {
 
   dispose(): void {
     this.boxWatcher.disconnect();
+    this.unwatchScreen();
     window.removeEventListener('orientationchange', this.onViewportChange);
   }
 
   resize(): void {
     // Cap DPR at 2: a 3x display triples the fill cost for no visible gain.
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = this.canvas.getBoundingClientRect();
-    this.width = Math.max(1, Math.round(rect.width));
-    this.height = Math.max(1, Math.round(rect.height));
+    /*
+     * clientWidth/Height, not getBoundingClientRect.
+     *
+     * The rect is the element's axis-aligned cover AFTER transforms, so once
+     * the app box is rotated into a portrait viewport it reports the box with
+     * its sides swapped - and the backing store would come out portrait again,
+     * which is the exact bug the ResizeObserver was added to fix. These two
+     * read the layout box, which is the shape the game is actually drawn in.
+     */
+    this.width = Math.max(1, this.canvas.clientWidth || Math.round(this.canvas.getBoundingClientRect().width));
+    this.height = Math.max(1, this.canvas.clientHeight || Math.round(this.canvas.getBoundingClientRect().height));
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
-    this.zoom = clamp(Math.max(this.width, this.height) / LONG_SPAN, ZOOM_MIN, ZOOM_MAX);
+    this.zoom = zoomFor(this.width, this.height, this.screen.span);
   }
 
   addFloater(x: number, y: number, text: string, color: string, life = 1.25): void {
@@ -826,11 +862,11 @@ export class Renderer {
   private drawJoystick(input: InputController): void {
     if (!input.origin || !input.knob) return;
     const ctx = this.ctx;
-    const rect = this.canvas.getBoundingClientRect();
-    const ox = input.origin.x - rect.left;
-    const oy = input.origin.y - rect.top;
-    const kx = input.knob.x - rect.left;
-    const ky = input.knob.y - rect.top;
+    // Already in the box's own coordinates: the input controller maps every
+    // touch through the screen on the way in, so there is nothing to subtract
+    // here and nothing that goes wrong when the box is rotated.
+    const { x: ox, y: oy } = input.origin;
+    const { x: kx, y: ky } = input.knob;
 
     ctx.beginPath();
     ctx.arc(ox, oy, 52, 0, Math.PI * 2);

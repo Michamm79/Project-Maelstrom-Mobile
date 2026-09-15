@@ -5,12 +5,11 @@
  * there is no separate inventory screen, because the orbs already give the
  * at-a-glance view. Crafting and alchemy are two tabs of that one menu.
  *
- * The menu does not pause the world. Enemies keep moving and waves keep
- * arriving while it is open, which makes opening it a risk decision rather than
- * a free action - and puts a hard requirement on this file: every row has to be
- * readable and actionable at a glance, because a menu that demands sustained
- * attention while the world is trying to kill you is a menu that never gets
- * opened when it matters.
+ * The menu pauses the world, which is a deliberate departure from canon at the
+ * author's request - GDD 6.1 wanted wave pressure to keep biting. The
+ * requirement it puts on this file survives the pause either way: every row has
+ * to be readable and actionable at a glance, because a menu that demands
+ * sustained attention is a menu that gets closed rather than used.
  *
  * Kept apart from the canvas renderer on purpose: text, scrolling lists and tap
  * targets are things the browser is already good at.
@@ -22,6 +21,7 @@ import type { Crafting } from '../core/crafting';
 import type { Alchemy } from '../core/alchemy';
 import type { Progression } from '../core/progression';
 import type { CombinationId, ElementId, Hand, MaterialId, RecipeId, TutorialStep } from '../core/types';
+import { VIEW_LABELS, VIEW_ORDER, VIEW_SPANS, type Screen } from './screen';
 
 export interface HudState {
   inventory: Inventory;
@@ -42,7 +42,7 @@ export interface UiHooks {
 }
 
 type Tone = 'info' | 'good' | 'bad' | 'big';
-type Tab = 'craft' | 'alchemy';
+type Tab = 'craft' | 'alchemy' | 'screen';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -122,6 +122,7 @@ export class Ui {
   constructor(
     private readonly root: HTMLElement,
     private readonly content: Content,
+    private readonly screen: Screen,
     private readonly hooks: UiHooks,
   ) {
     this.buildTopBar();
@@ -246,6 +247,7 @@ export class Ui {
     for (const [id, label] of [
       ['craft', 'Craft'],
       ['alchemy', 'Alchemy'],
+      ['screen', 'Screen'],
     ] as const) {
       const button = el('button', undefined, label);
       button.dataset.tab = id;
@@ -422,12 +424,103 @@ export class Ui {
 
     this.sheetBody.replaceChildren();
     if (this.tab === 'craft') this.renderCraft(state);
-    else this.renderAlchemy(state);
+    else if (this.tab === 'alchemy') this.renderAlchemy(state);
+    else this.renderScreen();
+  }
+
+  /**
+   * How the game sits on the device: how much world it shows, and which way up.
+   *
+   * In the crafting menu rather than a settings screen of its own because this
+   * is the only menu the game has - canon puts everything the player works with
+   * in one place - and because both settings are things you want to change
+   * while looking at the world, not before starting.
+   */
+  private renderScreen(): void {
+    const body = this.sheetBody;
+
+    body.append(
+      el('p', 'note', 'How much of the world fits on screen, and which way the game sits.'),
+    );
+
+    // --- view size
+    const view = el('div', 'setrow');
+    view.append(el('b', undefined, 'View'));
+    const choices = el('div', 'choices');
+    for (const size of VIEW_ORDER) {
+      const button = el('button', 'setchip', VIEW_LABELS[size]);
+      button.append(el('span', 'sub', `${VIEW_SPANS[size]} units`));
+      button.classList.toggle('on', this.screen.view === size);
+      onPress(button, () => {
+        this.screen.setView(size);
+        this.renderSheet();
+      });
+      choices.append(button);
+    }
+    view.append(choices);
+    body.append(view);
+
+    // --- landscape
+    const land = el('div', 'setrow');
+    land.append(el('b', undefined, 'Play sideways'));
+    const landChoices = el('div', 'choices');
+    for (const [on, label, sub] of [
+      [true, 'On', 'Turn the phone'],
+      [false, 'Off', 'Follow the device'],
+    ] as const) {
+      const button = el('button', 'setchip', label);
+      button.append(el('span', 'sub', sub));
+      button.classList.toggle('on', this.screen.landscape === on);
+      onPress(button, () => {
+        this.screen.setLandscape(on);
+        this.renderSheet();
+      });
+      landChoices.append(button);
+    }
+    land.append(landChoices);
+    body.append(land);
+
+    /*
+     * Which way to turn, offered only while we are the ones doing the turning.
+     *
+     * When the device rotates itself there is nothing to choose - the phone
+     * already knows which way up it is. It is only the transform fallback that
+     * has to guess, and guessing wrong is the difference between a game that
+     * reads upside down and one that does not, so the player gets to say.
+     */
+    if (this.screen.landscape && this.screen.selfRotated) {
+      const turn = el('div', 'setrow');
+      turn.append(el('b', undefined, 'Turn'));
+      const turnChoices = el('div', 'choices');
+      for (const [id, label, sub] of [
+        ['cw', '↻ Right', 'Top edge goes right'],
+        ['ccw', '↺ Left', 'Top edge goes left'],
+      ] as const) {
+        const button = el('button', 'setchip', label);
+        button.append(el('span', 'sub', sub));
+        button.classList.toggle('on', this.screen.turn === id);
+        onPress(button, () => {
+          this.screen.setTurn(id);
+          this.renderSheet();
+        });
+        turnChoices.append(button);
+      }
+      turn.append(turnChoices);
+      body.append(turn);
+      body.append(
+        el(
+          'p',
+          'note',
+          'Your phone is refusing to rotate, so the game is turning itself. ' +
+            'Unlock rotation in your device settings and this row disappears.',
+        ),
+      );
+    }
   }
 
   private renderCraft(state: HudState): void {
     // What you can make now, then what you cannot, then what is already built.
-    // A menu that does not pause has to answer "what can I do" at a glance.
+    // The menu has to answer "what can I do" before it is read line by line.
     const rank = (o: { can: boolean; built: boolean }) => (o.built ? 2 : o.can ? 0 : 1);
     const rows = [...state.crafting.outlooks(state.inventory)].sort((a, b) => rank(a) - rank(b));
     for (const outlook of rows) {

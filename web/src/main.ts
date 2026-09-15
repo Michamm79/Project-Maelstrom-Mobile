@@ -3,10 +3,13 @@ import { Game } from './game/game';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage');
 const uiRoot = document.querySelector<HTMLElement>('#ui');
+// The box the game is drawn into, which is what gets turned sideways when the
+// device will not turn itself. Everything else is positioned inside it.
+const app = document.querySelector<HTMLElement>('#app');
 
-if (!canvas || !uiRoot) throw new Error('game shell is missing #stage or #ui');
+if (!canvas || !uiRoot || !app) throw new Error('game shell is missing #stage, #ui or #app');
 
-const game = new Game(canvas, uiRoot);
+const game = new Game(canvas, uiRoot, app);
 game.start();
 
 // Handy for poking at state from the browser console while developing.

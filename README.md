@@ -34,10 +34,15 @@ icon, creature and sound is produced by code at runtime:
 | Sound | oscillators and shaped noise through envelopes, via Web Audio |
 | App icons | generated from code, including the favicon and manifest |
 
-The whole build is **40KB gzipped**. That is the reason it installs instantly,
+The whole build is **43KB gzipped**. That is the reason it installs instantly,
 caches completely and plays with no network.
 
 ## How to play
+
+**Hold the phone sideways.** The game asks the device to turn itself, and turns
+its own box when the device refuses - so it plays horizontally even with
+rotation lock switched on, where "just rotate your phone" does nothing. Both of
+those, and how much world the camera shows, are in the menu's **Screen** tab.
 
 Two thumbs. The left half of the screen moves you; the right hand is a cluster
 in the shape a mobile action MMO uses.
@@ -53,7 +58,8 @@ in the shape a mobile action MMO uses.
   that starts on**, so walking is enough; the button exists to turn it off.
 - **Transmute** — the menu holding both crafting and alchemy, with a live count
   of what can actually be made or cast right now. The world pauses while it is
-  open.
+  open. Its third tab is **Screen**: the view size (Close / Normal / Wide) and
+  whether to play sideways.
 
 A short guide runs on a new game and is completed by playing, never by pressing
 *next*. Progress saves to the device. Keyboard works too (WASD/arrows), which is
@@ -118,20 +124,26 @@ npm run dev          # http://localhost:5173 — open it on your phone over the 
 ```
 
 ```bash
-npm test             # 109 unit tests over the core systems
+npm test             # 126 unit tests over the core systems
 npm run build        # content + icons + typecheck + bundle + service worker
 npm run smoke        # builds, then drives the real game in headless Chromium
 npm run screenshots  # regenerates docs/screenshots/
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
-browser and asserts **80 behaviours** — playing from the title screen through
+browser and asserts **95 behaviours** — playing from the title screen through
 the opening, gathering, crafting, combat and a restart; driving **real
 multi-touch through CDP**, because a browser does not synthesise a `click` for a
 touch inside a multi-touch sequence and a click-bound control silently does
 nothing while the other thumb is on the stick; reading rendered pixels back to
 prove the icon lighting actually composited; surveying both orientations for HUD
 overlap; and walking the real "Start over" buttons rather than calling a method.
+
+One section drives the game in a **rotated box** — a portrait phone that will
+not turn — and checks the things a screenshot cannot show: that the canvas
+backing store came out landscape rather than portrait-stretched, and that a
+thumb dragged toward the phone's bottom edge walks the player *left*. Get the
+inverse transform wrong and the game looks perfect and steers sideways.
 
 ## Content is data, and it is validated
 
@@ -181,6 +193,7 @@ web/src/
   game/               browser layer
     world.ts            simulation: pull, terrain, enemies, waves
     renderer.ts         canvas: camera, ground, fog, creatures, swing
+    screen.ts           which way up the box sits, and how much world it shows
     creatures.ts        the three enemy tiers, drawn
     icons.ts            38 procedural item shapes
     sound.ts            synthesised audio

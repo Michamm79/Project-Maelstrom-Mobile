@@ -137,7 +137,7 @@ sound are produced by code:
   redrawing anything.
 - **Sound** — oscillators and shaped noise through envelopes. No samples.
 
-The whole build is about 200KB. That is the reason for all of the above, and it
+The whole build is about 210KB unpacked, 43KB over the wire. That is the reason for all of the above, and it
 is also what makes the offline cache trivial.
 
 ## Shipping
@@ -145,10 +145,30 @@ is also what makes the offline cache trivial.
 - **PWA** — a generated manifest, a generated service worker that precaches the
   real hashed build output, and a cache-first fetch with a background refresh.
   Verified offline by killing the network and reloading.
-- **Orientation** — the camera anchors its zoom to the longer screen axis and
-  the HUD relays, so turning the phone is a rotation rather than a different
-  game. The manifest must stay `"orientation": "any"` or all of that is undone
-  on install.
+- **Orientation** — the game is meant to be played sideways, and asks for it in
+  three steps: `screen.orientation.lock('landscape')`, then fullscreen and the
+  same lock, then rotating its own box with a transform. Only the last works on
+  iOS, and only the last works on *any* phone whose owner has rotation lock
+  switched on - the one case where "turn your phone" is a dead end rather than
+  advice. The manifest stays `"orientation": "any"` on purpose: a lock there
+  would override the player's own setting, and only on Android.
+
+  The fallback is the part with teeth. A rotated element's bounding rect is its
+  axis-aligned cover, so anything that measured one got the axes swapped: the
+  backing store came out portrait inside a landscape box, the stick steered
+  sideways, and `@media (orientation: landscape)` kept answering about the
+  phone rather than the box. The box publishes its own shape instead -
+  `data-shape`, `data-squat`, `--box-w`, `--box-h` - and every touch is mapped
+  through one inverse in `screen.ts`.
+
+- **How much world is on screen** — the camera anchors its zoom to the longer
+  screen axis, so turning the phone is a rotation rather than a different game.
+  That span is a setting rather than a constant: 700 put 700x315 units on a
+  phone held sideways and read as a letterbox, and 900 - the new default -
+  shows about two thirds more ground while still drawing the character at
+  49px. Close (760) and Wide (1080) sit either side of it, in the menu's Screen
+  tab. It is purely presentational; reach, speed and spawn density are all in
+  world units and do not move.
 - **Telemetry** — `web/src/core/funnel.ts` records where players stop, in
   localStorage, with no third-party SDK and nothing leaving the device.
   `maelstrom.funnelReport()` prints it. Sending it anywhere is a privacy
