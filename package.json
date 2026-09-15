@@ -17,7 +17,8 @@
     "build:sprites": "node tools/make-sprites.mjs",
     "smoke": "npm run build && node tools/smoke.mjs",
     "build:sw": "node tools/make-sw.mjs",
-    "screenshots": "npm run build && node tools/screenshots.mjs"
+    "screenshots": "npm run build && node tools/screenshots.mjs",
+    "cover": "npm run build:content && node tools/make-cover.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

@@ -37,6 +37,10 @@ icon, creature and sound is produced by code at runtime:
 The whole build is **43KB gzipped**. That is the reason it installs instantly,
 caches completely and plays with no network.
 
+The **cover art** in `docs/cover/` is drawn the same way, by the game's own
+art code — the real sprite sheet, the real creatures, the real item shapes,
+every colour read out of `content/`. `npm run cover` regenerates it at any size.
+
 ## How to play
 
 **Hold the phone sideways.** The game asks the device to turn itself, and turns
@@ -128,6 +132,7 @@ npm test             # 127 unit tests over the core systems
 npm run build        # content + icons + typecheck + bundle + service worker
 npm run smoke        # builds, then drives the real game in headless Chromium
 npm run screenshots  # regenerates docs/screenshots/
+npm run cover        # regenerates the cover art in docs/cover/
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
@@ -204,14 +209,18 @@ tools/
   make-sprites.mjs    character sprite sheet generator
   make-icons.mjs      app icons, favicon and manifest
   make-sw.mjs         service worker, built from the real hashed output
+  make-cover.mjs      cover art, drawn by the game's own art code
   smoke.mjs           end-to-end browser test
   screenshots.mjs     portfolio screenshots
+  cover/              the cover composition; under tools/ so it never ships
 
 docs/
   DESIGN.md           design notes: what this is and why
   PORTFOLIO.md        a self-contained brief for writing about the project
+  STORE.md            player-facing copy, and what not to claim in it
   PORTING.md          file-by-file mapping from the original prototype
   screenshots/        committed, regenerable
+  cover/              cover art, committed, regenerable
 ```
 
 ---

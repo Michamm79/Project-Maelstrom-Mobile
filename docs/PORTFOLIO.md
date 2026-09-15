@@ -60,6 +60,11 @@ The game plays **sideways** by default, so all but the last are landscape.
 **Best single image if only one fits:** `04-combat.png` — it has the character,
 all three enemy designs, the attack animation and the HUD in one frame.
 
+**For a hero image or a card, use the cover instead:** `docs/cover/cover.png`
+(1024×1024 square, with the title) or `cover-clean.png` (no type). It is drawn by
+the game's own art code rather than composed in an image editor, which is worth a
+sentence in itself. `docs/STORE.md` has player-facing copy to go with it.
+
 ---
 
 ## The facts
