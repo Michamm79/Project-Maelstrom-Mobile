@@ -40,6 +40,12 @@ export const STEPS = [
   'sawAllBiomes',
   'died',
   'restarted',
+  /*
+   * Last because it can happen at any point, and because it is the one
+   * milestone that says a player meant to come back. With no store account
+   * this is the only distribution number the project has.
+   */
+  'installed',
 ] as const;
 
 export type Step = (typeof STEPS)[number];

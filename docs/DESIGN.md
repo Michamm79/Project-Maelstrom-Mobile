@@ -169,6 +169,18 @@ is also what makes the offline cache trivial.
   49px. Close (760) and Wide (1080) sit either side of it, in the menu's Screen
   tab. It is purely presentational; reach, speed and spawn density are all in
   world units and do not move.
+- **Installing** — the build is a working PWA, and with no store account that
+  is the entire distribution plan: installed, it runs from a home screen, plays
+  offline, and picks up every push silently the next time it opens online. The
+  only thing standing in the way is that nobody finds an install buried in a
+  browser menu, so the title screen offers it. Three states, because the
+  platforms differ: a real prompt where Chromium hands one over, instructions on
+  iOS where Safari installs from the share sheet and nothing in a page can open
+  it, and silence for anyone already installed. `beforeinstallprompt` is caught
+  by six lines inline in `index.html` rather than from the bundle, because it
+  fires before a deferred module has evaluated and the offer would otherwise
+  never appear on the slow connections most likely to want an offline copy.
+
 - **Telemetry** — `web/src/core/funnel.ts` records where players stop, in
   localStorage, with no third-party SDK and nothing leaving the device.
   `maelstrom.funnelReport()` prints it. Sending it anywhere is a privacy

@@ -9,7 +9,11 @@ out of the world as you walk. You craft that into permanent upgrades, break it
 into elements, and recombine those into abilities. Nothing explains why.
 
 **Play it:** https://michamm79.github.io/Project-Maelstrom-Mobile/ — open on a
-phone and add it to the home screen. It installs as a PWA and runs offline.
+phone. The title screen offers to install it; on Android that is a real prompt,
+and on iOS it tells you where Safari hides the button. Installed, it runs from
+the home screen, plays with no signal, and picks up every push silently the next
+time it opens online — which is the whole distribution plan, since there is no
+store account.
 
 > **Note on history.** An earlier version of this build was a port of
 > [`Project_Maelstrom`](https://github.com/Michamm79/Project_Maelstrom), which
@@ -128,7 +132,7 @@ npm run dev          # http://localhost:5173 — open it on your phone over the 
 ```
 
 ```bash
-npm test             # 127 unit tests over the core systems
+npm test             # 132 unit tests over the core systems
 npm run build        # content + icons + typecheck + bundle + service worker
 npm run smoke        # builds, then drives the real game in headless Chromium
 npm run screenshots  # regenerates docs/screenshots/
@@ -136,7 +140,7 @@ npm run cover        # regenerates the cover art in docs/cover/
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
-browser and asserts **96 behaviours** — playing from the title screen through
+browser and asserts **107 behaviours** — playing from the title screen through
 the opening, gathering, crafting, combat and a restart; driving **real
 multi-touch through CDP**, because a browser does not synthesise a `click` for a
 touch inside a multi-touch sequence and a click-bound control silently does
@@ -202,6 +206,7 @@ web/src/
     creatures.ts        the three enemy tiers, drawn
     icons.ts            38 procedural item shapes
     sound.ts            synthesised audio
+    install.ts          the offer to keep it on a home screen
     opening.ts, input.ts, ui.ts, title.ts, waves.ts, game.ts
 
 tools/

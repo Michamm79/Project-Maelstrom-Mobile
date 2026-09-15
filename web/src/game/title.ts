@@ -8,6 +8,8 @@
  * themselves.
  */
 
+import type { Install } from './install';
+
 export interface TitleChoice {
   /** Continue an existing save instead of starting over. */
   onContinue: () => void;
@@ -32,12 +34,25 @@ export class TitleScreen {
 
   constructor(
     host: HTMLElement,
+    private readonly install: Install,
     private readonly choice: TitleChoice,
   ) {
     this.root = el('div', 'title');
     this.root.dataset.ui = '';
     this.root.hidden = true;
     host.append(this.root);
+
+    /*
+     * The install offer arrives late, or not at all.
+     *
+     * `beforeinstallprompt` fires when the browser decides the moment is right,
+     * which is routinely after the title screen has already drawn itself. Built
+     * once at show() time, the offer simply never appeared - the card was
+     * already on screen by the time there was anything to offer.
+     */
+    this.install.onChange(() => {
+      if (this.shown) this.refreshInstall();
+    });
   }
 
   get visible(): boolean {
@@ -97,9 +112,61 @@ export class TitleScreen {
     }
 
     card.append(actions);
+    this.buildInstall(card);
     this.root.append(card);
     this.root.hidden = false;
     this.shown = true;
+  }
+
+  /**
+   * The offer to keep it.
+   *
+   * On the title screen rather than mid-run, because installing is a decision
+   * about the game rather than a move inside it, and this is the one moment the
+   * player is already choosing something.
+   *
+   * It is a single dismissible line and it never comes back once waved away -
+   * the Screen tab keeps it for anyone who changes their mind. A prompt that
+   * reappears every launch is how people learn to ignore the whole corner of
+   * the screen it lives in.
+   */
+  private buildInstall(card: HTMLElement): void {
+    const state = this.install.state;
+    if (state === 'installed' || state === 'unavailable') return;
+    if (this.install.dismissed) return;
+
+    const row = el('div', 'tinstall');
+
+    if (state === 'ready') {
+      const button = el('button', 'tbtn ghost', 'Install');
+      button.append(el('span', 'tsub', 'Keeps it on your home screen, offline'));
+      button.addEventListener('click', () => {
+        void this.install.prompt().then(() => this.refreshInstall());
+      });
+      row.append(button);
+    } else {
+      // No button: nothing in a page can open Safari's share sheet, and a
+      // button that does nothing is worse than a sentence that is true.
+      row.append(
+        el('p', 'thint', `Add it to your home screen to play offline. ${this.install.manualSteps}`),
+      );
+    }
+
+    const no = el('button', 'tdismiss', 'Not now');
+    no.addEventListener('click', () => {
+      this.install.dismiss();
+      this.refreshInstall();
+    });
+    row.append(no);
+
+    card.append(row);
+  }
+
+  private refreshInstall(): void {
+    const card = this.root.querySelector('.tcard');
+    const existing = this.root.querySelector('.tinstall');
+    existing?.remove();
+    if (card) this.buildInstall(card as HTMLElement);
   }
 
   /** Starting over throws away a save, so it asks once rather than on a mis-tap. */

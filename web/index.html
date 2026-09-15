@@ -19,6 +19,21 @@
       content="Project Maelstrom Mobile - gather, transmute and alchemise in a touch-first orb crafting game."
     />
     <title>Project Maelstrom</title>
+    <script>
+      /*
+       * Catch the install prompt before the game has finished loading.
+       *
+       * `beforeinstallprompt` fires once and fires early - frequently before a
+       * deferred module script has evaluated. Listening for it from inside the
+       * bundle loses that race on a cold load over a slow connection, and the
+       * install button then never appears for exactly the players most likely
+       * to want an offline copy. Six lines here, read by game/install.ts.
+       */
+      window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault();
+        window.__maelstromInstall = event;
+      });
+    </script>
   </head>
   <body>
     <div id="app">

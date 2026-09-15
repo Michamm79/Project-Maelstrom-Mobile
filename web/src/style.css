@@ -1226,6 +1226,50 @@ button.ghost:disabled { opacity: .4; }
   color: var(--ink-faint);
 }
 
+/* ------------------------------------------------------- the install offer
+   One line under the actions, deliberately quieter than either of them: it is
+   worth offering and it is never the reason someone opened the game. */
+
+.tinstall {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.tinstall .tbtn {
+  width: 100%;
+  min-height: 46px;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  font-size: 14px;
+}
+
+.tinstall .tbtn .tsub {
+  color: var(--ink-faint);
+}
+
+.thint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+.tdismiss {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .twarn {
   margin: 0 0 2px;
   font-size: 12px;

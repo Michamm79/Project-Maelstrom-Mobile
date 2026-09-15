@@ -22,6 +22,7 @@ import type { Alchemy } from '../core/alchemy';
 import type { Progression } from '../core/progression';
 import type { CombinationId, ElementId, Hand, MaterialId, RecipeId, TutorialStep } from '../core/types';
 import { VIEW_LABELS, VIEW_ORDER, VIEW_SPANS, type Screen } from './screen';
+import type { Install } from './install';
 
 export interface HudState {
   inventory: Inventory;
@@ -123,6 +124,7 @@ export class Ui {
     private readonly root: HTMLElement,
     private readonly content: Content,
     private readonly screen: Screen,
+    private readonly install: Install,
     private readonly hooks: UiHooks,
   ) {
     this.buildTopBar();
@@ -516,6 +518,56 @@ export class Ui {
         ),
       );
     }
+
+    this.renderInstallRow(body);
+  }
+
+  /**
+   * Keeping a copy, offered permanently.
+   *
+   * The title screen makes the same offer once and takes no for an answer
+   * forever. This row does not honour that dismissal, because somebody who has
+   * opened a settings tab is looking for the thing rather than being sold it -
+   * and it is the only route back for a player who tapped Not now and then
+   * wanted it after all.
+   */
+  private renderInstallRow(body: HTMLElement): void {
+    const state = this.install.state;
+    const row = el('div', 'setrow');
+    row.append(el('b', undefined, 'Keep a copy'));
+
+    if (state === 'installed') {
+      row.append(el('p', 'note', 'Installed. It runs from your home screen and plays offline.'));
+      body.append(row);
+      return;
+    }
+
+    if (state === 'ready') {
+      const choices = el('div', 'choices');
+      const button = el('button', 'setchip', 'Install');
+      button.append(el('span', 'sub', 'Home screen, works offline'));
+      onPress(button, () => {
+        void this.install.prompt().then(() => this.renderSheet());
+      });
+      choices.append(button);
+      row.append(choices);
+      body.append(row);
+      return;
+    }
+
+    /*
+     * No prompt to raise. On iOS there never will be one, and elsewhere the
+     * browser has decided the moment is wrong - either way the only honest
+     * thing to show is the route the player can take themselves.
+     */
+    row.append(
+      el(
+        'p',
+        'note',
+        `Add it to your home screen and it plays with no signal at all. ${this.install.manualSteps}`,
+      ),
+    );
+    body.append(row);
   }
 
   private renderCraft(state: HudState): void {

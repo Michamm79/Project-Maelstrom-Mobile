@@ -864,6 +864,153 @@ check('and it wakes up again', await page.locator('.opening').isVisible());
 await page.locator('.opening').dispatchEvent('pointerdown');
 await page.waitForTimeout(300);
 
+// --------------------------------------------------------------- installing
+
+/*
+ * The install offer, which is the entire distribution plan.
+ *
+ * There is no store account, so a player keeping the game means installing the
+ * PWA, and that means finding an install nobody ever finds in a browser menu.
+ * Headless Chromium does not fire `beforeinstallprompt` on its own, so the
+ * event is synthesised - which is also the only way to drive the accept path.
+ */
+{
+  const installCtx = await browser.newContext({ ...devices['Pixel 7'] });
+  const page2 = await installCtx.newPage();
+  await page2.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await page2.waitForTimeout(500);
+
+  check(
+    'no install offer before the browser makes one available',
+    (await page2.locator('.tinstall').count()) === 0,
+  );
+
+  // The real event is fired by the browser and cannot be constructed with its
+  // own interface, so this is the shape the code actually consumes.
+  const raise = () =>
+    page2.evaluate(() => {
+      const event = new Event('beforeinstallprompt');
+      window.__installPrompted = 0;
+      Object.assign(event, {
+        prompt: () => {
+          window.__installPrompted += 1;
+          return Promise.resolve();
+        },
+        userChoice: Promise.resolve({ outcome: 'accepted' }),
+      });
+      window.dispatchEvent(event);
+    });
+
+  await raise();
+  await page2.waitForTimeout(200);
+  check('an install offer appears once the browser allows one', await page2.locator('.tinstall .tbtn').isVisible());
+
+  await page2.locator('.tinstall .tbtn').click();
+  await page2.waitForTimeout(250);
+  check(
+    'tapping it raises the browser prompt',
+    (await page2.evaluate(() => window.__installPrompted)) === 1,
+  );
+  check(
+    'and the offer goes once it has been taken',
+    (await page2.locator('.tinstall').count()) === 0,
+  );
+
+  // Not now has to mean not ever, or the prompt trains people to ignore it.
+  const page3 = await installCtx.newPage();
+  await page3.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await page3.waitForTimeout(400);
+  await page3.evaluate(() => {
+    const event = new Event('beforeinstallprompt');
+    Object.assign(event, { prompt: () => Promise.resolve(), userChoice: Promise.resolve({ outcome: 'dismissed' }) });
+    window.dispatchEvent(event);
+  });
+  await page3.waitForTimeout(200);
+  await page3.locator('.tdismiss').click();
+  await page3.waitForTimeout(150);
+  check('"Not now" clears the offer', (await page3.locator('.tinstall').count()) === 0);
+
+  await page3.reload({ waitUntil: 'networkidle' });
+  await page3.waitForTimeout(400);
+  await page3.evaluate(() => {
+    const event = new Event('beforeinstallprompt');
+    Object.assign(event, { prompt: () => Promise.resolve(), userChoice: Promise.resolve({ outcome: 'dismissed' }) });
+    window.dispatchEvent(event);
+  });
+  await page3.waitForTimeout(200);
+  check('and it stays cleared on the next launch', (await page3.locator('.tinstall').count()) === 0);
+
+  /*
+   * The settings row deliberately ignores that dismissal: somebody who opened a
+   * settings tab is looking for the thing rather than being sold it, and it is
+   * the only route back for a player who tapped Not now and changed their mind.
+   */
+  await page3.locator('.title .tbtn.primary').click();
+  await page3.waitForTimeout(1100);
+  await page3.locator('.opening').dispatchEvent('pointerdown');
+  await page3.waitForTimeout(500);
+  await page3.locator('.nav-btn').click();
+  await page3.waitForTimeout(250);
+  await page3.locator('.tabs button[data-tab="screen"]').click();
+  await page3.waitForTimeout(200);
+  check(
+    'the settings tab still offers it after a dismissal',
+    (await page3.locator('.setrow', { hasText: /^Keep a copy/ }).count()) === 1,
+  );
+
+  await installCtx.close();
+}
+
+/*
+ * iOS has no install event and never will - Safari installs from the share
+ * sheet only. Nothing in a page can open that, so the offer has to become a
+ * sentence rather than a button that quietly does nothing.
+ */
+{
+  const iosCtx = await browser.newContext({
+    ...devices['iPhone 13'],
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  });
+  const ios = await iosCtx.newPage();
+  await ios.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await ios.waitForTimeout(600);
+
+  const hint = await ios.locator('.tinstall .thint').textContent();
+  check('iOS is told how to install it by hand', Boolean(hint && hint.includes('Add to Home Screen')), hint ?? 'no hint');
+  check('and is not shown a button that cannot work', (await ios.locator('.tinstall .tbtn').count()) === 0);
+  await iosCtx.close();
+}
+
+/*
+ * Already installed. Running from a home screen icon means display-mode is
+ * standalone, which Playwright can emulate - and the one thing that must never
+ * happen is offering an install to somebody who has already done it.
+ */
+{
+  const standaloneCtx = await browser.newContext({ ...devices['Pixel 7'] });
+  const installed = await standaloneCtx.newPage();
+  await installed.emulateMedia({ media: 'screen', forcedColors: null, reducedMotion: null });
+  await installed.addInitScript(() => {
+    const real = window.matchMedia.bind(window);
+    window.matchMedia = (query) =>
+      query.includes('display-mode: standalone')
+        ? { matches: true, media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }
+        : real(query);
+  });
+  await installed.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await installed.waitForTimeout(500);
+  check(
+    'an installed copy is never asked to install again',
+    (await installed.locator('.tinstall').count()) === 0,
+  );
+  check(
+    'and the funnel records that it is installed',
+    await installed.evaluate(() => window.maelstrom.funnel.toJSON().first.installed !== undefined),
+  );
+  await standaloneCtx.close();
+}
+
 // ------------------------------------------------------------ forced landscape
 
 /*

@@ -26,6 +26,7 @@ import { WaveDirector } from './waves';
 import { OpeningScene } from './opening';
 import { Sound } from './sound';
 import { Screen } from './screen';
+import { Install } from './install';
 import { Funnel } from '../core/funnel';
 import type { CombinationId, RecipeId } from '../core/types';
 
@@ -38,6 +39,7 @@ export class Game {
   private readonly title: TitleScreen;
   private readonly opening: OpeningScene;
   private readonly sound = new Sound();
+  private readonly install = new Install();
   private readonly funnel = new Funnel();
   private readonly waves: WaveDirector;
 
@@ -79,7 +81,7 @@ export class Game {
     this.renderer = new Renderer(canvas, content, this.screen);
     this.waves = new WaveDirector(content, this.world);
 
-    this.ui = new Ui(uiRoot, content, this.screen, {
+    this.ui = new Ui(uiRoot, content, this.screen, this.install, {
       onCraft: (id) => this.craft(id),
       onSelectCombination: (id) => this.selectCombination(id),
       onAttack: () => this.attack(),
@@ -100,7 +102,7 @@ export class Game {
 
     // Every path out of the title screen is a genuine user gesture, which is
     // the only moment a browser will let audio start.
-    this.title = new TitleScreen(uiRoot, {
+    this.title = new TitleScreen(uiRoot, this.install, {
       onContinue: () => {
         this.sound.unlock();
         this.goLandscape();
@@ -129,6 +131,12 @@ export class Game {
     // enemies during what is meant to be an undisturbed gathering tutorial.
     // markSeen, not award: this suppresses the payout, it does not collect it.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
+
+    // The only distribution signal there is, with no store to report one.
+    if (this.install.state === 'installed') this.funnel.mark('installed');
+    this.install.onChange(() => {
+      if (this.install.state === 'installed') this.funnel.mark('installed');
+    });
 
     this.ui.setMuteLabel(this.sound.isMuted);
     this.ui.bind(this.hudState());

@@ -106,8 +106,10 @@ world goes quiet again. What you do with that quiet is the actual game.
 
 ## What it is, honestly
 
-- **Runs in a phone browser.** Add it to your home screen and it installs; it
-  plays with no signal at all.
+- **Runs in a phone browser.** The title screen offers to install it — a real
+  prompt on Android, and on iOS it points you at the button Safari hides in the
+  share sheet. Installed, it plays with no signal at all and updates itself.
+- **No download required to try it.** The link is the game.
 - **Free.** No ads, no purchases, no account, no third-party tracker. It keeps a
   small record of where players stop, on the device, and nothing leaves it.
 - **Roughly 30–60 minutes of content.** A vertical slice, not a finished game.
