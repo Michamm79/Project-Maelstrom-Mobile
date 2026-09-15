@@ -877,6 +877,26 @@ await page.waitForTimeout(300);
  */
 {
   const rotatedContext = await browser.newContext({ ...devices['Pixel 7'] });
+  /*
+   * Say yes to the orientation lock and rotate nothing.
+   *
+   * Not a hypothetical: the Chromium this suite runs on in CI does exactly
+   * that, and the first version of this feature believed it. The player
+   * pressed Begin, the fallback switched itself off on the strength of a
+   * resolved promise, and the game dropped back into portrait - stranded by
+   * the call that was meant to help. Stubbed rather than left to the runner,
+   * because a browser that grants the lock properly would hide the bug again.
+   */
+  await rotatedContext.addInitScript(() => {
+    try {
+      Object.defineProperty(screen.orientation, 'lock', {
+        value: () => Promise.resolve(),
+        configurable: true,
+      });
+    } catch {
+      /* nothing to stub here, which is its own kind of pass */
+    }
+  });
   const rot = await rotatedContext.newPage();
   const rotErrors = [];
   rot.on('pageerror', (e) => rotErrors.push(String(e)));
@@ -934,9 +954,21 @@ await page.waitForTimeout(300);
   check('rotated: no two HUD controls overlap', overlaps.length === 0, overlaps.join('; '));
 
   await rot.locator('.title .tbtn.primary').click();
-  await rot.waitForTimeout(400);
+  // Long enough to cover the beat the lock is given to actually turn the
+  // screen, so this reads the settled state rather than the middle of it.
+  await rot.waitForTimeout(1200);
   await rot.locator('.opening').dispatchEvent('pointerdown');
   await rot.waitForTimeout(900);
+
+  const held = await rot.evaluate(() => {
+    const app = document.querySelector('#app');
+    return { rot: app.dataset.rot ?? null, box: [app.clientWidth, app.clientHeight] };
+  });
+  check(
+    'a lock that turns nothing does not strand the player in portrait',
+    held.rot === 'cw' && held.box[0] > held.box[1],
+    JSON.stringify(held),
+  );
 
   /*
    * The steering, in the player's terms rather than the transform's.

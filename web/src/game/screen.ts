@@ -108,19 +108,28 @@ export function layoutFor(
   viewportWidth: number,
   viewportHeight: number,
   prefs: { landscape: boolean; turn: Turn },
-  nativeLock: boolean,
   touch = true,
 ): BoxLayout {
   const vw = Math.max(1, viewportWidth);
   const vh = Math.max(1, viewportHeight);
   /*
-   * Decided from the VIEWPORT, never from the element's own box.
+   * Decided from the VIEWPORT, and from nothing else.
    *
-   * The box is the thing we are about to resize; reading it back to decide
-   * whether to resize it is how this kind of code ends up flipping between two
-   * states forever inside a ResizeObserver.
+   * Two things this is deliberately not allowed to consult. The element's own
+   * box, because that is the thing we are about to resize, and reading it back
+   * to decide whether to resize it is how this kind of code ends up flipping
+   * between two states forever inside a ResizeObserver.
+   *
+   * And whether `screen.orientation.lock()` resolved, which used to switch the
+   * fallback off. A resolved promise is a browser agreeing to something, not a
+   * screen that turned: CI runs on a Chromium that says yes and rotates
+   * nothing, and the measured result was a player who pressed Begin and landed
+   * back in portrait with the fallback disabled - stranded by the very call
+   * meant to help. A lock that worked shows up here as a landscape viewport,
+   * which this already handles; one that did not leaves the transform in
+   * place, which is exactly right.
    */
-  const rotate = prefs.landscape && vh > vw && !nativeLock && touch ? prefs.turn : null;
+  const rotate = prefs.landscape && vh > vw && touch ? prefs.turn : null;
   const width = rotate ? vh : vw;
   const height = rotate ? vw : vh;
   return { rotate, width, height, wide: width >= 720, squat: height <= 560 && width > height };
@@ -147,8 +156,14 @@ export class Screen {
   private prefs: Prefs = { ...DEFAULTS };
   private box: BoxLayout = { rotate: null, width: 1, height: 1, wide: false, squat: false };
   private readonly listeners = new Set<() => void>();
-  /** Set once the OS has agreed to hold the device in landscape for us. */
-  private nativeLock = false;
+  /**
+   * Set once we have asked the OS to hold the device in landscape.
+   *
+   * Only stops us asking twice. It deliberately does NOT feed the layout -
+   * see layoutFor - because a granted lock and a turned screen are different
+   * things, and only the second one is worth acting on.
+   */
+  private asked = false;
   /** Something with a thumb on it, as opposed to a window someone resized. */
   private get handheld(): boolean {
     return typeof matchMedia !== 'function' || matchMedia('(pointer: coarse)').matches;
@@ -290,7 +305,8 @@ export class Screen {
    * themselves, and is the normal path on iOS.
    */
   async requestNative(): Promise<void> {
-    if (!this.prefs.landscape || this.nativeLock) return;
+    if (!this.prefs.landscape || this.asked) return;
+    this.asked = true;
     // Nothing here is wanted on a desktop, where the window is already wide and
     // taking it fullscreen would be an ambush.
     if (!this.handheld) return;
@@ -302,9 +318,7 @@ export class Screen {
 
     try {
       await orientation.lock('landscape');
-      this.nativeLock = true;
-      this.apply();
-      return;
+      if (await this.turned()) return;
     } catch {
       // Chrome refuses outside fullscreen, which is the common case in a tab.
     }
@@ -322,19 +336,33 @@ export class Screen {
       await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' });
     } catch {
       // Declined. The transform fallback is already handling this case.
-      this.apply();
       return;
     }
 
     try {
       await orientation.lock('landscape');
-      this.nativeLock = true;
+      if (await this.turned()) return;
     } catch {
-      // Landscape is genuinely unavailable here, so we are holding the whole
-      // screen for nothing. Give it back rather than keeping the ground we took.
-      await this.exitFullscreen();
+      // Landscape is genuinely unavailable here.
     }
+
+    // Either way we are holding the whole screen and got nothing for it, so
+    // give it back rather than keeping ground we are not using.
+    await this.exitFullscreen();
+  }
+
+  /**
+   * Did the screen actually turn?
+   *
+   * The only honest test, and the reason it is worth waiting for: a browser
+   * can resolve `lock()` and leave the viewport exactly as it was. The wait is
+   * a beat rather than a poll, because a device that is going to rotate has
+   * done it by the time the resize lands.
+   */
+  private async turned(): Promise<boolean> {
+    await new Promise((done) => setTimeout(done, 250));
     this.apply();
+    return window.innerWidth > window.innerHeight;
   }
 
   private async exitFullscreen(): Promise<void> {
@@ -347,8 +375,8 @@ export class Screen {
   }
 
   private releaseNative(): void {
-    if (!this.nativeLock) return;
-    this.nativeLock = false;
+    if (!this.asked) return;
+    this.asked = false;
     try {
       globalThis.screen?.orientation?.unlock?.();
     } catch {
@@ -374,13 +402,7 @@ export class Screen {
    * attack button under the chrome.
    */
   private apply(): void {
-    this.box = layoutFor(
-      window.innerWidth,
-      window.innerHeight,
-      this.prefs,
-      this.nativeLock,
-      this.handheld,
-    );
+    this.box = layoutFor(window.innerWidth, window.innerHeight, this.prefs, this.handheld);
     const { rotate } = this.box;
 
     const style = this.app.style;

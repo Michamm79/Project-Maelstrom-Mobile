@@ -20,25 +20,31 @@ const TURNED = [915, 412] as const;
 
 describe('holding the game sideways', () => {
   it('turns a portrait viewport into a landscape box', () => {
-    const box = layoutFor(...PORTRAIT, LANDSCAPE, false);
+    const box = layoutFor(...PORTRAIT, LANDSCAPE);
     expect(box.rotate).toBe('cw');
     expect(box.width).toBe(915);
     expect(box.height).toBe(412);
   });
 
   it('leaves the box alone once the device is already landscape', () => {
-    const box = layoutFor(...TURNED, LANDSCAPE, false);
+    const box = layoutFor(...TURNED, LANDSCAPE);
     expect(box.rotate).toBeNull();
     expect([box.width, box.height]).toEqual([915, 412]);
   });
 
   /*
-   * The whole point of asking the OS first. Once it agrees to hold the device
-   * in landscape, the viewport becomes landscape on its own and rotating on top
-   * of that would turn the game face down.
+   * The whole point of asking the OS first: a lock that worked shows up as a
+   * landscape viewport, and rotating on top of that would turn the game face
+   * down. That is the case above, and it is the ONLY evidence a granted lock
+   * gets to offer.
+   *
+   * Because the other case is real and shipped broken: a browser can resolve
+   * `screen.orientation.lock()` and rotate nothing. CI runs on one. Trusting
+   * the promise meant a player pressed Begin and landed back in portrait with
+   * the fallback switched off - stranded by the call meant to help them.
    */
-  it('stops rotating itself the moment the OS takes the lock', () => {
-    expect(layoutFor(...PORTRAIT, LANDSCAPE, true).rotate).toBeNull();
+  it('keeps holding the game sideways when a granted lock turned nothing', () => {
+    expect(layoutFor(...PORTRAIT, LANDSCAPE).rotate).toBe('cw');
   });
 
   /*
@@ -47,18 +53,18 @@ describe('holding the game sideways', () => {
    * turn the monitor.
    */
   it('leaves a window alone, however tall, when nothing can hold it', () => {
-    expect(layoutFor(...PORTRAIT, LANDSCAPE, false, false).rotate).toBeNull();
-    expect(layoutFor(...PORTRAIT, LANDSCAPE, false, true).rotate).toBe('cw');
+    expect(layoutFor(...PORTRAIT, LANDSCAPE, /* touch */ false).rotate).toBeNull();
+    expect(layoutFor(...PORTRAIT, LANDSCAPE, /* touch */ true).rotate).toBe('cw');
   });
 
   it('does nothing at all when the player turns the setting off', () => {
-    expect(layoutFor(...PORTRAIT, FREE, false).rotate).toBeNull();
-    expect(layoutFor(...PORTRAIT, FREE, false).width).toBe(412);
+    expect(layoutFor(...PORTRAIT, FREE).rotate).toBeNull();
+    expect(layoutFor(...PORTRAIT, FREE).width).toBe(412);
   });
 
   it('gives the same box either way it is turned', () => {
-    const cw = layoutFor(...PORTRAIT, { landscape: true, turn: 'cw' }, false);
-    const ccw = layoutFor(...PORTRAIT, { landscape: true, turn: 'ccw' }, false);
+    const cw = layoutFor(...PORTRAIT, { landscape: true, turn: 'cw' });
+    const ccw = layoutFor(...PORTRAIT, { landscape: true, turn: 'ccw' });
     expect([cw.width, cw.height]).toEqual([ccw.width, ccw.height]);
   });
 
@@ -69,18 +75,18 @@ describe('holding the game sideways', () => {
    * have to describe the BOX.
    */
   it('reports the shape of the box, not of the viewport', () => {
-    const box = layoutFor(...PORTRAIT, LANDSCAPE, false);
+    const box = layoutFor(...PORTRAIT, LANDSCAPE);
     expect(box.squat).toBe(true);
     expect(box.wide).toBe(true);
 
-    const upright = layoutFor(...PORTRAIT, FREE, false);
+    const upright = layoutFor(...PORTRAIT, FREE);
     expect(upright.squat).toBe(false);
     expect(upright.wide).toBe(false);
   });
 });
 
 describe('touches land where they were aimed', () => {
-  const box = layoutFor(...PORTRAIT, LANDSCAPE, false);
+  const box = layoutFor(...PORTRAIT, LANDSCAPE);
 
   it('maps every corner of the viewport to a corner of the box', () => {
     // Viewport is 412x915; the box inside it is 915x412.
@@ -125,12 +131,12 @@ describe('touches land where they were aimed', () => {
   });
 
   it('changes nothing while the box is upright', () => {
-    const upright = layoutFor(...TURNED, LANDSCAPE, false);
+    const upright = layoutFor(...TURNED, LANDSCAPE);
     expect(localPoint(123, 45, upright)).toEqual({ x: 123, y: 45 });
   });
 
   it('is turned the other way round by the other turn direction', () => {
-    const ccw = layoutFor(...PORTRAIT, { landscape: true, turn: 'ccw' }, false);
+    const ccw = layoutFor(...PORTRAIT, { landscape: true, turn: 'ccw' });
     // Top-left of the viewport is the opposite corner of the box from `cw`.
     expect(localPoint(0, 0, ccw)).toEqual({ x: 0, y: 412 });
   });
@@ -173,8 +179,8 @@ describe('how much world is on screen', () => {
   });
 
   it('turning the phone shows the same view, rotated', () => {
-    const portrait = layoutFor(...PORTRAIT, FREE, false);
-    const landscape = layoutFor(...TURNED, FREE, false);
+    const portrait = layoutFor(...PORTRAIT, FREE);
+    const landscape = layoutFor(...TURNED, FREE);
     const span = VIEW_SPANS.normal;
     const p = {
       w: portrait.width / zoomFor(portrait.width, portrait.height, span),
