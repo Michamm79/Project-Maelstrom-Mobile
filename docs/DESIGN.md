@@ -193,13 +193,31 @@ is also what makes the offline cache trivial.
   `maelstrom.funnelReport()` prints it. Sending it anywhere is a privacy
   decision that belongs to the author.
 
+## What the world tells you
+
+The guide says what to do, and canon is explicit that it withholds why. But
+withholding why is not the same as saying nothing, and the build had the player
+wake with no memory into a world that then never mentioned the situation again.
+
+Six **fragments** in `content/tutorial.json` fire on first-time actions — first
+material, first craft, first kill, first cast, first new region, first wave
+cleared — so the reading always lands on the thing it is about. The deletion
+fragment arrives the first time something comes apart into digits in front of
+you. Each fires once per run, and starting over gives them back.
+
+Every word of them is **inferred, and flagged as such** in the content file
+alongside what canon does support. They are deliberately one channel with no
+narrator, so the Jakindur system below can replace them rather than having to
+argue with them.
+
 ## Not built
 
 Deliberately, because they need canon decisions rather than code:
 
 - **Jakindur and the found notes.** Information Integrity only works if the two
   channels can disagree — plentiful and unreliable against rare and accurate —
-  so it needs the actual prose.
+  so it needs the actual prose. The fragments above are a placeholder that
+  claims to be neither channel.
 - **Telemetry and the rune.** The seven signals, and the Level 2 read that
   assigns an archetype without ever showing a menu. Canon warns this cannot be
   retrofitted, since the rune reads the tutorial period as roughly half its
