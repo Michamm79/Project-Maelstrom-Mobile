@@ -583,7 +583,7 @@ export class Game {
     if (to >= content.progression.alchemyUnlockLevel) {
       this.ui.toast('The workshop is open. Alchemy, in the menu.', 'big');
     }
-    this.syncLoadout();
+    this.syncLoadout(true);
   }
 
   /**
@@ -594,12 +594,34 @@ export class Game {
    * slot takes it - and because `admit` remembers what it has offered, taking
    * it back off again sticks.
    */
-  private syncLoadout(): void {
+  private syncLoadout(announce = false): void {
     const level = this.progression.level;
     const available = content.alchemy.filter((c) => this.alchemy.unlocked(c, level)).map((c) => c.id);
     const before = this.loadout.carried.join(',');
+    const knownBefore = new Set(this.loadout.known);
     this.loadout = admit(this.loadout, available, LOADOUT_SLOTS);
     if (this.loadout.carried.join(',') !== before) this.ui.refresh(this.hudState());
+    if (!announce) return;
+
+    /*
+     * Say what opened, and especially what opened and did not fit.
+     *
+     * A combination that unlocks onto a full bar goes into `known` and stays
+     * off the arc, which is correct - the player chose those four - but until
+     * this, nothing anywhere mentioned that it had happened. The unlock was
+     * silent, and the only way to find it was to open the workshop and notice
+     * a row that had stopped saying "Locked".
+     */
+    const fresh = available.filter((id) => !knownBefore.has(id));
+    if (!fresh.length) return;
+    const names = fresh.map((id) => content.combination(id).name);
+    const missed = fresh.filter((id) => !this.loadout.carried.includes(id));
+    this.ui.toast(
+      missed.length
+        ? `${names.join(' and ')} - no room on the bar, swap in the workshop`
+        : `${names.join(' and ')}, on the bar`,
+      missed.length ? 'info' : 'good',
+    );
   }
 
   // ---------------------------------------------------------------- loop

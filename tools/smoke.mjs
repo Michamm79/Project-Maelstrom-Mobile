@@ -616,6 +616,43 @@ check(
   (await page.locator('.skillarc .skill').count()) > 0,
   `${unlocked.carried} carried`,
 );
+
+/*
+ * An unlock that does not fit has to say so.
+ *
+ * A combination opening onto a full bar is correct - the player chose those
+ * four - but it used to be completely silent, and the only way to find out was
+ * to open the workshop and notice a row that had stopped saying "Locked".
+ */
+{
+  const said = await peek(async () => {
+    const g = window.maelstrom;
+    // Fill the bar, then open something that cannot fit on it.
+    const top = g.world.content.alchemy.reduce((n, c) => Math.max(n, c.minLevel ?? 0), 0);
+    g.loadout = { carried: g.loadout.carried.slice(0, 4), known: g.loadout.known };
+    while (g.loadout.carried.length < 4) {
+      const spare = g.world.content.alchemy.find((c) => !g.loadout.carried.includes(c.id));
+      if (!spare) break;
+      g.loadout.carried.push(spare.id);
+      g.loadout.known.push(spare.id);
+    }
+    const before = g.progression.level;
+    for (let i = 0; g.progression.level < top && i < 400; i++) {
+      g.awardXp(g.progression.award('firstMaterial', `top-${i}`), 'probe');
+    }
+    return {
+      from: before,
+      to: g.progression.level,
+      carried: g.loadout.carried.length,
+      toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
+    };
+  });
+  check(
+    'an unlock that will not fit on the bar says so instead of happening silently',
+    said.carried === 4 && said.toasts.some((t) => /swap in the workshop/.test(t)),
+    JSON.stringify(said).slice(0, 220),
+  );
+}
 check(
   'and the bar never holds more than it has room to draw',
   (await page.locator('.skillarc .skill').count()) <= 4,
