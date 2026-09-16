@@ -29,6 +29,7 @@ import { Sound } from './sound';
 import { Screen } from './screen';
 import { Install } from './install';
 import { Funnel } from '../core/funnel';
+import { fragmentFor, type Fragment, type FragmentTrigger } from '../core/fragments';
 import type { CombinationId, RecipeId } from '../core/types';
 
 export class Game {
@@ -61,6 +62,8 @@ export class Game {
   private guided = false;
   private tutorialStep = 0;
   private readonly tutorialProgress: TutorialProgress = emptyProgress();
+  /** World fragments already read this run. Cleared by starting over. */
+  private readonly fragmentsSeen = new Set<string>();
 
   private playtimeMs = 0;
   private lastFrame = 0;
@@ -296,6 +299,11 @@ export class Game {
     this.sinceSave = 0;
     this.currentBiome = '';
     Object.assign(this.tutorialProgress, emptyProgress());
+    // Given back on purpose: a reading lands once, and a new run is a player
+    // who has not read it. Anything holding run state needs a line here - the
+    // save used to write the old run straight back for exactly this reason.
+    this.fragmentsSeen.clear();
+    this.ui.hideFragment();
 
     // Waking at the spawn is not a visit, exactly as in the constructor.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
@@ -321,6 +329,24 @@ export class Game {
     this.tutorialStep = run.tutorialStep;
     this.playtimeMs = run.playtimeMs;
     this.guided = run.tutorialStep >= 0;
+    this.fragmentsSeen.clear();
+    for (const id of run.fragmentsSeen) this.fragmentsSeen.add(id);
+  }
+
+  /**
+   * One reading, the first time the player does a thing.
+   *
+   * The guide says what to do and canon withholds why; this is the narrow band
+   * in between - a sentence about what just happened, at the moment the game
+   * has shown it. Silent afterwards, because a reading about something coming
+   * apart into digits is worth nothing on the fortieth kill.
+   */
+  private fragment(on: FragmentTrigger): void {
+    const found = fragmentFor(content.fragments as readonly Fragment[], on, this.fragmentsSeen);
+    if (!found) return;
+    this.fragmentsSeen.add(found.id);
+    this.ui.showFragment(found.title, found.text);
+    this.sound.play('ui');
   }
 
   private persist(): void {
@@ -331,6 +357,7 @@ export class Game {
         started: this.started,
         tutorialStep: this.tutorialStep,
         playtimeMs: this.playtimeMs,
+        fragmentsSeen: [...this.fragmentsSeen],
       },
     );
   }
@@ -365,6 +392,7 @@ export class Game {
     const stat = STAT_NAMES[recipe.effect.stat] ?? recipe.effect.stat;
     this.sound.play('craft');
     this.funnel.mark('crafted');
+    this.fragment('firstCraft');
     this.ui.toast(`${recipe.name}: ${stat} +${recipe.effect.amount}`, 'good');
     this.tutorialProgress.crafted += 1;
     this.awardXp(this.progression.award('firstCraft', recipe.id), `First craft: ${recipe.name}`);
@@ -390,6 +418,7 @@ export class Game {
     this.tutorialProgress.combinationsUsed += 1;
     this.sound.play('cast');
     this.funnel.mark('cast');
+    this.fragment('firstCast');
     this.cooldowns.set(combination.id, combination.cooldownSeconds);
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
@@ -477,6 +506,10 @@ export class Game {
     }
 
     this.renderer.update(dt);
+
+    // A reading the player is still in the middle of must not expire while the
+    // world is stopped, which is exactly when somebody would stop to read it.
+    if (!this.pause.visible) this.ui.tickFragment(dt);
     this.renderer.draw(this.world, {
       pullRadius: this.inventory.pullRadius / content.unitsPerPixel,
       pulling: this.pulling,
@@ -543,6 +576,7 @@ export class Game {
     if (this.world.absorbed.length) {
       this.sound.play('absorb');
       this.funnel.mark('gathered');
+      this.fragment('firstMaterial');
       if (wasMoving) this.funnel.mark('gatheredWhileMoving');
     }
     for (const material of this.world.absorbed) {
@@ -621,6 +655,7 @@ export class Game {
           (34 + enemy.def.tier * 8) * 1.35,
         );
       }
+      if (event.kind === 'enemy-killed') this.fragment('firstKill');
       if (event.kind === 'player-hit') this.sound.play('hurt');
       if (event.kind === 'player-died') {
         this.sound.play('hurt');
@@ -644,6 +679,7 @@ export class Game {
         'Wave cleared',
       );
     }
+    if (cleared > 0) this.fragment('waveCleared');
   }
 
   private runSummary(): string {
@@ -661,7 +697,10 @@ export class Game {
 
     if (disc) {
       this.ui.setPlace(disc.name, disc.mood);
-      if (disc.id !== content.spawnBiome.id) this.funnel.mark('leftSpawnBiome');
+      if (disc.id !== content.spawnBiome.id) {
+        this.funnel.mark('leftSpawnBiome');
+        this.fragment('newBiome');
+      }
       if (this.progression.countSeen('firstBiome') >= content.biomes.length) this.funnel.mark('sawAllBiomes');
       this.awardXp(this.progression.award('firstBiome', disc.id), `Reached ${disc.name}`);
     } else {

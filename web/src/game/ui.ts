@@ -89,6 +89,8 @@ function onPress(target: HTMLElement, handler: () => void): void {
 
 export class Ui {
   private readonly toasts = el('div', 'toasts');
+  private readonly fragment = el('div', 'fragment');
+  private fragmentTimer = 0;
   private readonly objective = el('div', 'objective');
   private readonly place = el('div', 'place');
   private readonly placeName = el('b');
@@ -137,6 +139,7 @@ export class Ui {
     this.buildOrbs();
     this.buildCluster();
     this.buildSheet();
+    this.buildFragment();
     this.root.append(this.toasts);
   }
 
@@ -276,6 +279,62 @@ export class Ui {
     this.sheet.append(header, this.tabs, warn, this.sheetBody);
     this.sheet.hidden = true;
     this.root.append(this.sheet);
+  }
+
+  /**
+   * The world saying something about itself.
+   *
+   * Not a toast: a toast is a receipt for something the player just did and is
+   * gone in two seconds. This is a sentence worth finishing, so it holds until
+   * it is dismissed or until long enough has passed that it has been read, and
+   * it is styled as a reading rather than as feedback.
+   *
+   * It never blocks. Nothing here pauses the world, because a wave clearing is
+   * one of the moments it fires on and stopping the game to narrate that would
+   * take the beat away from the thing it is narrating.
+   */
+  private buildFragment(): void {
+    this.fragment.dataset.ui = '';
+    this.fragment.hidden = true;
+    onPress(this.fragment, () => this.hideFragment());
+    /*
+     * In the flow, directly under the objective banner.
+     *
+     * Floated at a fixed offset it landed on that banner - measured at 367x68
+     * of overlap in portrait and 187px wide in landscape - because the banner
+     * is three lines sometimes and one line others, and no constant is right
+     * for both. Stacked, it cannot overlap whatever the banner turned out to
+     * be. Landscape overrides this back to absolute, because there the banner
+     * is overlaid and the right half of the screen is empty.
+     */
+    this.objective.after(this.fragment);
+  }
+
+  showFragment(title: string, text: string): void {
+    this.fragment.replaceChildren(
+      el('b', undefined, title),
+      el('p', undefined, text),
+      el('span', 'fdismiss', 'tap to dismiss'),
+    );
+    this.fragment.hidden = false;
+    this.fragment.classList.remove('going');
+    // Long enough to read twice at a walking pace, since it arrives while the
+    // player is doing something else.
+    this.fragmentTimer = 9;
+  }
+
+  hideFragment(): void {
+    if (this.fragment.hidden) return;
+    this.fragmentTimer = 0;
+    this.fragment.classList.add('going');
+    this.fragment.hidden = true;
+  }
+
+  /** Ticked from the game loop, so it does not expire while the game is paused. */
+  tickFragment(dt: number): void {
+    if (this.fragment.hidden || this.fragmentTimer <= 0) return;
+    this.fragmentTimer -= dt;
+    if (this.fragmentTimer <= 0) this.hideFragment();
   }
 
   // ---------------------------------------------------------------- state in

@@ -262,6 +262,8 @@ export interface ContentBundle {
   progression: ProgressionConfig;
   tutorial: readonly TutorialStep[];
   opening: OpeningScript;
+  /** What the world says about itself, and on which first-time action. */
+  fragments: readonly { id: string; on: string; title: string; text: string }[];
   elements: readonly ElementDef[];
   materials: readonly MaterialDef[];
   biomes: readonly BiomeDef[];

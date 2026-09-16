@@ -33,6 +33,7 @@ export interface SavedRun {
   started: boolean;
   tutorialStep: number;
   playtimeMs: number;
+  fragmentsSeen?: string[];
 }
 
 export interface RunState {
@@ -40,6 +41,14 @@ export interface RunState {
   started: boolean;
   tutorialStep: number;
   playtimeMs: number;
+  /**
+   * Which world fragments have already been read.
+   *
+   * Part of the run rather than the device, so starting over gives them back:
+   * the whole point of a reading about a thing coming apart into digits is
+   * that it lands the first time.
+   */
+  fragmentsSeen: string[];
 }
 
 export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
@@ -52,6 +61,7 @@ export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
     started: run.started,
     tutorialStep: run.tutorialStep,
     playtimeMs: Math.round(run.playtimeMs),
+    fragmentsSeen: [...run.fragmentsSeen],
   };
 }
 
@@ -80,6 +90,9 @@ export function deserialize(content: Content, bundle: SaveBundle, raw: unknown):
     },
     started: saved.started === true,
     tutorialStep: Math.max(0, Math.trunc(saved.tutorialStep ?? 0)),
+    // Optional in the saved shape: a run written before fragments existed
+    // simply has none read yet, which is the right answer for it.
+    fragmentsSeen: Array.isArray(saved.fragmentsSeen) ? saved.fragmentsSeen.filter((id) => typeof id === 'string') : [],
     playtimeMs: Math.max(0, saved.playtimeMs ?? 0),
   };
 }

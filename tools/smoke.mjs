@@ -864,6 +864,84 @@ check('and it wakes up again', await page.locator('.opening').isVisible());
 await page.locator('.opening').dispatchEvent('pointerdown');
 await page.waitForTimeout(300);
 
+// ---------------------------------------------------------------- fragments
+
+/*
+ * The world saying something about itself.
+ *
+ * The guide says what to do and canon withholds why; these are the six moments
+ * in between. The failure worth catching is repetition - "fires every time"
+ * looks exactly like "fires" until somebody plays for ten minutes.
+ */
+{
+  await peek(() => {
+    const g = window.maelstrom;
+    g.ui.hideFragment();
+    g.fragmentsSeen.clear();
+    g.fragment('firstKill');
+  });
+  await page.waitForTimeout(150);
+  const reading = await page.locator('.fragment b').textContent();
+  check('killing something says something about it', reading === 'Deletion', reading ?? 'nothing');
+
+  await page.locator('.fragment').click();
+  await page.waitForTimeout(150);
+  check('and it can be dismissed', await page.locator('.fragment').isHidden());
+
+  await peek(() => window.maelstrom.fragment('firstKill'));
+  await page.waitForTimeout(150);
+  check('it never says the same thing twice', await page.locator('.fragment').isHidden());
+
+  await peek(() => window.maelstrom.fragment('firstCraft'));
+  await page.waitForTimeout(150);
+  check(
+    'but a different moment still has its own line',
+    (await page.locator('.fragment b').textContent()) === 'Specification',
+  );
+  await page.locator('.fragment').click();
+  await page.waitForTimeout(150);
+
+  /*
+   * It must not stop the game. One of the moments it fires on is a wave
+   * clearing, and pausing to narrate that would take the beat away from the
+   * thing being narrated.
+   */
+  /*
+   * It has to fit alongside the HUD it appears over. Centred, it landed on the
+   * objective banner in landscape - 187px of overlap, which no screenshot in
+   * the suite happened to catch because the banner is usually gone by then.
+   */
+  await peek(() => {
+    window.maelstrom.fragmentsSeen.clear();
+    window.maelstrom.fragment('firstKill');
+  });
+  await page.waitForTimeout(200);
+  const collides = await page.evaluate(() => {
+    const reading = document.querySelector('.fragment')?.getBoundingClientRect();
+    if (!reading) return 'no reading';
+    const hits = [];
+    for (const sel of ['.objective', '.place', '.level', '.action.attack', '.action.pull', '.orbwrap', '.nav-btn']) {
+      const other = document.querySelector(sel)?.getBoundingClientRect();
+      if (!other || other.width === 0) continue;
+      const w = Math.min(reading.right, other.right) - Math.max(reading.left, other.left);
+      const h = Math.min(reading.bottom, other.bottom) - Math.max(reading.top, other.top);
+      if (w > 2 && h > 2) hits.push(`${sel} (${Math.round(w)}x${Math.round(h)})`);
+    }
+    return hits.join('; ');
+  });
+  check('a reading does not land on the HUD', collides === '', collides);
+  await page.locator('.fragment').click();
+  await page.waitForTimeout(150);
+
+  await peek(() => window.maelstrom.fragment('firstCast'));
+  const before = await peek(() => window.maelstrom.world.time);
+  await page.waitForTimeout(400);
+  const later = await peek(() => window.maelstrom.world.time);
+  check('a reading does not stop the world', later > before, `${(later - before).toFixed(2)}s passed`);
+  await page.locator('.fragment').click();
+  await page.waitForTimeout(150);
+}
+
 // -------------------------------------------------------------------- menus
 
 /*

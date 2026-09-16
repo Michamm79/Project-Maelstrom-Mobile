@@ -47,6 +47,7 @@ const waves = read('content/waves.json');
 const tutorialFile = read('content/tutorial.json');
 const tutorial = tutorialFile.steps;
 const opening = tutorialFile.opening;
+const fragments = tutorialFile.fragments?.list ?? [];
 const progression = read('content/progression.json');
 
 // ---------------------------------------------------------------- elements
@@ -381,6 +382,41 @@ else {
   if (total > 15) fail(`the opening scene runs ${total.toFixed(1)}s before the player may move`);
 }
 
+/*
+ * The fragments, checked the same way the tutorial steps are.
+ *
+ * A fragment hung off a trigger the game never fires does not break anything.
+ * It just never appears, which is exactly the kind of quiet nothing that
+ * survives a release - so it is a build error instead.
+ */
+const triggerSource = readFileSync(join(ROOT, 'web/src/core/fragments.ts'), 'utf8');
+const triggerBlock = triggerSource.match(/FRAGMENT_TRIGGERS = \[([\s\S]*?)\]/);
+if (!triggerBlock) fail('could not find FRAGMENT_TRIGGERS in web/src/core/fragments.ts');
+const triggers = new Set([...(triggerBlock?.[1] ?? '').matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]));
+
+const fragmentIds = new Set();
+const usedTriggers = new Set();
+for (const fragment of fragments) {
+  if (fragmentIds.has(fragment.id)) fail(`duplicate fragment id "${fragment.id}"`);
+  fragmentIds.add(fragment.id);
+  if (!fragment.title || !fragment.text) fail(`fragment "${fragment.id}" is missing a title or text`);
+  if (!triggers.has(fragment.on)) {
+    fail(`fragment "${fragment.id}" fires on "${fragment.on}", which is not a trigger the game raises`);
+  }
+  // One per moment: two readings landing on the same action would stack on top
+  // of each other and the player would see whichever drew last.
+  if (usedTriggers.has(fragment.on)) fail(`two fragments both fire on "${fragment.on}"`);
+  usedTriggers.add(fragment.on);
+  // Long enough to say something, short enough to read while something is
+  // walking towards you.
+  if (fragment.text.length > 240) {
+    fail(`fragment "${fragment.id}" runs ${fragment.text.length} characters - too long to read mid-run`);
+  }
+}
+for (const trigger of triggers) {
+  if (!usedTriggers.has(trigger)) warn(`no fragment fires on "${trigger}"`);
+}
+
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -399,6 +435,7 @@ const bundle = {
   version: 2,
   progression: { ...progression, xpTable },
   tutorial,
+  fragments: fragments.map((f) => ({ id: f.id, on: f.on, title: f.title, text: f.text })),
   opening: {
     fadeSeconds: opening.fadeSeconds,
     lineSeconds: opening.lineSeconds,

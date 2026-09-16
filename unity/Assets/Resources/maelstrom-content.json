@@ -134,12 +134,52 @@
       "hint": "Gust, Torrent and Emberlash. Someone else made them. At Level 2 you get the workshop."
     }
   ],
+  "fragments": [
+    {
+      "id": "intake",
+      "on": "firstMaterial",
+      "title": "Intake",
+      "text": "The orb takes it without being asked. Whatever these are, they were built to do this - and they were sized for your hands."
+    },
+    {
+      "id": "specification",
+      "on": "firstCraft",
+      "title": "Specification",
+      "text": "The weave closes the way something does when it already knew the shape. You are not inventing. You are assembling a thing that has been made before."
+    },
+    {
+      "id": "deletion",
+      "on": "firstKill",
+      "title": "Deletion",
+      "text": "It does not fall. It comes apart into the digits it was standing in for, and they go out one at a time. Whatever that was, it was never alive. It was allocated."
+    },
+    {
+      "id": "boundary",
+      "on": "newBiome",
+      "title": "Boundary",
+      "text": "The ground changes underfoot and simply keeps going. No wall, no door, nothing loads. Whoever laid this out did not expect anyone to walk between the parts of it."
+    },
+    {
+      "id": "assessment",
+      "on": "waveCleared",
+      "title": "Assessment",
+      "text": "The quiet comes back all at once, which is not how quiet works. Something decided the test had finished. Something is keeping the result."
+    },
+    {
+      "id": "privilege",
+      "on": "firstCast",
+      "title": "Privilege",
+      "text": "Two elements go in and something leaves your hands that you did not design. This was stocked. Someone expected you to need it, and put it where you would find it."
+    }
+  ],
   "opening": {
     "fadeSeconds": 2.4,
-    "lineSeconds": 2.8,
+    "lineSeconds": 2.5,
     "lines": [
       "You wake.",
       "Two half-orbs hang above your hands. They were not there before.",
+      "The ground is warm. Something under it is still running.",
+      "There is a horizon, and there is an edge. They are not the same distance away.",
       "Nobody explains why. Only what to do, and where to go."
     ]
   },

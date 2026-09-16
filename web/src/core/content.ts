@@ -5,6 +5,7 @@
  * missing-asset failure mode.
  */
 import bundleJson from '@content/maelstrom-content.json';
+import type { Fragment } from './fragments';
 import type {
   AlchemyCombination,
   BiomeDef,
@@ -40,6 +41,7 @@ export class Content {
   readonly tutorial: readonly TutorialStep[] = bundle.tutorial;
   /** The waking scene that plays before the first guide card. */
   readonly opening: OpeningScript = bundle.opening;
+  readonly fragments: readonly Fragment[] = bundle.fragments as readonly Fragment[];
   /** Unreal units per screen unit; canon distances are stored in uu. */
   readonly unitsPerPixel: number = bundle.unitsPerPixel ?? 12;
 
