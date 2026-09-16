@@ -161,6 +161,10 @@ export interface Player {
   mirrored: boolean;
   frame: number;
   travelled: number;
+  /** Seconds since the last swing, which is what Dotore's charge is made of. */
+  sinceSwing: number;
+  /** 0..1 of a full charge. Held here so the renderer can draw it. */
+  charge: number;
   /** Shield, heal, concealment and revelation - see core/status.ts. */
   status: PlayerStatus;
 }
@@ -226,6 +230,8 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
     mirrored: false,
     frame: 0,
     travelled: 0,
+    sinceSwing: 99,
+    charge: 0,
     status: freshStatus(),
   };
 }
@@ -255,11 +261,31 @@ export const SWING_SECONDS = 0.26;
 /** The tell before a blow lands, so a hit is something you can see coming. */
 export const WIND_UP_SECONDS = 0.42;
 
-/** What crafting adds to the swing. See GAUNTLET_STATS: the hands are the weapon. */
+/**
+ * Everything outside the world that changes what a swing does.
+ *
+ * Crafting supplies the flat parts - the hands are the weapon, so the gauntlet
+ * upgrades reach the attack - and the telemetry read supplies the scales. Both
+ * are passed in rather than held, because the world owns neither an inventory
+ * nor an archetype and a copy of these numbers kept here would go stale the
+ * moment either changed.
+ */
 export interface StrikeBonus {
   damage: number;
   range: number;
+  /** Multiplies the final damage. Nahaste's stated cost; Amorratua's edge. */
+  damageScale?: number;
+  /** Multiplies the per-hit combo bonus. */
+  comboBonus?: number;
+  /** Added to the combo ceiling. */
+  comboMax?: number;
+  /** Dotore: seconds of not swinging that build a full charge. */
+  chargeSeconds?: number;
+  /** Dotore: the fraction a full charge adds to the blow. */
+  chargeBonus?: number;
 }
+
+const NO_BONUS: StrikeBonus = { damage: 0, range: 0 };
 
 export class World {
   readonly nodes: WorldNode[] = [];
@@ -276,6 +302,14 @@ export class World {
   readonly discs: BiomeDisc[] = [];
   readonly player: Player;
   readonly boundaryRadius: number;
+  /**
+   * What crafting and the telemetry read add to a swing.
+   *
+   * Set by the game layer whenever either changes. Held rather than passed on
+   * every call because the renderer needs the charge fields too, and two copies
+   * of the same numbers is how one of them goes stale.
+   */
+  strike: StrikeBonus = { ...NO_BONUS };
 
   /** Drained by the game layer each frame. */
   readonly events: CombatEvent[] = [];
@@ -825,8 +859,9 @@ export class World {
    * never promises a hit it cannot land - and the arc means neighbours of the
    * target get caught too, which is what stops a crowd becoming a queue.
    */
-  swing(bonus: StrikeBonus = { damage: 0, range: 0 }): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
+  swing(override?: StrikeBonus): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
     const player = this.player;
+    const bonus = override ?? this.strike;
     const attack = this.content.progression.combat.basicAttack;
     if (player.dead || player.attackCooldown > 0) return null;
 
@@ -849,15 +884,30 @@ export class World {
     this.faceToward(target.x, target.y);
 
     // Staying on one target builds the combo; switching or losing it resets.
+    const comboMax = attack.comboMax + (bonus.comboMax ?? 0);
     if (player.comboTargetId === target.id && player.comboTimer > 0) {
-      player.combo = Math.min(attack.comboMax, player.combo + 1);
+      player.combo = Math.min(comboMax, player.combo + 1);
     } else {
       player.combo = 0;
     }
     player.comboTargetId = target.id;
     player.comboTimer = attack.comboWindowSeconds;
 
-    const damage = attack.damage + bonus.damage + player.combo * attack.comboBonus;
+    /*
+     * Dotore's charge, spent here and nowhere else.
+     *
+     * Canon gives the archetype one line - charge builds, and is released into
+     * the next attack - so it is read off the time since the last swing and
+     * consumed whole, rather than being a meter with its own button. Somebody
+     * who is not Dotore has a chargeBonus of nothing and this is a multiply by
+     * one.
+     */
+    const charged = 1 + player.charge * (bonus.chargeBonus ?? 0);
+    player.sinceSwing = 0;
+    player.charge = 0;
+
+    const combo = player.combo * attack.comboBonus * (bonus.comboBonus ?? 1);
+    const damage = (attack.damage + bonus.damage + combo) * (bonus.damageScale ?? 1) * charged;
     const halfArc = (attack.arcDegrees * Math.PI) / 360;
     const hit: Enemy[] = [];
     const killed: Enemy[] = [];
@@ -889,7 +939,7 @@ export class World {
        * tier 1. Ramped, early hits hold the target inside reach and the last
        * one sends it - which is also the more satisfying shape.
        */
-      const through = attack.comboMax > 0 ? player.combo / attack.comboMax : 1;
+      const through = comboMax > 0 ? player.combo / comboMax : 1;
       const shove = (attack.knockback * (COMBO_SHOVE_FLOOR + (1 - COMBO_SHOVE_FLOOR) * through)) / weight;
       enemy.knockX += (dx / length) * shove;
       enemy.knockY += (dy / length) * shove;
@@ -911,7 +961,7 @@ export class World {
   }
 
   /** Resolve one alchemical combination against whatever it catches. */
-  cast(combination: AlchemyCombination): Enemy[] {
+  cast(combination: AlchemyCombination, damageScale = 1): Enemy[] {
     const effect = combination.effect;
     // Whatever the shape, the caster's own timers are set first: a self-cast
     // catches nobody and would otherwise fall straight past the loop below and
@@ -951,8 +1001,9 @@ export class World {
         enemy.slow = Math.max(enemy.slow, effect.slowSeconds);
         enemy.slowScale = Math.min(enemy.slowScale, effect.slowScale ?? 0.5);
       }
-      const died = applyDamage(enemy, hit.damage);
-      this.events.push({ kind: 'enemy-hit', enemy, amount: hit.damage });
+      const dealt = hit.damage * damageScale;
+      const died = applyDamage(enemy, dealt);
+      this.events.push({ kind: 'enemy-hit', enemy, amount: dealt });
       if (died) {
         this.events.push({ kind: 'enemy-killed', enemy });
         killed.push(enemy);
@@ -1186,6 +1237,12 @@ export class World {
     player.attackCooldown = Math.max(0, player.attackCooldown - dt);
     player.comboTimer = Math.max(0, player.comboTimer - dt);
     if (player.comboTimer <= 0 && player.combo > 0) this.breakCombo();
+
+    // The charge. Zero for anybody the telemetry did not read as Dotore, since
+    // chargeSeconds is absent and this stays at nothing.
+    player.sinceSwing += dt;
+    const buildIn = this.strike.chargeSeconds ?? 0;
+    player.charge = buildIn > 0 && !player.dead ? Math.min(1, player.sinceSwing / buildIn) : 0;
 
     if (player.dead) {
       // Death is a setback, not a reset: canon never wipes the world or

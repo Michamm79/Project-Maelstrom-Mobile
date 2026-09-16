@@ -2660,3 +2660,18 @@ button.ghost.wide {
   margin-top: 8px;
   pointer-events: auto;
 }
+
+/* The telemetry read. Its own colour, because it is neither channel - it is
+   the thing both of them are arguing about. */
+.row-item.note.assess {
+  border-left: 3px solid #b07cf0;
+}
+.row-item.note.assess b {
+  color: #d7b8f5;
+  font-style: normal;
+  letter-spacing: 0.02em;
+}
+.row-item.note.assess .tag {
+  color: #c9a8ea;
+  border-color: rgba(176, 124, 240, 0.4);
+}

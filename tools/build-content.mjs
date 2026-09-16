@@ -61,6 +61,7 @@ const progression = read('content/progression.json');
 const notesFile = read('content/notes.json');
 const notes = notesFile.notes;
 const ending = read('content/ending.json');
+const archetypes = read('content/archetypes.json');
 
 // ---------------------------------------------------------------- elements
 
@@ -766,6 +767,78 @@ else {
   }
 }
 
+// ------------------------------------------------------------- archetypes
+
+/*
+ * The telemetry read, which grants the rune and the class.
+ *
+ * Canon names three archetypes and two levels and does not supply a single
+ * number, so everything checkable here is structural - and all of it fails
+ * quietly. A signal with no scale is counted in its own raw units and drowns
+ * out every other signal; an archetype that leans on a signal that does not
+ * exist is one the read can never pick; a grant of 1.0 is an archetype that
+ * does nothing at all and is indistinguishable from one that works.
+ */
+if (!archetypes) fail('content/archetypes.json is missing, so nothing is ever read from the player');
+else {
+  const signals = new Set(archetypes.signals ?? []);
+  if (signals.size !== 7) fail(`there are ${signals.size} signals; canon says the telemetry reads seven`);
+  for (const signal of signals) {
+    if (!(archetypes.scales?.[signal] > 0)) {
+      fail(`signal "${signal}" has no scale, so it is compared in its own raw units and drowns out the rest`);
+    }
+  }
+  for (const signal of Object.keys(archetypes.scales ?? {})) {
+    if (!signal.startsWith('$') && !signals.has(signal)) fail(`a scale is given for "${signal}", which is not a signal`);
+  }
+
+  if (archetypes.runeLevel !== progression.alchemyUnlockLevel) {
+    fail(`the rune lands at level ${archetypes.runeLevel} and canon puts it with the workshop at ${progression.alchemyUnlockLevel}`);
+  }
+  // Canon is explicit that the rune reads the tutorial period as roughly half
+  // its evidence. At 0 or 1 the two reads are the same read.
+  if (!(archetypes.tutorialWeight > 0) || archetypes.tutorialWeight >= 1) {
+    fail(`tutorialWeight is ${archetypes.tutorialWeight}; canon weights the tutorial period at roughly half, and 0 or 1 collapses the two reads into one`);
+  }
+
+  const seen = new Set();
+  const leanedOn = new Set();
+  for (const a of archetypes.archetypes ?? []) {
+    if (seen.has(a.id)) fail(`duplicate archetype id "${a.id}"`);
+    seen.add(a.id);
+    for (const field of ['name', 'rune', 'description', 'runeDescription']) {
+      if (!a[field]) fail(`archetype "${a.id}" is missing "${field}"`);
+    }
+    const leans = Object.entries(a.leans ?? {});
+    if (!leans.length) fail(`archetype "${a.id}" leans on nothing, so the read can only ever pick it by accident`);
+    for (const [signal, weight] of leans) {
+      if (!signals.has(signal)) fail(`archetype "${a.id}" leans on "${signal}", which is not a signal`);
+      else if (weight > 0) leanedOn.add(signal);
+      if (typeof weight !== 'number' || weight === 0) fail(`archetype "${a.id}" leans on "${signal}" by ${weight}`);
+    }
+    for (const which of ['runeGrants', 'classGrants']) {
+      const grant = a[which] ?? {};
+      const values = Object.entries(grant);
+      if (!values.length) fail(`archetype "${a.id}" has empty ${which}, so being read as it changes nothing`);
+      for (const [key, value] of values) {
+        if (typeof value !== 'number') fail(`archetype "${a.id}" ${which}.${key} is not a number`);
+        else if (key.endsWith('Scale') && !(value > 0)) fail(`archetype "${a.id}" ${which}.${key} is ${value}; a scale of zero deletes the thing it scales`);
+      }
+      if (grant.chargeBonus !== undefined && !(grant.chargeSeconds > 0)) {
+        fail(`archetype "${a.id}" ${which} grants a charge bonus with no time to build it in`);
+      }
+    }
+  }
+  if (seen.size < 2) fail('there is nothing for the read to choose between');
+  // A signal nothing leans towards is a counter the game keeps and never uses.
+  for (const signal of signals) {
+    if (!leanedOn.has(signal)) warn(`no archetype leans towards "${signal}", so that signal can only ever count against a player`);
+  }
+  for (const id of ['nahaste', 'amorratua', 'dotore']) {
+    if (!seen.has(id)) fail(`archetype "${id}" is named in GDD section 9 and is not here`);
+  }
+}
+
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -816,6 +889,7 @@ const bundle = {
   enemies: enemyTiers,
   waves,
   ending,
+  archetypes,
 };
 
 /**

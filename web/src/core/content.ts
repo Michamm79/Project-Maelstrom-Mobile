@@ -8,6 +8,7 @@ import bundleJson from '@content/maelstrom-content.json';
 import type { Fragment } from './fragments';
 import type { NoteDef } from './notes';
 import type { EndingDef } from './ending';
+import type { ArchetypeConfig } from './telemetry';
 import type {
   AlchemyCombination,
   BiomeDef,
@@ -42,6 +43,9 @@ export class Content {
   readonly waves: WavesDef = bundle.waves;
   /** The breach, and the three ways it reads afterwards. */
   readonly ending: EndingDef = bundle.ending;
+  /** The seven signals, and the three things they can decide you are. */
+  readonly archetypes: ArchetypeConfig & { scales: Readonly<Record<string, number>> } =
+    bundle.archetypes;
   readonly tutorial: readonly TutorialStep[] = bundle.tutorial;
   /** The waking scene that plays before the first guide card. */
   readonly opening: OpeningScript = bundle.opening;

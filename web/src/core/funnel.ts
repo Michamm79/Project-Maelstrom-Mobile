@@ -35,6 +35,16 @@ export const STEPS = [
   'struck',
   'killed',
   'reachedLevel2',
+  /*
+   * The two moments the system says something about the player.
+   *
+   * Neither is chosen from a menu, so these are the only evidence that anybody
+   * noticed it happened - and the spread of which archetype is granted is the
+   * only evidence the read is doing anything more interesting than always
+   * returning the same one.
+   */
+  'gotRune',
+  'gotClass',
   'cast',
   'leftSpawnBiome',
   'readBulletin',

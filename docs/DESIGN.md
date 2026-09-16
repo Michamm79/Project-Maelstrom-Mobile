@@ -301,19 +301,51 @@ build two channels instead of one.
 Every word of it is invented and flagged in the content file, alongside what
 canon does support.
 
+## Being assessed
+
+GDD §10 reads the player continuously and grants a **rune at Level 2** and a
+**class at Level 5**, neither ever chosen from a menu. §9 names three archetypes
+and gives each a mechanical identity — and those hooks are what each one is
+built out of, rather than three sets of invented numbers:
+
+| | canon's line | what it grants |
+|---|---|---|
+| **Amorratua** | damage scales with *"consecutive hits without disengaging"* | a longer combo ceiling and double the per-hit bonus |
+| **Nahaste** | *"near-zero unarmed capability"*, given as this archetype's **cost** | basic attack at 0.4×, casts at 1.45×, cooldowns at 0.7× |
+| **Dotore** | builds charge *"released into the next attack"* | a charge that fills while you are not swinging |
+
+Seven signals — gathering, roaming, aggression, alchemy, patience, curiosity,
+risk — each normalised against its own scale so that 26,000 units walked is the
+same amount of evidence as twelve casts. Without those scales, roaming drowns
+out everything else purely by being counted in smaller pieces, and reads every
+player as Dotore.
+
+> Canon warns this **cannot be retrofitted**, since the rune reads the tutorial
+> period as roughly half its evidence. That is a warning about *when the data
+> starts existing*, not about the grant — so the read starts on the first frame,
+> the tutorial period is banked the instant the rune lands, and the class read
+> weights that banked period at exactly half against everything since. The whole
+> reading is saved, because a run resumed the next day with that period missing
+> would be read as somebody who never did a tutorial.
+
+The rune and the class can be **different archetypes**. Somebody whose play
+changed will hold one of each, and the grants merge field by field rather than
+the later one replacing the earlier. Canon never says they have to agree.
+
+It is shown in the **Log**, next to the two channels arguing about the system,
+because that is what it is — and the row says *"You were not asked"*, because a
+player looking at it will go looking for the menu that let them pick it.
+
 ## Not built
 
-Deliberately, because it needs canon decisions rather than code:
+- Nothing named in canon is now unbuilt. The two systems that were —
+  Information Integrity and the telemetry read — are above.
 
-- **Telemetry and the rune.** The seven signals, and the Level 2 read that
-  assigns an archetype without ever showing a menu. Canon warns this cannot be
-  retrofitted, since the rune reads the tutorial period as roughly half its
-  evidence. The class at Level 5 is the same system and has the same problem.
-
-And one thing that is built but is the author's to replace:
+One thing that is built but is the author's to replace:
 
 - **Everything past canon.** Eight of the eleven alchemy combinations, nine of
-  the thirteen recipes, all nineteen notes, the ending, and every level above 2
-  are inferred. Each is flagged in its own content file with what canon does
-  support and what was invented on top of it — so replacing any of them is an
-  edit to one JSON file, not an archaeology exercise.
+  the thirteen recipes, all nineteen notes, the ending, every level above 2, and
+  every number in the archetype read are inferred. Each is flagged in its own
+  content file with what canon does support and what was invented on top of it —
+  so replacing any of them is an edit to one JSON file, not an archaeology
+  exercise.

@@ -13,6 +13,7 @@
 import type { EscalationRules } from './escalation';
 import type { NoteDef } from './notes';
 import type { EndingDef } from './ending';
+import type { ArchetypeConfig } from './telemetry';
 
 export type ElementId = string;
 export type MaterialId = string;
@@ -352,6 +353,8 @@ export interface ContentBundle {
   waves: WavesDef;
   /** How a run is finished. See core/ending.ts. */
   ending: EndingDef;
+  /** What the telemetry reads, and what it grants. See core/telemetry.ts. */
+  archetypes: ArchetypeConfig & { scales: Readonly<Record<string, number>> };
   unitsPerPixel?: number;
 }
 

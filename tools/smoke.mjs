@@ -1188,6 +1188,101 @@ await page.waitForTimeout(300);
   });
 }
 
+// -------------------------------------------------------------- assessment
+
+/*
+ * The telemetry read, which grants the rune and the class.
+ *
+ * Canon's section 10 reads the player continuously and grants both without
+ * ever asking. The parts worth driving in a browser are the two that the unit
+ * tests cannot see: that playing differently is actually read differently
+ * end to end, and that what it grants reaches the swing rather than stopping
+ * at a field nothing consults.
+ */
+{
+  const read = await peek(() => {
+    const g = window.maelstrom;
+    const cfg = g.world.content.archetypes;
+
+    // Play three different ways from scratch, and see what each is called.
+    const runAs = (parts) => {
+      g.reading = { ...g.reading };
+      for (const key of Object.keys(g.reading)) g.reading[key] = 0;
+      Object.assign(g.reading, parts);
+      g.tutorialReading = null;
+      g.rune = null;
+      g.archetype = null;
+      g.readTelemetry(cfg.runeLevel);
+      return g.rune?.id ?? null;
+    };
+
+    return {
+      swinger: runAs({ aggression: 400, risk: 300 }),
+      caster: runAs({ alchemy: 60, gathering: 300, curiosity: 30 }),
+      walker: runAs({ patience: 1400, roaming: 80000, gathering: 60 }),
+    };
+  });
+  check(
+    'playing three different ways is read three different ways',
+    new Set(Object.values(read)).size === 3 && !Object.values(read).includes(null),
+    JSON.stringify(read),
+  );
+
+  // And the grant reaches the swing. Nahaste's unarmed cost is canon's own,
+  // and the clearest thing to measure: the same hit, read two ways.
+  const landed = await peek(() => {
+    const g = window.maelstrom;
+    const cfg = g.world.content.archetypes;
+    const hit = (id) => {
+      g.rune = cfg.archetypes.find((a) => a.id === id);
+      g.archetype = g.rune;
+      g.applyGrants();
+      g.world.enemies.length = 0;
+      const def = JSON.parse(JSON.stringify({ ...g.world.content.enemy('goblin'), hp: 9999, speed: 0, wanderSpeed: 1, noticeRadius: 12, attackRange: 5 }));
+      const enemy = g.world.spawn(def, g.world.player.x + 20, g.world.player.y);
+      g.world.player.attackCooldown = 0;
+      g.world.player.sinceSwing = 99;
+      g.world.player.charge = 1;
+      const before = enemy.hp;
+      g.world.swing();
+      return Number((before - enemy.hp).toFixed(1));
+    };
+    const out = { nahaste: hit('nahaste'), amorratua: hit('amorratua'), dotore: hit('dotore') };
+    g.rune = null;
+    g.archetype = null;
+    g.applyGrants();
+    g.world.enemies.length = 0;
+    return out;
+  });
+  check(
+    "the read reaches the swing - Nahaste's unarmed cost is canon's own",
+    landed.nahaste < landed.amorratua && landed.dotore > landed.amorratua,
+    JSON.stringify(landed),
+  );
+
+  // The charge is only ever above zero for the archetype canon gives it to.
+  const charge = await peek(() => {
+    const g = window.maelstrom;
+    const cfg = g.world.content.archetypes;
+    const after = (id) => {
+      g.rune = id ? cfg.archetypes.find((a) => a.id === id) : null;
+      g.archetype = g.rune;
+      g.applyGrants();
+      g.world.player.sinceSwing = 0;
+      for (let i = 0; i < 300; i++) g.world.update(1 / 60);
+      return Number(g.world.player.charge.toFixed(2));
+    };
+    const out = { dotore: after('dotore'), amorratua: after('amorratua'), nobody: after(null) };
+    g.applyGrants();
+    return out;
+  });
+  check(
+    'the charge builds for Dotore and for nobody else',
+    charge.dotore === 1 && charge.amorratua === 0 && charge.nobody === 0,
+    JSON.stringify(charge),
+  );
+}
+
 // -------------------------------------------------------------- under load
 
 /*

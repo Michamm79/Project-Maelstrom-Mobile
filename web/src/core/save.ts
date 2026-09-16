@@ -38,6 +38,12 @@ export interface SavedRun {
   notesHeld?: string[];
   breach?: number;
   finished?: boolean;
+  telemetry?: {
+    reading?: Record<string, number>;
+    tutorial?: Record<string, number> | null;
+    rune?: string | null;
+    archetype?: string | null;
+  };
   loadout?: { carried?: string[]; known?: string[] };
 }
 
@@ -73,6 +79,20 @@ export interface RunState {
   /** Whether this run has already got out. The world survives it; the ending does not repeat. */
   finished: boolean;
   /**
+   * The seven signals, the banked tutorial period, and what they were read as.
+   *
+   * Saved in full rather than just the granted ids, because canon reads the
+   * tutorial period as roughly half the evidence for the class - and a run
+   * resumed on a second day with that period gone would be read as somebody
+   * who never did a tutorial.
+   */
+  telemetry: {
+    reading: Record<string, number>;
+    tutorial: Record<string, number> | null;
+    rune: string | null;
+    archetype: string | null;
+  };
+  /**
    * The four on the arc, and everything that has ever been offered a slot.
    *
    * `known` is saved alongside `carried` because without it a deliberate
@@ -96,6 +116,12 @@ export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
     notesHeld: [...run.notesHeld],
     breach: run.breach,
     finished: run.finished,
+    telemetry: {
+      reading: { ...run.telemetry.reading },
+      tutorial: run.telemetry.tutorial ? { ...run.telemetry.tutorial } : null,
+      rune: run.telemetry.rune,
+      archetype: run.telemetry.archetype,
+    },
     loadout: { carried: [...run.loadout.carried], known: [...run.loadout.known] },
   };
 }
@@ -136,12 +162,28 @@ export function deserialize(content: Content, bundle: SaveBundle, raw: unknown):
     // that never completes.
     breach: clamp(saved.breach ?? 0, 0, 1),
     finished: saved.finished === true,
+    telemetry: {
+      reading: counters(saved.telemetry?.reading),
+      tutorial: saved.telemetry?.tutorial ? counters(saved.telemetry.tutorial) : null,
+      rune: typeof saved.telemetry?.rune === 'string' ? saved.telemetry.rune : null,
+      archetype: typeof saved.telemetry?.archetype === 'string' ? saved.telemetry.archetype : null,
+    },
     loadout: {
       carried: ids(saved.loadout?.carried),
       known: ids(saved.loadout?.known),
     },
     playtimeMs: Math.max(0, saved.playtimeMs ?? 0),
   };
+}
+
+/** Finite, non-negative numbers only: a NaN here would poison the whole read. */
+function counters(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof value !== 'object' || value === null) return out;
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) out[key] = raw;
+  }
+  return out;
 }
 
 function ids(value: unknown): CombinationId[] {

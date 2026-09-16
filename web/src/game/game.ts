@@ -40,6 +40,16 @@ import {
   type BreachBlock,
 } from '../core/ending';
 import { EndingScene } from './ending';
+import {
+  blend,
+  emptyReading,
+  mergeGrants,
+  profile,
+  readArchetype,
+  type ArchetypeDef,
+  type ArchetypeGrants,
+  type Reading,
+} from '../core/telemetry';
 import { admit, toggleCarried, LOADOUT_SLOTS, type LoadoutState } from '../core/loadout';
 import type { CombinationId, RecipeId } from '../core/types';
 
@@ -78,6 +88,22 @@ export class Game {
   private readonly fragmentsSeen = new Set<string>();
   /** Notes picked up off the ground, from either channel. */
   private readonly notesHeld = new Set<string>();
+
+  /*
+   * The seven signals, and what they have been read as.
+   *
+   * Canon's section 10 reads the player continuously and grants a rune at
+   * Level 2 and a class at Level 5, neither ever chosen from a menu. It warns
+   * the system cannot be retrofitted, because the rune reads the tutorial
+   * period as roughly half its evidence - which is a warning about when the
+   * data starts existing, so this starts counting on the first frame and banks
+   * the tutorial period the moment the rune lands.
+   */
+  private reading: Reading = emptyReading(content.archetypes.signals);
+  private tutorialReading: Reading | null = null;
+  private rune: ArchetypeDef | null = null;
+  private archetype: ArchetypeDef | null = null;
+  private grants: ArchetypeGrants = {};
 
   /** 0..1 along the boundary breach. See core/ending.ts. */
   private breach = 0;
@@ -222,6 +248,7 @@ export class Game {
     // Before the first bind: the arc is drawn from the loadout, and a restored
     // run that has not been reconciled yet draws an empty one.
     this.syncLoadout();
+    this.applyGrants();
     this.ui.bind(this.hudState());
     // currentBiome is deliberately left empty: refreshPlace() skips when the
     // biome has not changed, so seeding it here meant the place card never got
@@ -259,10 +286,7 @@ export class Game {
   }
 
   private attack(): void {
-    const result = this.world.swing({
-      damage: this.inventory.strikeDamage,
-      range: this.inventory.strikeReach,
-    });
+    const result = this.world.swing();
     if (!result) return;
     this.sound.play(result.hit.length ? 'hit' : 'ui', 1 + result.combo * 0.12);
     if (result.hit.length) this.funnel.mark('struck');
@@ -270,7 +294,10 @@ export class Game {
     for (let i = 0; i < result.killed.length; i++) this.sound.play('kill');
     this.ui.setCombo(result.combo);
     if (result.killed.length) this.waves.notifyKills(result.killed.length);
-    if (result.hit.length) this.tutorialProgress.struck += 1;
+    if (result.hit.length) {
+      this.tutorialProgress.struck += 1;
+      this.signal('aggression', result.hit.length);
+    }
   }
 
   private useSkill(id: CombinationId): void {
@@ -322,6 +349,11 @@ export class Game {
     this.waves.reset();
 
     this.cooldowns.clear();
+    this.reading = emptyReading(content.archetypes.signals);
+    this.tutorialReading = null;
+    this.rune = null;
+    this.archetype = null;
+    this.applyGrants();
     this.breach = 0;
     this.breachStage = -1;
     this.breachSpawn = 0;
@@ -380,6 +412,14 @@ export class Game {
     this.breach = run.breach;
     this.breachStage = stageIndex(run.breach, content.ending.stages);
     this.finished = run.finished;
+
+    this.reading = { ...emptyReading(content.archetypes.signals), ...run.telemetry.reading };
+    this.tutorialReading = run.telemetry.tutorial;
+    const find = (id: string | null) =>
+      id ? (content.archetypes.archetypes.find((a) => a.id === id) ?? null) : null;
+    this.rune = find(run.telemetry.rune);
+    this.archetype = find(run.telemetry.archetype);
+    this.applyGrants();
   }
 
   /**
@@ -412,6 +452,7 @@ export class Game {
     if (!def) return;
 
     this.notesHeld.add(id);
+    this.signal('curiosity');
     this.sound.play('absorb');
     this.funnel.mark(def.channel === 'jakindur' ? 'foundNote' : 'readBulletin');
     this.ui.showFragment(def.title, def.text, def.channel);
@@ -429,6 +470,89 @@ export class Game {
     this.ui.refresh(this.hudState());
   }
 
+  // ------------------------------------------------------- what it reads
+
+  /** Add to one of the seven counters. Anything not in the list is ignored. */
+  private signal(name: string, amount = 1): void {
+    if (amount <= 0 || !(name in this.reading)) return;
+    this.reading[name] = (this.reading[name] ?? 0) + amount;
+  }
+
+  /**
+   * Everything the telemetry currently has, weighted the way canon says.
+   *
+   * Before the rune lands there is only one period and the whole run is it.
+   * After, the tutorial period is banked and counts for `tutorialWeight` -
+   * canon's "roughly half its evidence" - against everything since.
+   */
+  private currentProfile(): Reading {
+    const { scales, tutorialWeight } = content.archetypes;
+    const whole = profile(this.reading, scales);
+    if (!this.tutorialReading) return whole;
+
+    const early = profile(this.tutorialReading, scales);
+    const since: Reading = {};
+    for (const signal of content.archetypes.signals) {
+      since[signal] = Math.max(0, (this.reading[signal] ?? 0) - (this.tutorialReading[signal] ?? 0));
+    }
+    return blend(early, profile(since, scales), tutorialWeight);
+  }
+
+  /**
+   * Read the player, and grant whatever that came out as.
+   *
+   * Called on level-up only. Canon has two moments - a rune at Level 2 and a
+   * class at Level 5 - and nothing in between, which is what stops this being
+   * a stat screen that shuffles while you watch it.
+   */
+  private readTelemetry(level: number): void {
+    const { runeLevel, archetypes } = content.archetypes;
+    const classLevel = content.progression.classLevel;
+
+    if (!this.rune && level >= runeLevel) {
+      // Bank the tutorial period at the moment it stops being the tutorial.
+      this.tutorialReading = { ...this.reading };
+      this.rune = readArchetype(profile(this.reading, content.archetypes.scales), archetypes);
+      if (this.rune) {
+        this.funnel.mark('gotRune');
+        this.ui.toast(`${this.rune.rune}. ${this.rune.runeDescription}`, 'big');
+      }
+    }
+
+    if (!this.archetype && level >= classLevel) {
+      this.archetype = readArchetype(this.currentProfile(), archetypes);
+      if (this.archetype) {
+        this.funnel.mark('gotClass');
+        this.ui.toast(`You have been assessed as ${this.archetype.name}.`, 'big');
+        this.ui.toast(this.archetype.description, 'big');
+      }
+    }
+
+    this.applyGrants();
+  }
+
+  /**
+   * Fold the rune and the class into one set of numbers, and hand them to the
+   * world.
+   *
+   * The two can be different archetypes - the rune reads the tutorial and the
+   * class reads the run, and somebody whose play changed will hold one of each.
+   * Canon never says they have to agree, so they merge field by field rather
+   * than the later one replacing the earlier wholesale.
+   */
+  private applyGrants(): void {
+    this.grants = mergeGrants(this.rune?.runeGrants, this.archetype?.classGrants);
+    this.world.strike = {
+      damage: this.inventory.strikeDamage,
+      range: this.inventory.strikeReach,
+      damageScale: this.grants.strikeScale,
+      comboBonus: this.grants.comboBonus,
+      comboMax: this.grants.comboMax,
+      chargeSeconds: this.grants.chargeSeconds,
+      chargeBonus: this.grants.chargeBonus,
+    };
+  }
+
   private persist(): void {
     save(
       { inventory: this.inventory, crafting: this.crafting, progression: this.progression },
@@ -441,6 +565,12 @@ export class Game {
         notesHeld: [...this.notesHeld],
         breach: this.breach,
         finished: this.finished,
+        telemetry: {
+          reading: this.reading,
+          tutorial: this.tutorialReading,
+          rune: this.rune?.id ?? null,
+          archetype: this.archetype?.id ?? null,
+        },
         loadout: this.loadout,
       },
     );
@@ -455,6 +585,8 @@ export class Game {
       alchemy: this.alchemy,
       progression: this.progression,
       notesHeld: this.notesHeld,
+      rune: this.rune,
+      archetype: this.archetype,
       carried: this.loadout.carried,
       slots: LOADOUT_SLOTS,
     };
@@ -479,6 +611,10 @@ export class Game {
       channelRate: 'recovery',
     };
     const stat = STAT_NAMES[recipe.effect.stat] ?? recipe.effect.stat;
+    // Before anything else: two of the recipes raise the swing, and the world
+    // holds its own copy of those numbers. Without this, crafting Coldforged
+    // Knuckles changed the menu and nothing else until the next level-up.
+    this.applyGrants();
     this.sound.play('craft');
     this.funnel.mark('crafted');
     this.fragment('firstCraft');
@@ -513,18 +649,22 @@ export class Game {
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
+    this.signal('alchemy');
     this.sound.play('cast');
     this.funnel.mark('cast');
     this.fragment('firstCast');
     // Scaled by the gauntlets: channelRate is the one crafting stat that
     // reaches alchemy, and it is the reason the deep recipes are worth making
     // once the carry capacity has stopped being the thing holding you back.
-    this.cooldowns.set(combination.id, combination.cooldownSeconds * this.inventory.cooldownScale);
+    this.cooldowns.set(
+      combination.id,
+      combination.cooldownSeconds * this.inventory.cooldownScale * (this.grants.cooldownScale ?? 1),
+    );
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
       `First cast: ${combination.name}`,
     );
-    const killed = this.world.cast(combination);
+    const killed = this.world.cast(combination, this.grants.castScale ?? 1);
     if (killed.length) this.waves.notifyKills(killed.length);
     this.ui.refresh(this.hudState());
   }
@@ -584,6 +724,7 @@ export class Game {
       this.ui.toast('The workshop is open. Alchemy, in the menu.', 'big');
     }
     this.syncLoadout(true);
+    this.readTelemetry(to);
   }
 
   /**
@@ -696,7 +837,16 @@ export class Game {
     if (walked > 0.1) {
       this.sound.play('step');
       this.funnel.mark('walked');
+      this.signal('roaming', walked);
     }
+    /*
+     * Patience is time spent with nothing hunting you.
+     *
+     * Deliberately not "time not attacking": standing still while three
+     * goblins close on you is not patience, it is being about to be hit, and
+     * counting it as patience would read every cornered player as Dotore.
+     */
+    if (!this.world.enemies.some((enemy) => !enemy.dead && enemy.aggro)) this.signal('patience', dt);
 
     this.world.updatePull(
       dt,
@@ -721,6 +871,7 @@ export class Game {
         continue;
       }
       this.tutorialProgress.gathered += 1;
+      this.signal('gathering');
       if (wasMoving) this.tutorialProgress.gatheredMoving += 1;
       this.tutorialProgress.distinctHeld = this.inventory.distinctCount;
       // The carry card's bar, and the last quiet milestone before the warning.
@@ -787,7 +938,10 @@ export class Game {
         );
       }
       if (event.kind === 'enemy-killed') this.fragment('firstKill');
-      if (event.kind === 'player-hit') this.sound.play('hurt');
+      if (event.kind === 'player-hit') {
+        this.sound.play('hurt');
+        this.signal('risk', event.amount ?? 0);
+      }
       if (event.kind === 'player-died') {
         this.sound.play('hurt');
         this.funnel.mark('died');
@@ -944,6 +1098,9 @@ export class Game {
         this.funnel.mark('leftSpawnBiome');
         this.fragment('newBiome');
       }
+      // Arriving somewhere new is worth more than a note: it is the larger
+      // decision, and it is the one canon builds the whole world shape around.
+      if (!this.progression.hasSeen('firstBiome', disc.id)) this.signal('curiosity', 3);
       if (this.progression.countSeen('firstBiome') >= content.biomes.length) this.funnel.mark('sawAllBiomes');
       this.awardXp(this.progression.award('firstBiome', disc.id), `Reached ${disc.name}`);
     } else {

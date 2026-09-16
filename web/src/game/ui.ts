@@ -26,6 +26,7 @@ import type { Install } from './install';
 import type { Sound } from './sound';
 import { renderSettings } from './pages';
 import { accuracyHeld, channel, pairings } from '../core/notes';
+import type { ArchetypeDef } from '../core/telemetry';
 
 export interface HudState {
   inventory: Inventory;
@@ -34,6 +35,9 @@ export interface HudState {
   progression: Progression;
   /** Which notes, from either channel, the player is holding. */
   notesHeld: ReadonlySet<string>;
+  /** What the telemetry has decided so far, or null before it has decided it. */
+  rune: ArchetypeDef | null;
+  archetype: ArchetypeDef | null;
   /** The combinations on the arc, in the order they sit there. */
   carried: readonly CombinationId[];
   /** How many fit, so the menu can say "full" rather than just refusing. */
@@ -735,6 +739,8 @@ export class Ui {
    * thing this system asks the player to do.
    */
   private renderLog(state: HudState): void {
+    this.renderAssessment(state);
+
     const all = this.content.notes;
     const held = state.notesHeld;
     const { found, total } = accuracyHeld(all, held);
@@ -794,6 +800,43 @@ export class Ui {
         }
         this.sheetBody.append(row);
       }
+    }
+  }
+
+  /**
+   * What the system has decided about you.
+   *
+   * In the Log rather than on a character sheet, because that is what it is:
+   * canon's section 10 reads the player continuously and grants a rune and a
+   * class without ever asking, and the conclusion belongs next to the two
+   * channels arguing about what the system is for. Nothing here is choosable,
+   * and the page says so.
+   */
+  private renderAssessment(state: HudState): void {
+    const { rune, archetype } = state;
+    if (!rune && !archetype) return;
+
+    const head = el('div', 'logchan');
+    head.append(el('b', undefined, 'Assessment'));
+    head.append(el('span', undefined, archetype ? 'Complete' : 'Provisional'));
+    this.sheetBody.append(head);
+
+    if (rune) {
+      const row = el('div', 'row-item note assess');
+      row.append(el('b', undefined, rune.rune));
+      row.append(el('p', undefined, rune.runeDescription));
+      row.append(el('span', 'tag', `Read as ${rune.name} during the opening`));
+      this.sheetBody.append(row);
+    }
+
+    if (archetype) {
+      const row = el('div', 'row-item note assess');
+      row.append(el('b', undefined, archetype.name));
+      row.append(el('p', undefined, archetype.description));
+      // Said plainly, because a player looking at this will look for the menu
+      // that let them pick it, and there is not one.
+      row.append(el('span', 'tag', 'You were not asked'));
+      this.sheetBody.append(row);
     }
   }
 

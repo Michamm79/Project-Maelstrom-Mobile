@@ -978,6 +978,23 @@ export class Renderer {
       ctx.ellipse(0, 6, 24, 12, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    /*
+     * Dotore's charge, which is only ever above zero for a player the
+     * telemetry read as Dotore.
+     *
+     * Drawn as an arc filling clockwise around the hands rather than as a bar,
+     * because the thing it is telling you is "swing now" and that decision is
+     * made looking at the character, not at a corner of the HUD.
+     */
+    if (player.charge > 0.02) {
+      const full = player.charge >= 1;
+      ctx.strokeStyle = withAlpha(full ? '#f5d76e' : '#b07cf0', full ? 0.85 : 0.45 + player.charge * 0.3);
+      ctx.lineWidth = full ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(0, -2, 23, -Math.PI / 2, -Math.PI / 2 + player.charge * Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   private drawPlayerSprite(ctx: CanvasRenderingContext2D, player: World['player']): void {
