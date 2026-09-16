@@ -15,6 +15,7 @@
 import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
 import { abilityTargets, applyDamage } from '../core/combat';
+import { placeNote } from '../core/notes';
 import {
   absorbDamage,
   beginHeal,
@@ -52,6 +53,23 @@ export interface WorldNode {
   pullY: number;
   pullAngle: number;
   pullDistance: number;
+}
+
+/**
+ * A note lying in the world, from either channel.
+ *
+ * Picked up by the pull rather than by walking over it, because the pull is the
+ * game's verb and "your hands are for pulling code" is the one line in the rare
+ * channel that matters. It has no carry cost and no capacity check: paper is
+ * not ore, and a player at a full pack should not be unable to read.
+ */
+export interface WorldNote {
+  id: string;
+  x: number;
+  y: number;
+  taken: boolean;
+  /** 0..1 while it is on its way in. */
+  pull: number;
 }
 
 export interface Enemy {
@@ -179,6 +197,12 @@ function propKey(cx: number, cy: number): number {
 /** How wide the blend between a region and the forest is, in world units. */
 const TERRAIN_FEATHER = 90;
 
+/** How far inside a region's edge a note may sit, in Unreal units. */
+const NOTE_INSET = 600;
+
+/** Notes come in faster than ore: they weigh nothing. */
+const NOTE_PULL_SCALE = 0.55;
+
 /** The player as they wake: one definition, so reset() cannot drift from it. */
 function freshPlayer(combat: Content['progression']['combat']): Player {
   return {
@@ -239,6 +263,7 @@ export interface StrikeBonus {
 
 export class World {
   readonly nodes: WorldNode[] = [];
+  readonly notes: WorldNote[] = [];
   readonly props: Prop[] = [];
   /**
    * Props bucketed by cell, so drawing walks the handful in view instead of
@@ -256,6 +281,8 @@ export class World {
   readonly events: CombatEvent[] = [];
   /** Materials absorbed this frame, in the order the spirals completed. */
   readonly absorbed: MaterialId[] = [];
+  /** Notes drawn in this frame. Drained by the game layer with `absorbed`. */
+  readonly read: string[] = [];
 
   private elapsed = 0;
   private nextEnemyId = 0;
@@ -294,6 +321,27 @@ export class World {
     const rng = new Rng(hashString('coliseum'));
     this.generateProps(rng);
     this.generateNodes(rng);
+    this.placeNotes();
+  }
+
+  /**
+   * Both channels, laid out from their own ids.
+   *
+   * Deterministic rather than rolled, so the Coliseum is the same place on
+   * every run: a note that moved between runs could not be described to
+   * anybody, and the rare channel is meant to be findable by someone who has
+   * been told where to look.
+   */
+  private placeNotes(): void {
+    const upp = this.content.unitsPerPixel;
+    for (const note of this.content.notes) {
+      const disc = this.discs.find((d) => d.id === note.biome);
+      if (!disc) continue;
+      // Inset in world units, converted: far enough in that a note is never
+      // outside the disc it belongs to.
+      const spot = placeNote(note, disc, (NOTE_INSET / upp) / Math.max(1, disc.radius));
+      this.notes.push({ id: note.id, x: spot.x, y: spot.y, taken: false, pull: 0 });
+    }
   }
 
   /**
@@ -305,6 +353,8 @@ export class World {
    */
   reset(): void {
     this.nodes.length = 0;
+    this.notes.length = 0;
+    this.read.length = 0;
     this.props.length = 0;
     this.propGrid.clear();
     this.enemies.length = 0;
@@ -318,6 +368,37 @@ export class World {
   }
 
   // ---------------------------------------------------------------- geography
+
+  /**
+   * Notes come in on the same draw as everything else, and faster.
+   *
+   * No capacity check on purpose: paper is not ore, and a player with a full
+   * pack standing next to the one note that explains the ending should not be
+   * quietly unable to pick it up.
+   */
+  private pullNotes(dt: number, active: boolean, radius: number, seconds: number): void {
+    for (const note of this.notes) {
+      if (note.taken) continue;
+
+      if (note.pull > 0) {
+        if (!active) {
+          note.pull = Math.max(0, note.pull - dt / Math.max(0.05, seconds));
+          continue;
+        }
+        note.pull += dt / Math.max(0.05, seconds * NOTE_PULL_SCALE);
+        if (note.pull >= 1) {
+          note.taken = true;
+          note.pull = 1;
+          this.read.push(note.id);
+        }
+        continue;
+      }
+
+      if (!active) continue;
+      if (Math.hypot(note.x - this.player.x, note.y - this.player.y) > radius) continue;
+      note.pull = 0.0001;
+    }
+  }
 
   /** Which region a point falls in, or null for the connective forest between. */
   biomeAt(x: number, y: number): BiomeDisc | null {
@@ -551,6 +632,8 @@ export class World {
    */
   updatePull(dt: number, active: boolean, radius: number, seconds: number, space: number): void {
     this.absorbed.length = 0;
+    this.read.length = 0;
+    this.pullNotes(dt, active, radius, seconds);
     let room = space;
 
     for (const node of this.nodes) {
@@ -601,6 +684,16 @@ export class World {
    * recomputed against the player's current position rather than a frozen
    * target, so walking away mid-pull curves the path instead of breaking it.
    */
+  /** Where a note is while it is coming in: straight, not spiralled. */
+  notePosition(note: WorldNote): { x: number; y: number } {
+    if (note.pull <= 0) return { x: note.x, y: note.y };
+    const t = Math.min(1, note.pull);
+    return {
+      x: note.x + (this.player.x - note.x) * t,
+      y: note.y + (this.player.y - note.y) * t,
+    };
+  }
+
   pullPosition(node: WorldNode): { x: number; y: number } {
     if (node.pull <= 0) return { x: node.x, y: node.y };
     const t = Math.min(1, node.pull);

@@ -25,12 +25,15 @@ import type { Screen } from './screen';
 import type { Install } from './install';
 import type { Sound } from './sound';
 import { renderSettings } from './pages';
+import { accuracyHeld, channel, pairings } from '../core/notes';
 
 export interface HudState {
   inventory: Inventory;
   crafting: Crafting;
   alchemy: Alchemy;
   progression: Progression;
+  /** Which notes, from either channel, the player is holding. */
+  notesHeld: ReadonlySet<string>;
   /** The combinations on the arc, in the order they sit there. */
   carried: readonly CombinationId[];
   /** How many fit, so the menu can say "full" rather than just refusing. */
@@ -51,7 +54,7 @@ export interface UiHooks {
 }
 
 type Tone = 'info' | 'good' | 'bad' | 'big';
-type Tab = 'craft' | 'alchemy' | 'screen';
+type Tab = 'craft' | 'alchemy' | 'log' | 'screen';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -264,6 +267,7 @@ export class Ui {
     for (const [id, label] of [
       ['craft', 'Craft'],
       ['alchemy', 'Alchemy'],
+      ['log', 'Log'],
       ['screen', 'Screen'],
     ] as const) {
       const button = el('button', undefined, label);
@@ -314,12 +318,18 @@ export class Ui {
     this.objective.after(this.fragment);
   }
 
-  showFragment(title: string, text: string): void {
+  /**
+   * @param channel marks the card as coming from one of the two note channels,
+   *   so a bulletin never looks like something handwritten. Omitted for the
+   *   opening fragments, which claim to be neither.
+   */
+  showFragment(title: string, text: string, channel?: string): void {
     this.fragment.replaceChildren(
       el('b', undefined, title),
       el('p', undefined, text),
       el('span', 'fdismiss', 'tap to dismiss'),
     );
+    this.fragment.className = channel ? `fragment ${channel}` : 'fragment';
     this.fragment.hidden = false;
     this.fragment.classList.remove('going');
     // Long enough to read twice at a walking pace, since it arrives while the
@@ -510,6 +520,7 @@ export class Ui {
     this.sheetBody.replaceChildren();
     if (this.tab === 'craft') this.renderCraft(state);
     else if (this.tab === 'alchemy') this.renderAlchemy(state);
+    else if (this.tab === 'log') this.renderLog(state);
     else this.renderScreen();
   }
 
@@ -669,6 +680,80 @@ export class Ui {
         onPress(row, () => this.hooks.onToggleCarry(outlook.combination.id));
       }
       this.sheetBody.append(row);
+    }
+  }
+
+  /**
+   * Everything the player has picked up off the ground, in two columns of one.
+   *
+   * The bulletins and the found notes are shown as separate channels rather
+   * than as one chronological feed, because "plentiful and unreliable" against
+   * "rare and accurate" is the distinction the whole system rests on and a
+   * merged list would erase it. Where the player holds both halves of a
+   * disagreement, the pairing is drawn under the note that disagrees - it is
+   * not spelled out which side is right, because working that out is the only
+   * thing this system asks the player to do.
+   */
+  private renderLog(state: HudState): void {
+    const all = this.content.notes;
+    const held = state.notesHeld;
+    const { found, total } = accuracyHeld(all, held);
+    const pairs = pairings(all, held);
+
+    this.sheetBody.append(
+      el(
+        'p',
+        'note',
+        `${held.size} of ${all.length} picked up. ` +
+          (pairs.length
+            ? `${pairs.length} of them disagree with each other.`
+            : 'Nothing you are holding disagrees with anything else you are holding.'),
+      ),
+    );
+
+    if (!held.size) {
+      this.sheetBody.append(
+        el('p', 'note', 'There is paper lying about in every region. The gauntlets will take it if you walk near it with the pull on.'),
+      );
+      return;
+    }
+
+    const byId = new Map(all.map((note) => [note.id, note]));
+    const contradictedBy = new Map(pairs.map((p) => [p.bulletin.id, p.found]));
+
+    for (const which of ['jakindur', 'bulletin'] as const) {
+      const rows = channel(all, which).filter((note) => held.has(note.id));
+      if (!rows.length) continue;
+
+      const meta = this.content.noteChannels[which];
+      const head = el('div', 'logchan');
+      head.append(el('b', undefined, meta?.name ?? which));
+      head.append(
+        el(
+          'span',
+          undefined,
+          which === 'jakindur' ? `${found} of ${total} found` : `${rows.length} of ${channel(all, 'bulletin').length}`,
+        ),
+      );
+      this.sheetBody.append(head);
+
+      for (const note of rows) {
+        const row = el('div', `row-item note ${which}`);
+        row.append(el('b', undefined, note.title));
+        row.append(el('p', undefined, note.text));
+
+        const against = note.contradicts ? byId.get(note.contradicts) : contradictedBy.get(note.id);
+        const bothHeld = against && held.has(against.id);
+        if (bothHeld) {
+          row.classList.add('disputed');
+          row.append(el('span', 'tag', `Disagrees with ${against.title}`));
+        } else if (note.contradicts) {
+          // Said out loud, because a note that is arguing with something the
+          // player has not read is doing half of nothing.
+          row.append(el('span', 'tag', 'Arguing with something you have not found'));
+        }
+        this.sheetBody.append(row);
+      }
     }
   }
 

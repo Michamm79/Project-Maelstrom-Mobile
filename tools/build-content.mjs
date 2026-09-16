@@ -58,6 +58,8 @@ const tutorial = tutorialFile.steps;
 const opening = tutorialFile.opening;
 const fragments = tutorialFile.fragments?.list ?? [];
 const progression = read('content/progression.json');
+const notesFile = read('content/notes.json');
+const notes = notesFile.notes;
 
 // ---------------------------------------------------------------- elements
 
@@ -540,6 +542,7 @@ if (progression.xp?.gather !== undefined) {
  * generously would have passed the build that was broken.
  */
 const ceiling =
+  notes.length * (progression.xp?.firstNote ?? 0) +
   materials.length * (progression.xp?.firstMaterial ?? 0) +
   crafting.recipes.length * (progression.xp?.firstCraft ?? 0) +
   alchemy.length * (progression.xp?.firstAlchemy ?? 0) +
@@ -647,6 +650,66 @@ for (const trigger of triggers) {
   if (!usedTriggers.has(trigger)) warn(`no fragment fires on "${trigger}"`);
 }
 
+// ---------------------------------------------------------------- notes
+
+/*
+ * Information Integrity needs two channels that can disagree.
+ *
+ * Canon is specific: plentiful and unreliable against rare and accurate. Both
+ * halves of that are checkable and neither is checkable by looking at the
+ * game - a build where the rare channel outnumbers the bulletins, or where
+ * nothing contradicts anything, plays exactly like a build where it works and
+ * simply has no system in it.
+ */
+const noteIds = new Set();
+const noteBiomes = new Map();
+const byChannel = new Map([['bulletin', []], ['jakindur', []]]);
+const contradicted = new Set();
+
+for (const note of notes) {
+  if (noteIds.has(note.id)) fail(`duplicate note id "${note.id}"`);
+  noteIds.add(note.id);
+  if (!note.title || !note.text) fail(`note "${note.id}" is missing a title or text`);
+  if (!byChannel.has(note.channel)) fail(`note "${note.id}" is on unknown channel "${note.channel}"`);
+  else byChannel.get(note.channel).push(note);
+  if (!biomeIds.has(note.biome)) fail(`note "${note.id}" is in unknown region "${note.biome}"`);
+  else noteBiomes.set(note.biome, (noteBiomes.get(note.biome) ?? 0) + 1);
+  // Read standing up, with something walking towards you.
+  if (note.text.length > 260) fail(`note "${note.id}" runs ${note.text.length} characters - too long to read mid-run`);
+}
+
+const bulletins = byChannel.get('bulletin') ?? [];
+const found = byChannel.get('jakindur') ?? [];
+if (!bulletins.length) fail('there is no unreliable channel, so nothing can be disagreed with');
+if (!found.length) fail('there is no accurate channel, so Information Integrity is one voice and a rumour');
+if (found.length >= bulletins.length) {
+  fail(`the rare channel has ${found.length} notes against ${bulletins.length} bulletins; canon makes one plentiful and the other rare`);
+}
+
+for (const note of found) {
+  if (!note.contradicts) {
+    fail(`note "${note.id}" is on the accurate channel and disagrees with nothing, which is the only job that channel has`);
+    continue;
+  }
+  const other = notes.find((n) => n.id === note.contradicts);
+  if (!other) fail(`note "${note.id}" contradicts "${note.contradicts}", which does not exist`);
+  else if (other.channel === note.channel) fail(`note "${note.id}" contradicts "${other.id}", which is on the same channel`);
+  else contradicted.add(other.id);
+}
+for (const note of bulletins) {
+  if (note.contradicts) fail(`bulletin "${note.id}" contradicts something; the unreliable channel does not get to be right on purpose`);
+}
+
+// Plentiful means everywhere. A region with no bulletin in it is a region the
+// system has nothing to say about, which is the opposite of what it is.
+for (const id of biomeIds) {
+  if (!bulletins.some((n) => n.biome === id)) fail(`region "${id}" has no bulletin in it, and the unreliable channel is meant to be everywhere`);
+}
+// And the accurate channel has to be worth crossing the map for.
+for (const id of biomeIds) {
+  if (!found.some((n) => n.biome === id)) warn(`region "${id}" holds none of the rare channel`);
+}
+
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -666,6 +729,15 @@ const bundle = {
   progression: { ...progression, xpTable },
   tutorial,
   fragments: fragments.map((f) => ({ id: f.id, on: f.on, title: f.title, text: f.text })),
+  noteChannels: notesFile.channels,
+  notes: notes.map((n) => ({
+    id: n.id,
+    channel: n.channel,
+    biome: n.biome,
+    title: n.title,
+    text: n.text,
+    ...(n.contradicts ? { contradicts: n.contradicts } : {}),
+  })),
   opening: {
     fadeSeconds: opening.fadeSeconds,
     lineSeconds: opening.lineSeconds,
@@ -721,7 +793,7 @@ for (const w of warnings) console.warn(`   ! ${w}`);
 console.log(
   `\n  content OK - ${elements.length} elements, ${materials.length} materials across ${biomes.length} biomes, ` +
     `${crafting.recipes.length} crafting recipes, ${alchemy.length} alchemy combinations, ` +
-    `${enemyTiers.length} enemy tiers` +
+    `${enemyTiers.length} enemy tiers, ${bulletins.length}+${found.length} notes` +
     `${warnings.length ? ` (${warnings.length} warning(s))` : ''}`,
 );
 console.log(`  wrote:\n${outputs.map(([rel]) => `    ${rel}`).join('\n')}\n`);

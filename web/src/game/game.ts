@@ -31,6 +31,7 @@ import { Screen } from './screen';
 import { Install } from './install';
 import { Funnel } from '../core/funnel';
 import { fragmentFor, type Fragment, type FragmentTrigger } from '../core/fragments';
+import { accuracyHeld, pairings } from '../core/notes';
 import { admit, toggleCarried, LOADOUT_SLOTS, type LoadoutState } from '../core/loadout';
 import type { CombinationId, RecipeId } from '../core/types';
 
@@ -66,6 +67,8 @@ export class Game {
   private readonly tutorialProgress: TutorialProgress = emptyProgress();
   /** World fragments already read this run. Cleared by starting over. */
   private readonly fragmentsSeen = new Set<string>();
+  /** Notes picked up off the ground, from either channel. */
+  private readonly notesHeld = new Set<string>();
 
   private playtimeMs = 0;
   private lastFrame = 0;
@@ -309,6 +312,7 @@ export class Game {
     // who has not read it. Anything holding run state needs a line here - the
     // save used to write the old run straight back for exactly this reason.
     this.fragmentsSeen.clear();
+    this.notesHeld.clear();
     this.ui.hideFragment();
 
     // Waking at the spawn is not a visit, exactly as in the constructor.
@@ -338,6 +342,11 @@ export class Game {
     this.guided = run.tutorialStep >= 0;
     this.fragmentsSeen.clear();
     for (const id of run.fragmentsSeen) this.fragmentsSeen.add(id);
+    this.notesHeld.clear();
+    for (const id of run.notesHeld) this.notesHeld.add(id);
+    // Notes already read are gone from the ground, or the Coliseum would
+    // repopulate itself with paper the player is already carrying.
+    for (const note of this.world.notes) if (this.notesHeld.has(note.id)) note.taken = true;
     this.loadout = { carried: [...run.loadout.carried], known: [...run.loadout.known] };
   }
 
@@ -357,6 +366,37 @@ export class Game {
     this.sound.play('ui');
   }
 
+  /**
+   * One note, off the ground and into the log.
+   *
+   * Shown immediately rather than filed silently, because a note the player
+   * has to go looking in a menu for is a note most players never read - and
+   * the disagreement between the two channels only works if both sides
+   * actually land.
+   */
+  private pickUpNote(id: string): void {
+    if (this.notesHeld.has(id)) return;
+    const def = content.notes.find((note) => note.id === id);
+    if (!def) return;
+
+    this.notesHeld.add(id);
+    this.sound.play('absorb');
+    this.funnel.mark(def.channel === 'jakindur' ? 'foundNote' : 'readBulletin');
+    this.ui.showFragment(def.title, def.text, def.channel);
+
+    const disputes = pairings(content.notes, this.notesHeld);
+    const fresh = disputes.find((pair) => pair.found.id === id || pair.bulletin.id === id);
+    if (fresh) {
+      this.funnel.mark('sawContradiction');
+      // Named rather than resolved. Which of the two is lying is the one thing
+      // this system exists to make the player decide.
+      this.ui.toast(`That contradicts ${fresh.bulletin.title}`, 'big');
+    }
+
+    this.awardXp(this.progression.award('firstNote', id), `Picked up: ${def.title}`);
+    this.ui.refresh(this.hudState());
+  }
+
   private persist(): void {
     save(
       { inventory: this.inventory, crafting: this.crafting, progression: this.progression },
@@ -366,6 +406,7 @@ export class Game {
         tutorialStep: this.tutorialStep,
         playtimeMs: this.playtimeMs,
         fragmentsSeen: [...this.fragmentsSeen],
+        notesHeld: [...this.notesHeld],
         loadout: this.loadout,
       },
     );
@@ -379,6 +420,7 @@ export class Game {
       crafting: this.crafting,
       alchemy: this.alchemy,
       progression: this.progression,
+      notesHeld: this.notesHeld,
       carried: this.loadout.carried,
       slots: LOADOUT_SLOTS,
     };
@@ -601,6 +643,8 @@ export class Game {
       this.inventory.free,
     );
 
+    for (const id of this.world.read) this.pickUpNote(id);
+
     if (this.world.absorbed.length) {
       this.sound.play('absorb');
       this.funnel.mark('gathered');
@@ -707,9 +751,11 @@ export class Game {
 
   private runSummary(): string {
     const minutes = Math.round(this.playtimeMs / 60000);
-    return `Level ${this.progression.level} - ${this.progression.countSeen('firstMaterial')} of ${
-      content.materials.length
-    } materials - ${minutes} min`;
+    const rare = accuracyHeld(content.notes, this.notesHeld);
+    return (
+      `Level ${this.progression.level} - ${this.progression.countSeen('firstMaterial')} of ` +
+      `${content.materials.length} materials - ${rare.found} of ${rare.total} notes - ${minutes} min`
+    );
   }
 
   private refreshPlace(): void {

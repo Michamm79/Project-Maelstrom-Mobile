@@ -8,6 +8,8 @@
     "classLevel": 5,
     "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
     "xp": {
+      "$firstNote_comment": "INFERRED. Notes are the main reason to walk past the ring of nodes a region clusters in - the rare channel sits out near the edge - and novelty XP is how the game says a thing was worth doing. Deliberately below a material: reading is not gathering.",
+      "firstNote": 25,
       "firstMaterial": 30,
       "firstCraft": 60,
       "firstAlchemy": 60,
@@ -201,6 +203,156 @@
       "on": "firstCast",
       "title": "Privilege",
       "text": "Two elements go in and something leaves your hands that you did not design. This was stocked. Someone expected you to need it, and put it where you would find it."
+    }
+  ],
+  "noteChannels": {
+    "bulletin": {
+      "name": "System bulletin",
+      "note": "Plentiful and unreliable. Numbered, procedurally issued, and contradicts itself as readily as it contradicts him."
+    },
+    "jakindur": {
+      "name": "Found note",
+      "note": "Rare and accurate. Handwritten, unsigned except for the initial, and never wrong about anything checkable."
+    }
+  },
+  "notes": [
+    {
+      "id": "b_intake_1",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "INTAKE NOTICE 0-1",
+      "text": "Welcome. You have been provisioned. Orientation is automatic and requires no action on your part. Questions will be answered in order of relevance."
+    },
+    {
+      "id": "b_intake_4",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "INTAKE NOTICE 0-4",
+      "text": "Your gauntlets are calibrated to you and to nobody else. Nothing else in the Coliseum can use them. This is for your protection."
+    },
+    {
+      "id": "b_assessment",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "NOTICE 1-2",
+      "text": "Assessment has begun. Assessment is not a test. There is no pass mark, and there is nothing here that you are able to fail."
+    },
+    {
+      "id": "b_expectations",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "NOTICE 1-8",
+      "text": "You are performing within expectations. Expectations are adjusted to what you perform."
+    },
+    {
+      "id": "b_schedule",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "NOTICE 6-0",
+      "text": "If you are reading this, you are behind schedule. There is no schedule."
+    },
+    {
+      "id": "b_cold",
+      "channel": "bulletin",
+      "biome": "snowy_mountain",
+      "title": "NOTICE 2-7",
+      "text": "Cold is not a hazard. Cold is a region. Regions are provided so that assessment has somewhere to happen."
+    },
+    {
+      "id": "b_perimeter",
+      "channel": "bulletin",
+      "biome": "snowy_mountain",
+      "title": "NOTICE 2-9",
+      "text": "Candidates reaching the perimeter are reminded that the perimeter is decorative and that there is nothing on the other side of it to reach."
+    },
+    {
+      "id": "b_exposure",
+      "channel": "bulletin",
+      "biome": "desert",
+      "title": "NOTICE 3-1",
+      "text": "Exposure is a feature of the Desert. Features are not dangers. You are not in danger."
+    },
+    {
+      "id": "b_continue",
+      "channel": "bulletin",
+      "biome": "desert",
+      "title": "NOTICE 3-6",
+      "text": "Please continue. Continuation is the only instruction, and it is the only one that has ever been issued."
+    },
+    {
+      "id": "b_concealment",
+      "channel": "bulletin",
+      "biome": "wetland",
+      "title": "NOTICE 4-2",
+      "text": "Concealment is permitted. Concealment is also recorded. There is no conflict between those two sentences."
+    },
+    {
+      "id": "b_renderings",
+      "channel": "bulletin",
+      "biome": "wetland",
+      "title": "NOTICE 4-5",
+      "text": "Do not be alarmed by renderings. A rendering is not a creature. It cannot want anything, and nothing that cannot want can be said to be hunting you."
+    },
+    {
+      "id": "b_predates",
+      "channel": "bulletin",
+      "biome": "data_center",
+      "title": "NOTICE 5-3",
+      "text": "This region predates your intake. Its condition is not a forecast of yours."
+    },
+    {
+      "id": "b_completion",
+      "channel": "bulletin",
+      "biome": "data_center",
+      "title": "NOTICE 5-8",
+      "text": "Completion is rewarded. The reward is release, and release is immediate upon completion."
+    },
+    {
+      "id": "b_previous",
+      "channel": "bulletin",
+      "biome": "data_center",
+      "title": "NOTICE 5-9",
+      "text": "Previous candidates have completed. Previous candidates are no longer here. Both of those facts are available to you on request."
+    },
+    {
+      "id": "j_test",
+      "channel": "jakindur",
+      "biome": "plains_forest",
+      "title": "Scratched into a burl, low down",
+      "text": "It is a test. I did well on the third day and the waves changed on the fourth. Nothing adjusts to a thing it is not measuring. - J",
+      "contradicts": "b_assessment"
+    },
+    {
+      "id": "j_perimeter",
+      "channel": "jakindur",
+      "biome": "snowy_mountain",
+      "title": "Folded into a split in the rock",
+      "text": "Walked the edge for six hours. It is not decorative. It is the only part of this place that is holding anything up, and it is made of the same stuff as the goblins. - J",
+      "contradicts": "b_perimeter"
+    },
+    {
+      "id": "j_renderings",
+      "channel": "jakindur",
+      "biome": "desert",
+      "title": "Under a cairn nobody built",
+      "text": "They do not want anything. Agreed. But whatever sends them does, and it sends more after you do something clever. Be less clever where it can see you. - J",
+      "contradicts": "b_renderings"
+    },
+    {
+      "id": "j_recorded",
+      "channel": "jakindur",
+      "biome": "wetland",
+      "title": "Wrapped in a bladder, above the waterline",
+      "text": "Concealment is permitted the way a dropped fork is permitted. They wrote a notice about it. They write notices about everything they have not worked out how to stop. - J",
+      "contradicts": "b_concealment"
+    },
+    {
+      "id": "j_release",
+      "channel": "jakindur",
+      "biome": "data_center",
+      "title": "On the back of a requisition slip",
+      "text": "I completed it. Ask where I am. The way out was never completion - the boundary is code, and your hands are for pulling code. Do not let it see you decide. - J",
+      "contradicts": "b_completion"
     }
   ],
   "opening": {

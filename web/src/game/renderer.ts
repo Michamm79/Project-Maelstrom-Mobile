@@ -290,6 +290,7 @@ export class Renderer {
     this.drawGround(world, camera);
     this.drawProps(world, camera);
     this.drawNodes(world, state, camera);
+    this.drawNotes(world, camera);
     this.drawEnemies(world, state, camera);
     this.drawDeletions();
     this.drawPullRing(world, state);
@@ -531,6 +532,71 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------- nodes
+
+  /**
+   * Paper, lying where somebody left it.
+   *
+   * Deliberately not an icon from the material set: a note must not read as
+   * something to gather, or players who have learned "pale shape means ore"
+   * will walk past the one thing in the region that is worth reading. It is a
+   * flat rectangle with a corner turned and a slow glow, and the rare channel
+   * is warmer than the bulletins because it was written by hand.
+   */
+  private drawNotes(world: World, camera: { x: number; y: number }): void {
+    const ctx = this.ctx;
+    const bounds = this.visible(camera, 60);
+
+    for (const note of world.notes) {
+      if (note.taken) continue;
+      const at = world.notePosition(note);
+      if (at.x < bounds.left || at.x > bounds.right || at.y < bounds.top || at.y > bounds.bottom) continue;
+
+      const def = this.content.notes.find((n) => n.id === note.id);
+      const handwritten = def?.channel === 'jakindur';
+      const glow = 0.45 + Math.sin(this.time * 1.6 + at.x * 0.01) * 0.2;
+
+      ctx.save();
+      ctx.translate(at.x, at.y);
+      ctx.globalAlpha = 1 - note.pull * 0.4;
+      const scale = 1 - note.pull * 0.5;
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = 'rgba(0,0,0,0.26)';
+      ctx.beginPath();
+      ctx.ellipse(0, 11, 11, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // A halo, so a sheet of paper on pale ground is still findable.
+      ctx.fillStyle = withAlpha(handwritten ? '#f0c98a' : '#9fd8e8', glow * 0.32);
+      ctx.beginPath();
+      ctx.arc(0, 0, 21, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.rotate(handwritten ? -0.22 : 0.06);
+      ctx.fillStyle = handwritten ? '#efe0c2' : '#dfe9ef';
+      ctx.fillRect(-8, -11, 16, 21);
+      ctx.strokeStyle = withAlpha(handwritten ? '#8a6a3a' : '#5d7d8c', 0.8);
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(-8, -11, 16, 21);
+
+      // Ruled lines for the printed channel, a scrawl for the other.
+      ctx.strokeStyle = withAlpha(handwritten ? '#6b4f2a' : '#7f99a6', 0.7);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (handwritten) {
+        ctx.moveTo(-5, -5);
+        ctx.bezierCurveTo(2, -3, -4, 1, 4, 3);
+      } else {
+        for (let i = 0; i < 4; i++) {
+          ctx.moveTo(-5, -6 + i * 4);
+          ctx.lineTo(i === 3 ? 0 : 5, -6 + i * 4);
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
 
   private drawNodes(world: World, state: RenderState, camera: { x: number; y: number }): void {
     const ctx = this.ctx;

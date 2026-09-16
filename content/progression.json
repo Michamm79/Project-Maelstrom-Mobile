@@ -4,6 +4,8 @@
   "classLevel": 5,
   "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
   "xp": {
+    "$firstNote_comment": "INFERRED. Notes are the main reason to walk past the ring of nodes a region clusters in - the rare channel sits out near the edge - and novelty XP is how the game says a thing was worth doing. Deliberately below a material: reading is not gathering.",
+    "firstNote": 25,
     "firstMaterial": 30,
     "firstCraft": 60,
     "firstAlchemy": 60,

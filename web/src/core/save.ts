@@ -35,6 +35,7 @@ export interface SavedRun {
   tutorialStep: number;
   playtimeMs: number;
   fragmentsSeen?: string[];
+  notesHeld?: string[];
   loadout?: { carried?: string[]; known?: string[] };
 }
 
@@ -51,6 +52,14 @@ export interface RunState {
    * that it lands the first time.
    */
   fragmentsSeen: string[];
+  /**
+   * Notes picked up off the ground, from either channel.
+   *
+   * Part of the run rather than the device, like the fragments: starting over
+   * puts the paper back where it was, which it has to, because the thing the
+   * two channels are for is the first read.
+   */
+  notesHeld: string[];
   /**
    * The four on the arc, and everything that has ever been offered a slot.
    *
@@ -72,6 +81,7 @@ export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
     tutorialStep: run.tutorialStep,
     playtimeMs: Math.round(run.playtimeMs),
     fragmentsSeen: [...run.fragmentsSeen],
+    notesHeld: [...run.notesHeld],
     loadout: { carried: [...run.loadout.carried], known: [...run.loadout.known] },
   };
 }
@@ -106,6 +116,7 @@ export function deserialize(content: Content, bundle: SaveBundle, raw: unknown):
     fragmentsSeen: Array.isArray(saved.fragmentsSeen) ? saved.fragmentsSeen.filter((id) => typeof id === 'string') : [],
     // Also optional: a run saved before the arc had slots simply has none
     // chosen, and admit() hands it the first four the moment it loads.
+    notesHeld: ids(saved.notesHeld),
     loadout: {
       carried: ids(saved.loadout?.carried),
       known: ids(saved.loadout?.known),

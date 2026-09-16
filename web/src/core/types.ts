@@ -11,6 +11,7 @@
  * - and they are deliberately separate, because they consume different things.
  */
 import type { EscalationRules } from './escalation';
+import type { NoteDef } from './notes';
 
 export type ElementId = string;
 export type MaterialId = string;
@@ -272,6 +273,7 @@ export interface ProgressionConfig {
   pauseWithMenu: boolean;
   /** Novelty only. There is deliberately no per-unit gather award. */
   xp: {
+    firstNote: number;
     firstMaterial: number;
     firstCraft: number;
     firstAlchemy: number;
@@ -336,6 +338,9 @@ export interface ContentBundle {
   opening: OpeningScript;
   /** What the world says about itself, and on which first-time action. */
   fragments: readonly { id: string; on: string; title: string; text: string }[];
+  /** The two channels of Information Integrity, and everything written on them. */
+  noteChannels: Readonly<Record<string, { name: string; note: string }>>;
+  notes: readonly NoteDef[];
   elements: readonly ElementDef[];
   materials: readonly MaterialDef[];
   biomes: readonly BiomeDef[];

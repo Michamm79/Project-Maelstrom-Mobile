@@ -37,6 +37,17 @@ export const STEPS = [
   'reachedLevel2',
   'cast',
   'leftSpawnBiome',
+  'readBulletin',
+  /*
+   * The three that say whether Information Integrity is landing.
+   *
+   * The rare channel sits out near the edge of each region, so `foundNote` is
+   * the number that says whether anybody is exploring past the ring the
+   * material nodes cluster in - and `sawContradiction` is the only evidence
+   * that the two channels are doing the one job they exist for.
+   */
+  'foundNote',
+  'sawContradiction',
   'sawAllBiomes',
   'died',
   'restarted',

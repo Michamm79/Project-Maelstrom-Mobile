@@ -2441,3 +2441,68 @@ button.ghost.wide {
   min-height: 32px;
   font-size: 15px;
 }
+
+/* ---------------------------------------------------------------- the log
+
+   Two channels, kept visually apart. Canon's Information Integrity is a
+   plentiful unreliable source against a rare accurate one, and a log that
+   styled both the same way would quietly throw away the distinction the whole
+   system rests on - so the found notes are warm and handwritten-looking and
+   the bulletins are cold and ruled, exactly as they are drawn in the world. */
+
+.logchan {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.logchan b {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.logchan span {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.row-item.note b {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.row-item.note p {
+  margin: 4px 0 0;
+}
+
+.row-item.note.bulletin {
+  border-left: 3px solid #5d7d8c;
+}
+.row-item.note.bulletin b {
+  color: #b7d3de;
+  font-family: ui-monospace, "DejaVu Sans Mono", monospace;
+}
+
+.row-item.note.jakindur {
+  border-left: 3px solid #b8894a;
+}
+.row-item.note.jakindur b {
+  color: #f0c98a;
+  font-style: italic;
+  font-weight: 500;
+}
+.row-item.note.jakindur p {
+  color: #efe6d4;
+}
+
+/* Something you are holding says this is wrong. Which one is right is
+   deliberately not marked. */
+.row-item.note.disputed {
+  background: linear-gradient(90deg, rgba(184, 137, 74, 0.14), transparent 70%);
+}
+.row-item.note.disputed .tag {
+  color: #f0c98a;
+  border-color: rgba(240, 201, 138, 0.4);
+}

@@ -6,6 +6,7 @@
  */
 import bundleJson from '@content/maelstrom-content.json';
 import type { Fragment } from './fragments';
+import type { NoteDef } from './notes';
 import type {
   AlchemyCombination,
   BiomeDef,
@@ -42,6 +43,9 @@ export class Content {
   /** The waking scene that plays before the first guide card. */
   readonly opening: OpeningScript = bundle.opening;
   readonly fragments: readonly Fragment[] = bundle.fragments as readonly Fragment[];
+  /** Both channels of Information Integrity, in content order. */
+  readonly notes: readonly NoteDef[] = bundle.notes;
+  readonly noteChannels = bundle.noteChannels;
   /** Unreal units per screen unit; canon distances are stored in uu. */
   readonly unitsPerPixel: number = bundle.unitsPerPixel ?? 12;
 
