@@ -15,6 +15,7 @@
  * knob, not a random one.
  */
 import { Rng } from '../core/rng';
+import { bundleGap, bundleMultiplier, roomFor, scaledCount } from '../core/escalation';
 import type { Content } from '../core/content';
 import type { World } from './world';
 
@@ -36,7 +37,9 @@ export class WaveDirector {
   private liveGroups = 0;
   private cleared = 0;
   private clearedPending = 0;
-  private ambientSpawned = false;
+  /** How many ambient enemies the world should be holding, once it holds any. */
+  private ambientTarget = 0;
+  private ambientTimer = 0;
 
   private rng = new Rng(WAVE_SEED);
   private readonly messages: string[] = [];
@@ -59,7 +62,8 @@ export class WaveDirector {
     this.liveGroups = 0;
     this.cleared = 0;
     this.clearedPending = 0;
-    this.ambientSpawned = false;
+    this.ambientTarget = 0;
+    this.ambientTimer = 0;
     this.messages.length = 0;
     this.rng = new Rng(WAVE_SEED);
   }
@@ -115,8 +119,16 @@ export class WaveDirector {
     if (this.phase === 'idle') return;
     this.level = level;
 
-    const alive = this.world.enemies.filter((e) => !e.dead).length;
-    if (this.liveGroups > 0 && alive === 0) {
+    /*
+     * Only wave enemies decide whether a wave is cleared.
+     *
+     * The ambient population is a population - it is never empty, and never
+     * meant to be. Counting it here would have meant that from the first
+     * ambient spawn onward no wave was ever cleared, no wave XP was ever paid
+     * and no bundle ever ended, with nothing anywhere reporting a problem.
+     */
+    const { alive, fromWaves } = this.world.census();
+    if (this.liveGroups > 0 && fromWaves === 0) {
       this.cleared += this.liveGroups;
       this.clearedPending += this.liveGroups;
       this.liveGroups = 0;
@@ -128,11 +140,12 @@ export class WaveDirector {
     if (this.phase === 'quiet') {
       if (level < this.gates.repeatingBundlesFromLevel) return;
       this.phase = 'between-bundles';
-      this.timer = this.roll(this.pacing.secondsBetweenBundles);
-      if (level >= this.gates.ambientFromLevel) this.spawnAmbientOnce();
+      this.timer = this.nextGap();
+      if (level >= this.gates.ambientFromLevel) this.startAmbient();
       return;
     }
 
+    this.topUpAmbient(dt, alive);
     this.timer -= dt;
     if (this.timer > 0) return;
 
@@ -153,13 +166,39 @@ export class WaveDirector {
     return this.rng.range(min ?? 0, max ?? min ?? 0);
   }
 
-  private spawnAmbientOnce(): void {
-    if (this.ambientSpawned) return;
-    this.ambientSpawned = true;
+  /** Roll the ambient population and put it in the world, once. */
+  private startAmbient(): void {
+    if (this.ambientTarget > 0) return;
     for (const [id, range] of Object.entries(this.content.waves.ambient)) {
       if (id.startsWith('$')) continue;
       const count = Math.round(this.roll(range as readonly number[]));
-      for (let i = 0; i < count; i++) this.spawnOne(id, 260, 900);
+      this.ambientTarget += count;
+      for (let i = 0; i < count; i++) this.spawnOne(id, 260, 900, false);
+    }
+    this.ambientTimer = this.content.waves.ambientTopUpSeconds;
+  }
+
+  /**
+   * Put back what the player killed, during the quiet only.
+   *
+   * It used to spawn exactly once, so an hour in - by which point the player
+   * has walked through it several times with the gauntlets working - the world
+   * between bundles was empty again and the "population that persists between
+   * bundles" persisted in name only. Never during a bundle, because canon is
+   * specific that this is what lives in the gaps.
+   */
+  private topUpAmbient(dt: number, alive: number): void {
+    if (this.ambientTarget <= 0 || this.phase === 'in-bundle') return;
+    this.ambientTimer -= dt;
+    if (this.ambientTimer > 0) return;
+    this.ambientTimer = this.content.waves.ambientTopUpSeconds;
+
+    const short = this.ambientTarget - alive;
+    if (short <= 0) return;
+    const entries = Object.entries(this.content.waves.ambient).filter(([id]) => !id.startsWith('$'));
+    for (let i = 0; i < roomFor(short, alive, this.content.waves.escalation); i++) {
+      const pick = entries[this.rng.int(0, entries.length)];
+      if (pick) this.spawnOne(pick[0], 300, 1000, false);
     }
   }
 
@@ -186,10 +225,19 @@ export class WaveDirector {
       return;
     }
 
-    this.timer = this.roll(this.pacing.secondsBetweenBundles);
+    this.timer = this.nextGap();
     // Canon calls the ambient population "a separate population that persists
     // BETWEEN bundles", so it arrives once a bundle is done, not alongside one.
-    if (this.level >= this.gates.ambientFromLevel) this.spawnAmbientOnce();
+    if (this.level >= this.gates.ambientFromLevel) this.startAmbient();
+  }
+
+  /** The quiet before the next bundle, shrinking as the cycle wears on. */
+  private nextGap(): number {
+    return bundleGap(
+      Math.max(0, this.bundleIndex),
+      this.roll(this.pacing.secondsBetweenBundles),
+      this.content.waves.escalation,
+    );
   }
 
   private nextWave(): void {
@@ -220,17 +268,39 @@ export class WaveDirector {
     return row as unknown as Record<string, readonly number[]>;
   }
 
+  /**
+   * How much bigger this bundle is than the row that describes it.
+   *
+   * Past the last authored row the shape stays and the size grows, which is
+   * also what finally makes the Scythe-bearer appear more than once: canon's
+   * "only a few" is scarcity, and a roll of 0-to-1 scaled up is still scarce
+   * while no longer being a hard limit of one for the rest of the run.
+   */
+  get pressure(): number {
+    return bundleMultiplier(
+      Math.max(0, this.bundleIndex),
+      this.content.waves.composition.length,
+      this.content.waves.escalation,
+    );
+  }
+
   private spawnWave(): void {
     const row = this.composition();
+    const multiplier = this.pressure;
     for (const [id, range] of Object.entries(row)) {
       if (id === 'bundleIndex' || id.startsWith('$')) continue;
-      const count = Math.round(this.roll(range));
-      for (let i = 0; i < count; i++) this.spawnOne(id, 420, 760);
+      const wanted = scaledCount(Math.round(this.roll(range)), multiplier);
+      // The cap is a phone, not a design opinion: the roll is honoured up to
+      // what the world can carry and the rest is simply not spawned.
+      const alive = this.world.census().alive;
+      for (let i = 0; i < roomFor(wanted, alive, this.content.waves.escalation); i++) {
+        this.spawnOne(id, 420, 760);
+      }
     }
   }
 
   /** Enter from off the player's screen, never on top of them. */
-  private spawnOne(id: string, minDistance: number, maxDistance: number): void {
+  private spawnOne(id: string, minDistance: number, maxDistance: number, fromWave = true): void {
     const def = this.content.enemy(id);
     const player = this.world.player;
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -239,7 +309,7 @@ export class WaveDirector {
       const x = player.x + Math.cos(angle) * distance;
       const y = player.y + Math.sin(angle) * distance;
       if (Math.hypot(x, y) > this.world.boundaryRadius - 40) continue;
-      this.world.spawn(def, x, y);
+      this.world.spawn(def, x, y, fromWave);
       return;
     }
   }

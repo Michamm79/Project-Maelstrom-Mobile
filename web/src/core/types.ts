@@ -10,6 +10,7 @@
  *
  * - and they are deliberately separate, because they consume different things.
  */
+import type { EscalationRules } from './escalation';
 
 export type ElementId = string;
 export type MaterialId = string;
@@ -248,6 +249,10 @@ export interface WavesDef {
   activePacing: string;
   pacing: Readonly<Record<string, WavePacing>>;
   gates: WaveGates;
+  /** What happens once the authored composition rows run out. */
+  escalation: EscalationRules;
+  /** How often the ambient population is put back to the size it was rolled at. */
+  ambientTopUpSeconds: number;
   maxLiveWaveGroups: number;
   composition: readonly Readonly<Record<string, number | readonly number[]>>[];
   ambient: Readonly<Record<string, readonly number[]>>;

@@ -1257,6 +1257,16 @@
         ]
       }
     ],
+    "$escalation_comment": "INFERRED, and the reason this section exists at all. The composition table above has four rows and the director clamped the bundle index to the last of them, so bundle 4 and bundle 40 were the same fight forever. That was invisible while Level 5 was unreachable and the cycle never started; it is the whole late game now that it is. Canon's shape is untouched - three waves to a bundle, one bundle alive at a time, the gap timed from the end of the last one - and what escalates is how much arrives and how long the quiet lasts. Growth is linear rather than compounding, because compounding reaches any cap you set and then sits on it, which makes bundle 8 and bundle 30 identical. maxLiveEnemies is the honest limit: a phone, not a design opinion.",
+    "escalation": {
+      "growthPerBundle": 0.18,
+      "maxMultiplier": 2.2,
+      "gapShrink": 0.88,
+      "minSecondsBetweenBundles": 420,
+      "maxLiveEnemies": 30
+    },
+    "$ambient_topup_comment": "INFERRED. The ambient population spawned exactly once and was then permanently thinned by every player who killed one, so an hour in the world was empty again between bundles. It is topped back up during the quiet, never during a bundle - canon calls it a population that persists BETWEEN bundles - and only up to the number that was rolled for it.",
+    "ambientTopUpSeconds": 150,
     "ambient": {
       "$comment": "A separate population that persists between bundles. Never includes tier 3.",
       "goblin": [

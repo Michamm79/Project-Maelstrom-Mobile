@@ -460,6 +460,56 @@ for (const row of waves.composition) {
   }
 }
 
+/*
+ * The escalation, which is what happens after the composition rows run out.
+ *
+ * Every one of these is a number that looks fine while quietly cancelling the
+ * late game: growth of zero makes bundle 40 identical to bundle 4, a gap
+ * multiplier of 1 means the cycle never tightens, and one above 1 means it
+ * loosens forever - which is an escalation running backwards.
+ */
+const esc = waves.escalation;
+if (!esc) fail('waves.escalation is missing, so every bundle past the last authored row is identical to it');
+else {
+  if (!(esc.growthPerBundle > 0)) fail(`escalation growthPerBundle is ${esc.growthPerBundle}; bundle 40 would be the same fight as bundle 4`);
+  if (!(esc.maxMultiplier > 1)) fail(`escalation maxMultiplier is ${esc.maxMultiplier}, which caps growth at or below where it starts`);
+  if (!(esc.gapShrink > 0) || esc.gapShrink >= 1) fail(`escalation gapShrink is ${esc.gapShrink}; at 1 or above the quiet never gets shorter`);
+  const slowest = Math.max(...Object.values(waves.pacing).map((p) => p.secondsBetweenBundles?.[1] ?? 0));
+  if (!(esc.minSecondsBetweenBundles > 0) || esc.minSecondsBetweenBundles >= slowest) {
+    fail(`escalation minSecondsBetweenBundles is ${esc.minSecondsBetweenBundles} against a starting gap of ${slowest}; the floor has to be below the ceiling`);
+  }
+  // The gap between bundles IS the exploration. A floor short enough to run
+  // bundles back to back deletes the half of the game the world exists for.
+  if (esc.minSecondsBetweenBundles < 120) fail(`escalation minSecondsBetweenBundles is ${esc.minSecondsBetweenBundles}s, which is not a gap, it is a siege`);
+
+  // A cap below one full bundle's worth would silently swallow waves the
+  // director thinks it spawned, and the bundle would never clear.
+  const heaviest = Math.max(
+    ...waves.composition.map((row) =>
+      Object.entries(row)
+        .filter(([key]) => key !== 'bundleIndex' && !key.startsWith('$'))
+        .reduce((sum, [, range]) => sum + (range[1] ?? 0), 0),
+    ),
+  );
+  const perBundle = heaviest * esc.maxMultiplier * (pacing?.wavesPerBundle ?? 3);
+  if (!(esc.maxLiveEnemies >= heaviest * esc.maxMultiplier)) {
+    fail(
+      `escalation maxLiveEnemies is ${esc.maxLiveEnemies} against a single scaled wave of up to ` +
+        `${Math.round(heaviest * esc.maxMultiplier)}; a cap below one wave means waves that never finish arriving`,
+    );
+  }
+  // Not an error - a cap below a whole bundle is the intended behaviour on a
+  // phone - but worth saying out loud, because it is the number that decides
+  // how much of a late bundle the player actually meets.
+  if (esc.maxLiveEnemies < perBundle) {
+    warn(`a fully escalated bundle rolls up to ${Math.round(perBundle)} enemies and maxLiveEnemies is ${esc.maxLiveEnemies}; the rest are dropped`);
+  }
+}
+
+if (!(waves.ambientTopUpSeconds > 0)) {
+  fail('waves.ambientTopUpSeconds is missing, so the ambient population spawns once and is then permanently thinned by every kill');
+}
+
 // ---------------------------------------------------------------- progression
 
 if (progression.alchemyUnlockLevel !== 2) {

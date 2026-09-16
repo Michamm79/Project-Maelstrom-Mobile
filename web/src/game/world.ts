@@ -89,6 +89,16 @@ export interface Enemy {
   /** Seconds left moving at `slowScale` of its own pace. */
   slow: number;
   slowScale: number;
+  /**
+   * Whether this one arrived as part of a wave.
+   *
+   * A wave counts as cleared when the field is empty, and the ambient
+   * population is by definition never empty - so without this the first
+   * ambient spawn would have meant no wave was ever cleared again, no wave XP
+   * was ever paid, and the bundle never ended. Which nothing would have
+   * reported: the game would simply have stopped progressing.
+   */
+  fromWave: boolean;
 }
 
 export interface CombatEvent {
@@ -667,7 +677,7 @@ export class World {
 
   // ---------------------------------------------------------------- enemies
 
-  spawn(def: EnemyDef, x: number, y: number): Enemy {
+  spawn(def: EnemyDef, x: number, y: number, fromWave = true): Enemy {
     const enemy: Enemy = {
       id: this.nextEnemyId++,
       def,
@@ -692,6 +702,7 @@ export class World {
       burn: 0,
       slow: 0,
       slowScale: 1,
+      fromWave,
     };
     this.enemies.push(enemy);
     return enemy;
@@ -1109,5 +1120,17 @@ export class World {
 
   get time(): number {
     return this.elapsed;
+  }
+
+  /** Live enemies, and how many of them arrived in a wave. */
+  census(): { alive: number; fromWaves: number } {
+    let alive = 0;
+    let fromWaves = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      alive += 1;
+      if (enemy.fromWave) fromWaves += 1;
+    }
+    return { alive, fromWaves };
   }
 }
