@@ -1684,15 +1684,15 @@
     "$retrofit_comment": "Canon warns this system cannot be retrofitted, because the rune reads the tutorial period as roughly half its evidence. That warning is about WHEN the data starts being collected, not about the grant - so the reading starts on the first frame of a run, the tutorial period is banked separately the moment Level 2 is reached, and the class read at Level 5 weights that banked period at exactly half against everything since. See tutorialWeight below, and core/telemetry.ts.",
     "runeLevel": 2,
     "tutorialWeight": 0.5,
-    "$scales_comment": "INFERRED. What one unit of each signal is worth, so the seven raw counters can be compared at all: 40,000 world units walked is the same amount of evidence as twelve casts. Without these, roaming drowns out everything else purely by being counted in smaller pieces - which read every player as Dotore.",
+    "$scales_comment": "INFERRED, and MEASURED rather than guessed. What one unit of each signal is worth, so the seven raw counters can be compared at all: 34,000 world units walked is one unit of evidence, and so are seven casts. The first set was guessed and it was wrong in a way nothing would have shown - patience at 240 seconds a unit meant the clock running during an eight-minute opening outweighed everything the player actually did, and a run through the tutorial came out as Dotore whether the player fought, cast, explored or only gathered. These are set against a realistic level 0 to 2 run, and there is a test that plays that run four ways and asserts it is read more than one way.",
     "scales": {
-      "gathering": 24,
-      "roaming": 26000,
-      "aggression": 60,
-      "alchemy": 12,
-      "patience": 240,
-      "curiosity": 9,
-      "risk": 120
+      "gathering": 22,
+      "roaming": 34000,
+      "aggression": 34,
+      "alchemy": 7,
+      "patience": 900,
+      "curiosity": 6,
+      "risk": 70
     },
     "$signals_comment": "Seven, as canon says, though canon does not say which seven. Each is a raw counter the game already had a reason to know, normalised against the others so that a long run and a short one read the same way. risk is damage TAKEN rather than dealt, which is what makes it a description of how somebody plays rather than a second aggression.",
     "signals": [

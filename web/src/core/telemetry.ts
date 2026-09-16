@@ -112,26 +112,39 @@ export function blend(early: Reading, late: Reading, weight: number): Reading {
 /**
  * Which archetype a profile reads as.
  *
- * A dot product against each archetype's leaning, highest wins. An all-zero
- * profile - a player who has genuinely done nothing - returns null rather than
- * whichever archetype happens to be first in the file, because being told the
- * system has decided something about you before you have done anything is
- * worse than being told nothing.
+ * Scored on how far each signal sits from an even share of the seven, not on
+ * the raw share. That is the difference between a read and a horoscope, and it
+ * was measured rather than reasoned about: with raw shares, a realistic run
+ * through the opening returned the same archetype for a player who fought, a
+ * player who cast, a player who explored and a player who only gathered. Every
+ * one of them was Dotore, because the signals a normal player accumulates most
+ * of are the ones Dotore leans on, and the winner was decided before anybody
+ * had done anything distinctive.
+ *
+ * Centred, an average player scores near zero on everything and the read is
+ * decided by whatever they actually did more of than the rest.
+ *
+ * An all-zero profile - somebody who has genuinely done nothing - returns null
+ * rather than whichever archetype happens to be first in the file, because
+ * being told the system has already decided something about you before you
+ * have done anything is worse than being told nothing.
  */
 export function readArchetype(
   reading: Reading,
   archetypes: readonly ArchetypeDef[],
 ): ArchetypeDef | null {
+  const signals = Object.keys(reading);
   let any = false;
   for (const value of Object.values(reading)) if (value > 0) any = true;
-  if (!any || !archetypes.length) return null;
+  if (!any || !archetypes.length || !signals.length) return null;
 
+  const even = 1 / signals.length;
   let best: ArchetypeDef | null = null;
   let bestScore = -Infinity;
   for (const archetype of archetypes) {
     let score = 0;
     for (const [signal, weight] of Object.entries(archetype.leans)) {
-      score += (reading[signal] ?? 0) * weight;
+      score += ((reading[signal] ?? 0) - even) * weight;
     }
     if (score > bestScore) {
       bestScore = score;

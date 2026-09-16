@@ -38,11 +38,13 @@ describe('the profile', () => {
   });
 
   it('scales each signal, so walking does not drown out casting', () => {
-    // 26,000 units walked and 12 casts are one unit of evidence each. Without
-    // scaling the raw numbers make everybody a wanderer by a factor of 2000.
-    const p = profile(played({ roaming: 26000, alchemy: 12 }), scales);
-    expect(p.roaming).toBeCloseTo(0.5, 2);
-    expect(p.alchemy).toBeCloseTo(0.5, 2);
+    // One scale's worth of each is one unit of evidence each, whatever the raw
+    // numbers are. Unscaled, walking beats casting by a factor of thousands
+    // purely by being counted in smaller pieces. Read from content rather than
+    // written down here, so retuning the scales does not need this edited.
+    const p = profile(played({ roaming: scales.roaming ?? 1, alchemy: scales.alchemy ?? 1 }), scales);
+    expect(p.roaming).toBeCloseTo(0.5, 5);
+    expect(p.alchemy).toBeCloseTo(0.5, 5);
   });
 
   it('stays all zeroes for somebody who has done nothing', () => {
@@ -112,6 +114,67 @@ describe('the read', () => {
 
   it('survives an archetype list with nothing in it', () => {
     expect(readArchetype(profile(played({ aggression: 9 }), scales), [])).toBeNull();
+  });
+});
+
+describe('a realistic run through the opening', () => {
+  /*
+   * The case that was broken, and the reason the read is centred.
+   *
+   * With raw shares rather than deviations from an even split, every one of
+   * these came out as Dotore - the fighter, the caster, the explorer and the
+   * gatherer alike - because the signals a normal player accumulates most of
+   * are the ones Dotore leans on, and the winner was decided before anybody
+   * had done anything distinctive. Nothing in the game would have shown that:
+   * it granted an archetype, it granted a plausible one, and it granted the
+   * same one to everybody.
+   */
+  const archetypes = config.archetypes as readonly ArchetypeDef[];
+  const opening = played({
+    patience: 420,
+    roaming: 16800,
+    gathering: 15,
+    aggression: 20,
+    alchemy: 4,
+    curiosity: 2,
+    risk: 30,
+  });
+  const alsoDid = (extra: Record<string, number>) => {
+    const reading = { ...opening };
+    for (const [signal, amount] of Object.entries(extra)) {
+      reading[signal] = (reading[signal] ?? 0) + amount;
+    }
+    return readArchetype(profile(reading, scales), archetypes)?.id;
+  };
+
+  it('is not read the same way whatever the player did', () => {
+    const outcomes = new Set([
+      alsoDid({ aggression: 60, risk: 90 }),
+      alsoDid({ alchemy: 14 }),
+      alsoDid({ gathering: 40 }),
+      alsoDid({ patience: 1800 }),
+    ]);
+    expect(outcomes.size).toBeGreaterThan(1);
+  });
+
+  it('reads somebody who spent the opening fighting as Amorratua', () => {
+    expect(alsoDid({ aggression: 60, risk: 90 })).toBe('amorratua');
+  });
+
+  it('reads somebody who spent it gathering and casting as Nahaste', () => {
+    expect(alsoDid({ alchemy: 14 })).toBe('nahaste');
+    expect(alsoDid({ gathering: 40 })).toBe('nahaste');
+  });
+
+  it('does not let the clock alone decide it', () => {
+    // patience ticks every frame that nothing is hunting you, which is most of
+    // an eight-minute opening. If time passing outweighs what the player chose
+    // to do, the read is a horoscope.
+    const still = played({ patience: 420 });
+    const busy = played({ patience: 420, aggression: 80, risk: 120 });
+    expect(readArchetype(profile(still, scales), archetypes)?.id).not.toBe(
+      readArchetype(profile(busy, scales), archetypes)?.id,
+    );
   });
 });
 
