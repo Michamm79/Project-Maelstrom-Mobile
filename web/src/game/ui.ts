@@ -746,7 +746,7 @@ export class Ui {
         'note',
         `${held.size} of ${all.length} picked up. ` +
           (pairs.length
-            ? `${pairs.length} of them disagree with each other.`
+            ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} of them contradict each other.`
             : 'Nothing you are holding disagrees with anything else you are holding.'),
       ),
     );

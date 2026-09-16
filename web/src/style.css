@@ -1990,8 +1990,67 @@ button.ghost.wide {
   align-items: stretch;
   gap: 2px;
 }
+
+/*
+ * Tight, because the lists got long.
+ *
+ * Crafting went from four recipes to thirteen and alchemy from three
+ * combinations to eleven, against a sheet body that is 261px tall in a
+ * landscape box. At the old spacing that was under two rows on screen at a
+ * time, which turns "what can I make" into a scrolling exercise - and canon's
+ * one requirement for this menu is that it is fast to read and fast to act in.
+ *
+ * The action sits on the same line as the name rather than under everything,
+ * which is where most of the height went.
+ */
+.sheet .row-item {
+  position: relative;
+  padding: 7px 9px;
+  margin-bottom: 5px;
+}
+.sheet .row-item .head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-right: 78px;
+}
+.sheet .row-item .head b {
+  font-size: 13px;
+}
+.sheet .row-item .head em {
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.sheet .row-item p {
+  margin: 1px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-faint);
+  padding-right: 78px;
+}
 .sheet .row-item .go {
-  align-self: flex-start;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  min-height: 28px;
+  padding: 5px 10px;
+  font-size: 11px;
+  max-width: 72px;
+}
+.sheet .row-item .tag {
+  margin-top: 3px;
+  font-size: 10px;
+}
+.sheet .row-item .cost {
+  margin-top: 3px;
+}
+
+/* The log has no button, so its text gets the full width back. */
+.sheet .row-item.note p,
+.sheet .row-item.note b {
+  padding-right: 0;
 }
 .sheet .row-item .head b {
   font-size: 14px;

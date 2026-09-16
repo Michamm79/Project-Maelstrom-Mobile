@@ -1290,6 +1290,70 @@ await page.waitForTimeout(300);
   });
 }
 
+// -------------------------------------------------------------- the lists
+
+/*
+ * The menu got long, so it gets measured.
+ *
+ * Crafting went from four recipes to thirteen and alchemy from three
+ * combinations to eleven, against a sheet body that is 261px tall in a
+ * landscape box. Canon's one requirement for this menu is that it is fast to
+ * read and fast to act in, and at the old spacing under two rows fitted on
+ * screen at a time - which turns "what can I make" into a scrolling exercise.
+ *
+ * Measured with clientHeight rather than getBoundingClientRect, because the
+ * box may be rotated and a rotated element's bounding rect is its
+ * axis-aligned cover: it reported 811px for every row regardless of content.
+ */
+{
+  // Put something in the log first: an empty one correctly shows a sentence
+  // about where to find paper rather than rows, and measuring row density on
+  // a list with no rows in it passes for the wrong reason.
+  await peek(() => {
+    const g = window.maelstrom;
+    for (const id of ['b_assessment', 'j_test', 'b_perimeter']) g.notesHeld.add(id);
+    g.ui.refresh(g.hudState());
+  });
+
+  await page.locator('.nav-btn').click();
+  await page.waitForTimeout(250);
+  const shape = {};
+  for (const tab of ['Craft', 'Alchemy', 'Log']) {
+    await page.locator('.tabs button', { hasText: tab }).click();
+    await page.waitForTimeout(150);
+    shape[tab] = await peek(() => {
+      const body = document.querySelector('.sheet .body');
+      const rows = [...document.querySelectorAll('.sheet .row-item')];
+      if (!rows.length) return { rows: 0, onScreen: 0, overflow: false };
+      const perRow = body.scrollHeight / rows.length;
+      return {
+        rows: rows.length,
+        onScreen: Number((body.clientHeight / perRow).toFixed(1)),
+        // Nothing may be wider than the row that holds it: the action button
+        // is absolutely positioned now, and text running under it would be
+        // unreadable rather than obviously broken.
+        overflow: rows.some((r) => r.scrollWidth > r.clientWidth + 1),
+      };
+    });
+  }
+  check(
+    'every list shows at least a couple of rows at once, and nothing runs off the side',
+    Object.values(shape).every((s) => s.rows > 0 && s.onScreen >= 2.5 && !s.overflow),
+    JSON.stringify(shape),
+  );
+  // And the pairing the player is now holding is drawn, rather than the log
+  // simply listing both halves next to each other and saying nothing.
+  await page.locator('.tabs button', { hasText: 'Log' }).click();
+  await page.waitForTimeout(150);
+  check(
+    'the log marks a contradiction once both halves are held',
+    (await page.locator('.sheet .row-item.disputed').count()) === 2,
+    `${await page.locator('.sheet .row-item.note').count()} notes listed`,
+  );
+  await page.locator('.sheet header .close').click();
+  await page.waitForTimeout(200);
+}
+
 // ------------------------------------------------------------------ ending
 
 /*
