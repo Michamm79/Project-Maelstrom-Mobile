@@ -165,3 +165,20 @@ describe('dying', () => {
     expect(world.player.status.revealed).toBe(0);
   });
 });
+
+describe('the gauntlets as the weapon', () => {
+  it('reaches further and hits harder with the strike recipes made', () => {
+    const def = content.enemy('goblin');
+    const attack = content.progression.combat.basicAttack;
+
+    // Just outside the bare reach, just inside the upgraded one.
+    const out = world.spawn(def, attack.range + 8, 0);
+    expect(world.swing()?.hit).toHaveLength(0);
+
+    world.player.attackCooldown = 0;
+    const upgraded = world.swing({ damage: 7, range: 14 });
+    expect(upgraded?.hit).toHaveLength(1);
+    // 9 base + 7 crafted, with no combo yet.
+    expect(out.hp).toBe(def.hp - (attack.damage + 7));
+  });
+});

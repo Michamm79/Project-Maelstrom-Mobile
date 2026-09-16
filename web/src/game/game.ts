@@ -236,7 +236,10 @@ export class Game {
   }
 
   private attack(): void {
-    const result = this.world.swing();
+    const result = this.world.swing({
+      damage: this.inventory.strikeDamage,
+      range: this.inventory.strikeReach,
+    });
     if (!result) return;
     this.sound.play(result.hit.length ? 'hit' : 'ui', 1 + result.combo * 0.12);
     if (result.hit.length) this.funnel.mark('struck');
@@ -395,6 +398,9 @@ export class Game {
       carryCapacity: 'carry',
       pullRadius: 'pull radius',
       pullSpeed: 'pull speed',
+      strikeDamage: 'strike',
+      strikeReach: 'reach',
+      channelRate: 'recovery',
     };
     const stat = STAT_NAMES[recipe.effect.stat] ?? recipe.effect.stat;
     this.sound.play('craft');
@@ -434,7 +440,10 @@ export class Game {
     this.sound.play('cast');
     this.funnel.mark('cast');
     this.fragment('firstCast');
-    this.cooldowns.set(combination.id, combination.cooldownSeconds);
+    // Scaled by the gauntlets: channelRate is the one crafting stat that
+    // reaches alchemy, and it is the reason the deep recipes are worth making
+    // once the carry capacity has stopped being the thing holding you back.
+    this.cooldowns.set(combination.id, combination.cooldownSeconds * this.inventory.cooldownScale);
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
       `First cast: ${combination.name}`,

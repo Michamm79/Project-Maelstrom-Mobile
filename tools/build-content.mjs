@@ -29,6 +29,15 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
 
+const typeSource = readFileSync(join(ROOT, 'web/src/core/types.ts'), 'utf8');
+
+/** A named `export const X = [...] as const;` block out of types.ts. */
+function typeSourceFor(name) {
+  const match = typeSource.match(new RegExp(`export const ${name} = \\[([^\\]]*)\\]`));
+  if (!match) errors.push(`could not find ${name} in web/src/core/types.ts`);
+  return match?.[1] ?? '';
+}
+
 const errors = [];
 const warnings = [];
 const fail = (msg) => errors.push(msg);
@@ -224,21 +233,61 @@ if (umbrelSources.length !== 1) {
 
 // ---------------------------------------------------------------- crafting
 
+/*
+ * The stats the engine actually reads, taken from the list the runtime
+ * iterates rather than from baseStats. A recipe pointing at a stat that only
+ * exists in content raises a number nothing ever asks for.
+ */
+const statBlock = typeSourceFor('GAUNTLET_STATS');
+const engineStats = new Set([...statBlock.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]));
+for (const stat of engineStats) {
+  if (!(stat in (crafting.baseStats ?? {}))) {
+    fail(`the engine reads gauntlet stat "${stat}", which crafting.baseStats does not define`);
+  }
+}
+for (const stat of Object.keys(crafting.baseStats ?? {})) {
+  if (stat.startsWith('$')) continue;
+  if (!engineStats.has(stat)) fail(`crafting.baseStats defines "${stat}", which nothing in the engine reads`);
+}
+
 const statNames = new Set(Object.keys(crafting.baseStats ?? {}));
+const recipeBiomes = new Set();
 const craftIds = new Set();
 for (const r of crafting.recipes) {
   if (craftIds.has(r.id)) fail(`duplicate crafting recipe id "${r.id}"`);
   craftIds.add(r.id);
   const cost = Object.entries(r.cost ?? {});
   if (!cost.length) fail(`crafting recipe "${r.id}" costs nothing`);
+  let units = 0;
   for (const [id, qty] of cost) {
     if (!materialIds.has(id)) fail(`crafting recipe "${r.id}" needs unknown material "${id}"`);
+    else recipeBiomes.add(materials.find((m) => m.id === id).biome);
     if (!Number.isInteger(qty) || qty <= 0) fail(`crafting recipe "${r.id}" asks for ${qty} x ${id}`);
+    units += qty;
+  }
+  // One material is one unit of carry. A recipe costing more than a starting
+  // gauntlet can hold cannot be made until some OTHER recipe has been made
+  // first, which is a dependency nothing in the menu states.
+  if (units > crafting.baseStats.carryCapacity) {
+    fail(`crafting recipe "${r.id}" costs ${units} units against a base capacity of ${crafting.baseStats.carryCapacity}`);
   }
   if (!statNames.has(r.effect?.stat)) {
     fail(`crafting recipe "${r.id}" upgrades unknown stat "${r.effect?.stat}"`);
   }
   if (!(r.effect?.amount > 0)) fail(`crafting recipe "${r.id}" upgrades nothing`);
+}
+
+/*
+ * Every region has to be worth walking to for crafting as well as for alchemy.
+ *
+ * The canon four recipes are all buildable from Plains/Forest material, which
+ * meant crafting was finished inside the first twenty minutes and the four
+ * outer regions - the whole reason the world is this shape - only ever paid
+ * out in elements. A region with nothing to make in it is a region the player
+ * visits once.
+ */
+for (const id of biomeIds) {
+  if (!recipeBiomes.has(id)) fail(`no crafting recipe wants anything from "${id}", so there is nothing to make there`);
 }
 
 // ---------------------------------------------------------------- alchemy
@@ -249,7 +298,6 @@ for (const r of crafting.recipes) {
  * falls through every branch and resolves as "hits nobody, does nothing",
  * which ships perfectly happily.
  */
-const typeSource = readFileSync(join(ROOT, 'web/src/core/types.ts'), 'utf8');
 const kindBlock = typeSource.match(/export type AbilityKind =([^;]*);/);
 if (!kindBlock) fail('could not find AbilityKind in web/src/core/types.ts');
 const abilityKinds = new Set([...(kindBlock?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1]));
@@ -419,6 +467,60 @@ if (progression.alchemyUnlockLevel !== 2) {
 }
 if (progression.xp?.gather !== undefined) {
   fail('progression.xp.gather exists - XP is novelty, not volume, and per-unit gathering rewards farming one node');
+}
+
+/*
+ * The one that would have caught the hole.
+ *
+ * XP is novelty, so the total a run can earn is FINITE and computable: one
+ * payment per material, per recipe, per combination, per region arrived in,
+ * plus the waves of the one bundle that is not itself gated behind a level.
+ * The content then gates things on levels - repeating bundles and the ambient
+ * population at Level 5, a combination at Level 6 - and nothing was checking
+ * that those levels were inside the ceiling.
+ *
+ * They were not. The curve put Level 5 at 1970 against a ceiling of 1400, so
+ * the escalation the deck calls the point the game escalates could not happen,
+ * in any run, ever. Nothing failed; the game simply stopped having a late
+ * game, quietly, and looked fine doing it.
+ *
+ * Deliberately conservative: the spawn region pays nothing because waking in
+ * it is not visiting it, and only the first bundle's waves count because every
+ * later bundle is behind the very gate being checked. A ceiling computed
+ * generously would have passed the build that was broken.
+ */
+const ceiling =
+  materials.length * (progression.xp?.firstMaterial ?? 0) +
+  crafting.recipes.length * (progression.xp?.firstCraft ?? 0) +
+  alchemy.length * (progression.xp?.firstAlchemy ?? 0) +
+  Math.max(0, biomes.length - 1) * (progression.xp?.firstBiome ?? 0) +
+  (pacing?.wavesPerBundle ?? 0) * (progression.xp?.clearWave ?? 0);
+
+const cumulative = [0];
+for (const step of progression.levelCurve?.thresholds ?? []) {
+  cumulative.push(cumulative[cumulative.length - 1] + step);
+}
+
+const gated = [
+  ['progression.alchemyUnlockLevel', progression.alchemyUnlockLevel],
+  ['progression.classLevel', progression.classLevel],
+  ['waves.gates.firstBundleAtLevel', waves.gates?.firstBundleAtLevel],
+  ['waves.gates.repeatingBundlesFromLevel', waves.gates?.repeatingBundlesFromLevel],
+  ['waves.gates.ambientFromLevel', waves.gates?.ambientFromLevel],
+  ...alchemy.filter((c) => c.minLevel !== undefined).map((c) => [`alchemy "${c.id}" minLevel`, c.minLevel]),
+];
+
+for (const [what, level] of gated) {
+  if (typeof level !== 'number') continue;
+  const needed = cumulative[level];
+  if (needed === undefined) {
+    fail(`${what} is ${level}, which the level curve does not go up to`);
+  } else if (needed > ceiling) {
+    fail(
+      `${what} is ${level}, which needs ${needed} XP - but a run that does absolutely everything once ` +
+        `earns ${ceiling}. That gate can never open, and nothing else would have said so`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------- tutorial

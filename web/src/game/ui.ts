@@ -576,8 +576,15 @@ export class Ui {
       carryCapacity: 'Carry',
       pullRadius: 'Pull radius',
       pullSpeed: 'Pull speed',
+      strikeDamage: 'Strike',
+      strikeReach: 'Reach',
+      channelRate: 'Recovery',
     };
-    return `${names[effect.stat] ?? effect.stat} +${effect.amount}`;
+    // The only one that is a percentage rather than a flat amount, and a row
+    // reading "Recovery +18" where every neighbour is in units would be read
+    // as eighteen of something.
+    const unit = effect.stat === 'channelRate' ? '%' : '';
+    return `${names[effect.stat] ?? effect.stat} +${effect.amount}${unit}`;
   }
 
   private renderAlchemy(state: HudState): void {

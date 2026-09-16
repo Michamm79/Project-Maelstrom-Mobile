@@ -1,64 +1,100 @@
 {
-  "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
-  "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2). The pull radius was raised from 600 to 900 after measuring the loop: at 600 a walking player swept up under two nodes a minute, which made the walk between biomes dead time - the exact failure canon warns the whole world shape depends on avoiding.",
+  "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The first four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
+  "$inferred": "EVERYTHING AFTER THE FIRST FOUR IS INVENTED, and this note is the flag. The canon four are all buildable from Plains/Forest material and all takeable inside the first twenty minutes, after which crafting was finished and gathering had no destination for the rest of the run - which is a problem, because gathering is the game's core verb and the four outer regions exist to be walked to. The eight below give each region something only it can make, and the last four need material from three regions apiece. Costs, names and amounts are all inferred.",
+  "$stats_comment": "Three new stats, also inferred. All three are the GAUNTLETS, which is the constraint canon puts on crafting - it upgrades the gauntlets, not armour and not weapons. strikeDamage and strikeReach are legitimate on the same reasoning that gives the player a basic attack at all: canon says there are no weapon ITEMS but gives Nahaste 'near-zero unarmed capability' as a cost, which only means something if everyone else has some - so the hands that pull are the hands that hit. channelRate is how fast the gauntlets recover between castings, in percentage points; see Inventory.cooldownScale, where 100/(100+rate) makes the first upgrade worth more than the fourth and stops any stack reaching zero.",
+  "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2). The pull radius was raised from 600 to 900 after measuring the loop: at 600 a walking player swept up under two nodes a minute, which made the walk between biomes dead time - the exact failure canon warns the whole world shape depends on avoiding. strikeDamage and strikeReach are 0 here because the basic attack's own damage and range live in progression.json; these are what crafting ADDS to them.",
   "baseStats": {
     "carryCapacity": 60,
     "pullRadius": 900,
-    "pullSpeed": 1200
+    "pullSpeed": 1200,
+    "strikeDamage": 0,
+    "strikeReach": 0,
+    "channelRate": 0
   },
   "recipes": [
     {
       "id": "reinforced_weave",
       "name": "Reinforced Weave",
-      "cost": {
-        "heartwood_burl": 4,
-        "ironvine": 3
-      },
-      "effect": {
-        "stat": "carryCapacity",
-        "amount": 40
-      },
+      "cost": { "heartwood_burl": 4, "ironvine": 3 },
+      "effect": { "stat": "carryCapacity", "amount": 40 },
       "description": "Burl grain laid across vine that already carries its own metal. The gauntlet stops complaining about weight."
-    },
-    {
-      "id": "layered_weave",
-      "name": "Layered Weave",
-      "cost": {
-        "loamstone": 5,
-        "ironvine": 4,
-        "ashcap_fungus": 3
-      },
-      "effect": {
-        "stat": "carryCapacity",
-        "amount": 60
-      },
-      "description": "Three materials that have nothing in common except that none of them will give."
     },
     {
       "id": "widened_aperture",
       "name": "Widened Aperture",
-      "cost": {
-        "riverglass": 4,
-        "stormpetal": 3
-      },
-      "effect": {
-        "stat": "pullRadius",
-        "amount": 250
-      },
+      "cost": { "riverglass": 4, "stormpetal": 3 },
+      "effect": { "stat": "pullRadius", "amount": 250 },
       "description": "The mouth of the pull opens wider. You stop having to walk at things."
     },
     {
       "id": "deeper_current",
       "name": "Deeper Current",
-      "cost": {
-        "stormpetal": 4,
-        "heartwood_burl": 3
-      },
-      "effect": {
-        "stat": "pullSpeed",
-        "amount": 300
-      },
+      "cost": { "stormpetal": 4, "heartwood_burl": 3 },
+      "effect": { "stat": "pullSpeed", "amount": 300 },
       "description": "The spiral tightens and quickens. Material arrives before you have finished passing it."
+    },
+    {
+      "id": "layered_weave",
+      "name": "Layered Weave",
+      "cost": { "loamstone": 5, "ironvine": 4, "ashcap_fungus": 3 },
+      "effect": { "stat": "carryCapacity", "amount": 60 },
+      "description": "Three materials that have nothing in common except that none of them will give."
+    },
+    {
+      "id": "coldforged_knuckles",
+      "name": "Coldforged Knuckles",
+      "cost": { "coldiron_ore": 4, "rimeshard": 3 },
+      "effect": { "stat": "strikeDamage", "amount": 4 },
+      "description": "Iron worked at a temperature the desert cannot reach. The first thing you make that is for hitting with."
+    },
+    {
+      "id": "sunfused_lens",
+      "name": "Sunfused Lens",
+      "cost": { "sunfused_glass": 4, "dustbloom": 3 },
+      "effect": { "stat": "strikeReach", "amount": 14 },
+      "description": "Glass set across the knuckle, bending the swing a little further than the arm goes."
+    },
+    {
+      "id": "bogdrawn_coil",
+      "name": "Bog-Drawn Coil",
+      "cost": { "bogiron_nodule": 4, "silt_pearl": 3 },
+      "effect": { "stat": "channelRate", "amount": 18 },
+      "description": "Wound from iron the wetland made slowly. It gives the charge back faster than it took it."
+    },
+    {
+      "id": "capacitor_lattice",
+      "name": "Capacitor Lattice",
+      "cost": { "capacitor_core": 4, "coolant_residue": 3 },
+      "effect": { "stat": "channelRate", "amount": 22 },
+      "description": "Somebody built this to hold a charge for something else. It does not appear to mind."
+    },
+    {
+      "id": "wide_draw",
+      "name": "Wide Draw",
+      "cost": { "peakmoss": 4, "marshgas_bladder": 4, "dustbloom": 3 },
+      "effect": { "stat": "pullRadius", "amount": 350 },
+      "description": "Three regions' worth of growth, and the pull now reaches most of what you can see."
+    },
+    {
+      "id": "deep_stores",
+      "name": "Deep Stores",
+      "cost": { "thermal_salt": 5, "silt_pearl": 4, "heartwood_burl": 5 },
+      "effect": { "stat": "carryCapacity", "amount": 80 },
+      "description": "You stop making the walk back. That turns out to be most of what capacity is for."
+    },
+    {
+      "id": "scythecut_plating",
+      "name": "Scythe-Cut Plating",
+      "cost": { "coldiron_ore": 5, "capacitor_core": 4, "sunfused_glass": 4 },
+      "effect": { "stat": "strikeDamage", "amount": 7 },
+      "description": "Shaped after something you have seen swung at you. There is no polite way to describe having copied it."
+    },
+    {
+      "id": "long_reach",
+      "name": "The Long Reach",
+      "cost": { "rimeshard": 5, "riverglass": 5, "marshgas_bladder": 4 },
+      "effect": { "stat": "pullSpeed", "amount": 450 },
+      "description": "The spiral no longer looks like a spiral. Things simply arrive."
     }
   ]
 }

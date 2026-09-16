@@ -221,6 +221,12 @@ export const SWING_SECONDS = 0.26;
 /** The tell before a blow lands, so a hit is something you can see coming. */
 export const WIND_UP_SECONDS = 0.42;
 
+/** What crafting adds to the swing. See GAUNTLET_STATS: the hands are the weapon. */
+export interface StrikeBonus {
+  damage: number;
+  range: number;
+}
+
 export class World {
   readonly nodes: WorldNode[] = [];
   readonly props: Prop[] = [];
@@ -715,12 +721,20 @@ export class World {
    * never promises a hit it cannot land - and the arc means neighbours of the
    * target get caught too, which is what stops a crowd becoming a queue.
    */
-  swing(): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
+  swing(bonus: StrikeBonus = { damage: 0, range: 0 }): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
     const player = this.player;
     const attack = this.content.progression.combat.basicAttack;
     if (player.dead || player.attackCooldown > 0) return null;
 
-    const target = this.nearestTarget(attack.range);
+    /*
+     * The gauntlets are the weapon, so crafting reaches the swing.
+     *
+     * Passed in rather than held, because the world does not own an inventory
+     * and a copy of these numbers kept here would be a copy that goes stale
+     * the moment something is crafted.
+     */
+    const reach = attack.range + bonus.range;
+    const target = this.nearestTarget(reach);
     player.attackCooldown = attack.cooldownSeconds;
     player.attackAnim = SWING_SECONDS;
     if (!target) {
@@ -739,7 +753,7 @@ export class World {
     player.comboTargetId = target.id;
     player.comboTimer = attack.comboWindowSeconds;
 
-    const damage = attack.damage + player.combo * attack.comboBonus;
+    const damage = attack.damage + bonus.damage + player.combo * attack.comboBonus;
     const halfArc = (attack.arcDegrees * Math.PI) / 360;
     const hit: Enemy[] = [];
     const killed: Enemy[] = [];
@@ -748,7 +762,7 @@ export class World {
       if (enemy.dead) continue;
       const dx = enemy.x - player.x;
       const dy = enemy.y - player.y;
-      if (Math.hypot(dx, dy) > attack.range) continue;
+      if (Math.hypot(dx, dy) > reach) continue;
       let delta = Math.atan2(dy, dx) - player.facing;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;

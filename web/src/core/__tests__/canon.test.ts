@@ -130,11 +130,28 @@ describe('the enemies', () => {
 
 describe('crafting and alchemy stay separate disciplines', () => {
   it('spends materials on gauntlet upgrades', () => {
-    expect(content.crafting.recipes).toHaveLength(4);
     for (const r of content.crafting.recipes) {
       expect(Object.keys(content.crafting.baseStats)).toContain(r.effect.stat);
       for (const id of Object.keys(r.cost)) expect(content.hasMaterial(id)).toBe(true);
     }
+  });
+
+  it('still has the four recipes canon actually specifies', () => {
+    // A count, not a total: the tree has been extended past canon and this is
+    // the part of it that is not ours to change.
+    const ids = content.crafting.recipes.map((r) => r.id);
+    for (const id of ['reinforced_weave', 'layered_weave', 'widened_aperture', 'deeper_current']) {
+      expect(ids).toContain(id);
+    }
+  });
+
+  it('gives every region something only it can make', () => {
+    // Canon's four recipes are all buildable at the spawn, which left the four
+    // outer regions paying out in elements and nothing else.
+    const wanted = new Set(
+      content.crafting.recipes.flatMap((r) => Object.keys(r.cost)).map((id) => content.material(id).biome),
+    );
+    for (const biome of content.biomes) expect(wanted).toContain(biome.id);
   });
 
   it('spends elements on abilities', () => {

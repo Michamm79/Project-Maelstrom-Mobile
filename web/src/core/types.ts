@@ -92,8 +92,30 @@ export interface ColiseumDef {
   travelSeconds: { walk: readonly number[]; sprint: readonly number[] };
 }
 
-/** Which gauntlet stat a crafting recipe permanently raises. */
-export type GauntletStat = 'carryCapacity' | 'pullRadius' | 'pullSpeed';
+/**
+ * Which gauntlet stat a crafting recipe permanently raises.
+ *
+ * All six are the gauntlets themselves, which is the constraint canon puts on
+ * crafting - it produces "permanent gauntlet upgrades", not armour and not
+ * weapons. The strike pair is legitimate on the same reasoning that gives the
+ * player a basic attack at all: canon has no weapon ITEMS, so the hands that
+ * pull are also the hands that hit, and making them hit harder is a gauntlet
+ * upgrade rather than a new sword.
+ *
+ * A list rather than a bare union, because the runtime needs to iterate it -
+ * and iterating a hand-maintained copy of a type is how a stat gets added in
+ * three places and reset in two.
+ */
+export const GAUNTLET_STATS = [
+  'carryCapacity',
+  'pullRadius',
+  'pullSpeed',
+  'strikeDamage',
+  'strikeReach',
+  'channelRate',
+] as const;
+
+export type GauntletStat = (typeof GAUNTLET_STATS)[number];
 
 export interface CraftingRecipe {
   id: RecipeId;

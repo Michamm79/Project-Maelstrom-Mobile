@@ -1,5 +1,5 @@
 {
-  "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening; past Level 2 the cycle continues and canon's storyline does not yet advance. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu - neither is built yet.",
+  "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening and are canon. Levels 3 and up are INFERRED: canon's storyline does not advance past Level 2, but its own systems gate things at Level 5 - the deck calls that the point the game escalates, and content/waves.json holds repeating bundles and the ambient population there - so the levels in between have to exist and have to be reachable. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu; neither is built yet.",
   "alchemyUnlockLevel": 2,
   "classLevel": 5,
   "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
@@ -11,18 +11,19 @@
     "clearWave": 40
   },
   "levelCurve": {
-    "$comment": "Cumulative XP to advance FROM level n TO n+1. Set from canon's own triggers rather than by feel. Level 1 is the end of the gathering tutorial: the spawn holds six materials at 30 each, so 150 means finding five of them. Level 2 is clearing all three waves of the first bundle, so it sits at 350 cumulative - reachable from the six spawn materials (180), a first craft (60) and three cleared waves (120). An earlier curve put Level 1 at 60, which armed the wave director after two pickups.",
+    "$comment": "XP to advance FROM level n TO n+1; the build step turns these into a cumulative table. The first two come from canon's own triggers. Level 1 is the end of the gathering tutorial: the spawn holds six materials at 30 each, so 150 means finding five of them. Level 2 is clearing all three waves of the first bundle, so it sits at 350 cumulative - reachable from the six spawn materials (180), a first craft (60) and three cleared waves (120). An earlier curve put Level 1 at 60, which armed the wave director after two pickups.",
+    "$reachable_comment": "The rest are set against the XP that actually EXISTS, which the previous curve was not. Novelty is finite: 18 materials, 12 recipes, 11 combinations, 4 regions to arrive in and 3 waves in the only bundle that is not gated behind Level 5. That is 2360 XP, and the old curve put Level 5 at 1970 and Level 6 at 3010 - so the escalation was 570 short of reachable and the level that opens Nightfall was unreachable outright, in a build where content/waves.json gated the whole late game on getting there. build-content.mjs now computes that ceiling and fails if any level the content gates sits above it.",
     "thresholds": [
       150,
       200,
-      340,
+      270,
+      360,
+      440,
+      480,
       520,
-      760,
-      1040,
-      1380,
-      1760,
-      2200,
-      2700
+      580,
+      700,
+      800
     ]
   },
   "levels": [
@@ -40,6 +41,36 @@
       "level": 2,
       "trigger": "Clearing all three waves",
       "grants": "Rune, and the full alchemy menu."
+    },
+    {
+      "level": 3,
+      "trigger": "INFERRED. Whatever you did next - a region, a few crafts, the first casts of your own",
+      "grants": "Rimebind and Duststorm. Both are about controlling where things are rather than killing them."
+    },
+    {
+      "level": 4,
+      "trigger": "INFERRED. Two regions' worth of material, or one region and most of the workshop",
+      "grants": "Verdance and Ironward: the first two combinations that do not touch anything but you."
+    },
+    {
+      "level": 5,
+      "trigger": "INFERRED, but the level itself is canon - the deck calls this the point the game escalates",
+      "grants": "Sunlance and Clarion. Bundles start repeating and an ambient population moves in. Canon also reads a class here, which is not built."
+    },
+    {
+      "level": 6,
+      "trigger": "INFERRED. All four outer regions, and enough of the crafting tree to survive the cycle",
+      "grants": "Nightfall, which needs Dark Fiber and so needs the Data-Center."
+    },
+    {
+      "level": 7,
+      "trigger": "INFERRED. Surviving the escalation rather than exploring it",
+      "grants": "Nothing new to cast. Past here the only XP left is cleared waves."
+    },
+    {
+      "level": 8,
+      "trigger": "INFERRED",
+      "grants": "Nothing new. The curve continues so the bar has somewhere to go."
     }
   ],
   "player": {
