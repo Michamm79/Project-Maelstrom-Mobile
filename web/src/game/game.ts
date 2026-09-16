@@ -537,6 +537,26 @@ export class Game {
 
   private drainEvents(): void {
     for (const event of this.world.events) {
+      /*
+       * Every kill, from wherever it came.
+       *
+       * Hooked to the event rather than to swing(), because a thing can also
+       * die to a cast or to a burn ticking down, and a deletion that only
+       * happened when you hit it would make the other two look like the enemy
+       * had simply been forgotten.
+       */
+      if (event.kind === 'enemy-killed' && event.enemy) {
+        const { enemy } = event;
+        this.renderer.addDeletion(
+          enemy.def.id,
+          enemy.x,
+          enemy.y,
+          enemy.def.color,
+          // The size drawEnemies uses, so the glyphs land on the silhouette the
+          // player was actually looking at.
+          (34 + enemy.def.tier * 8) * 1.35,
+        );
+      }
       if (event.kind === 'player-hit') this.sound.play('hurt');
       if (event.kind === 'player-died') {
         this.sound.play('hurt');

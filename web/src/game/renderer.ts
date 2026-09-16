@@ -16,6 +16,7 @@ import { SWING_SECONDS, WIND_UP_SECONDS, type BiomeDisc, type World } from './wo
 import type { Content } from '../core/content';
 import type { InputController } from './input';
 import type { Screen } from './screen';
+import { DELETION_SECONDS, drawDeletion, makeDeletion, type Deletion } from './deletion';
 
 /** Sprite sheet geometry. Rows match the order make-sprites.mjs emits. */
 const SPRITE_W = 16;
@@ -113,9 +114,19 @@ function bakeFog(tint: string, strength: number): HTMLCanvasElement | null {
   return canvas;
 }
 
+/**
+ * Concurrent deletions worth drawing.
+ *
+ * A wave clear can kill a dozen things inside a second, and each one is up to
+ * 150 glyphs. Past a handful the screen is unreadable anyway, so the oldest
+ * give way rather than the frame rate doing it for them.
+ */
+const MAX_DELETIONS = 8;
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly floaters: Floater[] = [];
+  private readonly deletions: Deletion[] = [];
   private width = 0;
   private height = 0;
   private dpr = 1;
@@ -208,6 +219,19 @@ export class Renderer {
     this.zoom = zoomFor(this.width, this.height, this.screen.span);
   }
 
+  /**
+   * A creature has stopped running. Canon says they are renderings of hostile
+   * code, so this is the rendering coming apart rather than a body falling.
+   */
+  addDeletion(id: string, x: number, y: number, color: string, size: number): void {
+    const effect = makeDeletion(id, x, y, color, size);
+    if (!effect) return;
+    this.deletions.push(effect);
+    if (this.deletions.length > MAX_DELETIONS) {
+      this.deletions.splice(0, this.deletions.length - MAX_DELETIONS);
+    }
+  }
+
   addFloater(x: number, y: number, text: string, color: string, life = 1.25): void {
     this.floaters.push({ x, y, text, color, age: 0, life });
     if (this.floaters.length > 40) this.floaters.splice(0, this.floaters.length - 40);
@@ -224,6 +248,13 @@ export class Renderer {
       if (!floater) continue;
       floater.age += dt;
       if (floater.age >= floater.life) this.floaters.splice(i, 1);
+    }
+
+    for (let i = this.deletions.length - 1; i >= 0; i--) {
+      const effect = this.deletions[i];
+      if (!effect) continue;
+      effect.age += dt;
+      if (effect.age >= DELETION_SECONDS) this.deletions.splice(i, 1);
     }
   }
 
@@ -254,6 +285,7 @@ export class Renderer {
     this.drawProps(world, camera);
     this.drawNodes(world, state, camera);
     this.drawEnemies(world, state, camera);
+    this.drawDeletions();
     this.drawPullRing(world, state);
     this.drawSwing(world);
     this.drawPlayer(world);
@@ -609,7 +641,13 @@ export class Renderer {
       ctx.ellipse(0, 14, 13, 5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      if (enemy.dead) ctx.globalAlpha = 0.35;
+      // Nothing to draw: a dead creature has already been replaced by its
+      // deletion, and a translucent corpse under the glyphs reads as the effect
+      // failing to remove it.
+      if (enemy.dead) {
+        ctx.restore();
+        continue;
+      }
 
       // Noticed-you tell. It matters more now that noticing is an encounter
       // rather than a sweep: this is the moment the wandering stopped.
@@ -857,6 +895,10 @@ export class Renderer {
       ctx.fillText(floater.text, floater.x, floater.y - 20 - t * 22);
     }
     ctx.globalAlpha = 1;
+  }
+
+  private drawDeletions(): void {
+    for (const effect of this.deletions) drawDeletion(this.ctx, effect);
   }
 
   private drawJoystick(input: InputController): void {

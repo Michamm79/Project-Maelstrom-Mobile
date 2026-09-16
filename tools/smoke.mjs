@@ -864,6 +864,53 @@ check('and it wakes up again', await page.locator('.opening').isVisible());
 await page.locator('.opening').dispatchEvent('pointerdown');
 await page.waitForTimeout(300);
 
+// ----------------------------------------------------------------- deletion
+
+/*
+ * Killing a rendering of hostile code.
+ *
+ * The failure worth guarding is silent: if the silhouette sampling comes back
+ * empty - a tainted canvas, a creature that drew nothing, a getImageData that
+ * threw - makeDeletion returns null and enemies simply vanish again, with no
+ * error anywhere. So this asserts the glyphs exist and that there are enough of
+ * them to be a shape.
+ */
+{
+  const killed = await peek(async () => {
+    const g = window.maelstrom;
+    g.world.enemies.length = 0;
+    const out = {};
+    for (const id of ['goblin', 'minotaur', 'scythe_bearer']) {
+      const enemy = g.world.spawn(JSON.parse(JSON.stringify(g.world.content.enemy(id))), 200, 200);
+      enemy.hp = 0;
+      enemy.dead = true;
+      g.world.events.push({ kind: 'enemy-killed', enemy });
+      g.drainEvents();
+      const effect = g.renderer.deletions[g.renderer.deletions.length - 1];
+      out[id] = effect ? effect.glyphs.length : 0;
+    }
+    return out;
+  });
+  check(
+    'every tier comes apart into its own silhouette',
+    Object.values(killed).every((n) => n > 20),
+    JSON.stringify(killed),
+  );
+
+  const cleared = await peek(async () => {
+    const g = window.maelstrom;
+    // Age them past the end rather than waiting a second of real time.
+    for (const effect of g.renderer.deletions) effect.age = 99;
+    g.renderer.update(0.016);
+    return g.renderer.deletions.length;
+  });
+  check('and the glyphs are cleaned up after', cleared === 0, `${cleared} left`);
+
+  await peek(() => {
+    window.maelstrom.world.enemies.length = 0;
+  });
+}
+
 // --------------------------------------------------------------- installing
 
 /*

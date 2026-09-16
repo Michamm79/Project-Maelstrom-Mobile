@@ -132,6 +132,13 @@ sound are produced by code:
   shading and a baked drop shadow, all applied to every shape at once.
 - **Enemies** — original creatures, one drawing each, posed by wind-up and
   stagger rather than by separate frames.
+- **Deletion** — a killed enemy does not fall over and does not fade like a
+  body. Canon says the tiers are renderings of hostile code, so the rendering
+  comes apart: a white flash, a conversion sweeping up from the feet, and the
+  silhouette standing there as flickering ones and zeroes before it drifts off.
+  The glyph positions are sampled from the real `drawCreature` output rather
+  than scattered in a box, which is what makes it read as *that goblin* being
+  deleted, horns and scythe included.
 - **The character** — a pixel sheet generated from character maps and a palette
   in `tools/make-sprites.mjs`, so proportions and colours retune without
   redrawing anything.
