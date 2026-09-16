@@ -32,6 +32,14 @@ import { Install } from './install';
 import { Funnel } from '../core/funnel';
 import { fragmentFor, type Fragment, type FragmentTrigger } from '../core/fragments';
 import { accuracyHeld, pairings } from '../core/notes';
+import {
+  advanceBreach,
+  breachBlocked,
+  epilogueFor,
+  stageIndex,
+  type BreachBlock,
+} from '../core/ending';
+import { EndingScene } from './ending';
 import { admit, toggleCarried, LOADOUT_SLOTS, type LoadoutState } from '../core/loadout';
 import type { CombinationId, RecipeId } from '../core/types';
 
@@ -44,6 +52,7 @@ export class Game {
   private readonly title: TitleScreen;
   private readonly pause: PauseMenu;
   private readonly opening: OpeningScene;
+  private readonly ending: EndingScene;
   private readonly sound = new Sound();
   private readonly install = new Install();
   private readonly funnel = new Funnel();
@@ -69,6 +78,14 @@ export class Game {
   private readonly fragmentsSeen = new Set<string>();
   /** Notes picked up off the ground, from either channel. */
   private readonly notesHeld = new Set<string>();
+
+  /** 0..1 along the boundary breach. See core/ending.ts. */
+  private breach = 0;
+  /** Which of the breach's stage lines has already been said. */
+  private breachStage = -1;
+  private breachSpawn = 0;
+  /** Set once the player has got out. The run continues; the ending does not repeat. */
+  private finished = false;
 
   private playtimeMs = 0;
   private lastFrame = 0;
@@ -127,6 +144,7 @@ export class Game {
     this.ui.setPullActive(this.pulling);
 
     this.opening = new OpeningScene(uiRoot);
+    this.ending = new EndingScene(uiRoot);
 
     // Every path out of the title screen is a genuine user gesture, which is
     // the only moment a browser will let audio start.
@@ -302,6 +320,11 @@ export class Game {
     this.waves.reset();
 
     this.cooldowns.clear();
+    this.breach = 0;
+    this.breachStage = -1;
+    this.breachSpawn = 0;
+    this.finished = false;
+    this.ui.setBreach(null, null);
     this.loadout = { carried: [], known: [] };
     this.pulling = true;
     this.playtimeMs = 0;
@@ -329,6 +352,10 @@ export class Game {
   private resume(): void {
     this.started = true;
     this.title.hide();
+    // Reconciled on the way back in as well as on the way out. It is cheap and
+    // idempotent, and it means every route into the world - a fresh run, a
+    // restored save, a quit and continue - gets the same bar.
+    this.syncLoadout();
     this.syncObjective();
   }
 
@@ -348,6 +375,9 @@ export class Game {
     // repopulate itself with paper the player is already carrying.
     for (const note of this.world.notes) if (this.notesHeld.has(note.id)) note.taken = true;
     this.loadout = { carried: [...run.loadout.carried], known: [...run.loadout.known] };
+    this.breach = run.breach;
+    this.breachStage = stageIndex(run.breach, content.ending.stages);
+    this.finished = run.finished;
   }
 
   /**
@@ -407,6 +437,8 @@ export class Game {
         playtimeMs: this.playtimeMs,
         fragmentsSeen: [...this.fragmentsSeen],
         notesHeld: [...this.notesHeld],
+        breach: this.breach,
+        finished: this.finished,
         loadout: this.loadout,
       },
     );
@@ -601,6 +633,13 @@ export class Game {
       return;
     }
 
+    // The same rule at the other end of the run: the scene owns the screen and
+    // nothing is allowed to walk into it while the player is reading.
+    if (this.ending.active) {
+      this.ending.update(dt);
+      return;
+    }
+
     /*
      * Paused: nothing moves, including the pull.
      *
@@ -680,6 +719,7 @@ export class Game {
     this.ui.setCombo(this.world.player.combo);
 
     this.world.update(dt);
+    this.updateBreach(dt);
     this.waves.update(dt, this.progression.level);
     this.drainEvents();
     this.refreshPlace();
@@ -749,11 +789,121 @@ export class Game {
     if (cleared > 0) this.fragment('waveCleared');
   }
 
+  // ---------------------------------------------------------------- the ending
+
+  /** Why the boundary will not take a pull right now, or null when it will. */
+  private breachBlock(): BreachBlock {
+    return breachBlocked(
+      {
+        fromCentre: Math.hypot(this.world.player.x, this.world.player.y),
+        boundaryRadius: this.world.boundaryRadius,
+        level: this.progression.level,
+        built: this.crafting.isBuilt(content.ending.requires.recipe),
+      },
+      content.ending,
+    );
+  }
+
+  /**
+   * The boundary coming apart, one frame at a time.
+   *
+   * Only while the player is standing at the edge with the pull on. The rest of
+   * this - the stage lines, the assault - hangs off the meter rather than off a
+   * timer, so a player who breaks off to fight for twenty seconds comes back to
+   * the same sentence they left rather than to one that has moved on without
+   * them.
+   */
+  private updateBreach(dt: number): void {
+    if (this.finished) return;
+
+    /*
+     * Nearness first, and separately from the rest.
+     *
+     * breachBlocked() reports the level before the distance, which is the
+     * right answer for the reason string and the wrong one for deciding
+     * whether to draw anything - using it alone put "The boundary is code.
+     * Level 5 first." on screen from the first minute of the tutorial, in the
+     * middle of a game that has not mentioned a boundary yet.
+     */
+    const toEdge = this.world.boundaryRadius - Math.hypot(this.world.player.x, this.world.player.y);
+    const near = toEdge <= content.ending.breach.reach;
+    const blocked = this.breachBlock();
+
+    if (!near) {
+      // Walked away mid-attempt: the meter holds where it is and bleeds down
+      // slowly, so going back for health is not a decision to start over.
+      if (this.breach > 0) this.breach = advanceBreach(this.breach, dt, false, content.ending.breach);
+      this.ui.setBreach(this.breach > 0 ? this.breach : null, this.breach > 0 ? 'distance' : null);
+      return;
+    }
+
+    if (blocked !== null) {
+      // At the edge, and it will not open. Say which of the two it is: the
+      // player has walked to the end of the world, and nothing happening with
+      // no explanation is indistinguishable from a bug.
+      this.ui.setBreach(this.breach > 0 ? this.breach : null, blocked);
+      return;
+    }
+
+    const before = this.breach;
+    this.breach = advanceBreach(this.breach, dt, this.pulling, content.ending.breach);
+    this.ui.setBreach(this.breach, null);
+    if (before === 0 && this.breach > 0) this.funnel.mark('startedBreach');
+
+    const stage = stageIndex(this.breach, content.ending.stages);
+    if (stage > this.breachStage) {
+      this.breachStage = stage;
+      const line = content.ending.stages[stage];
+      if (line) {
+        this.sound.play('warn');
+        this.ui.toast(line.text, 'big');
+      }
+    }
+
+    // The system stops scheduling and starts arriving.
+    if (this.breach > 0 && this.breach < 1) {
+      this.breachSpawn -= dt;
+      if (this.breachSpawn <= 0) {
+        const [min, max] = content.ending.breach.spawnEverySeconds;
+        this.breachSpawn = (min ?? 6) + Math.random() * ((max ?? 10) - (min ?? 6));
+        this.waves.assault(content.ending.breach.pressure);
+      }
+    }
+
+    if (this.breach >= 1) this.finish();
+  }
+
+  /** Out. The run is kept: the world is still there, and so is the hole. */
+  private finish(): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.ui.setBreach(null, null);
+    this.ui.closeSheet();
+    this.sound.play('level');
+    this.funnel.mark('gotOut');
+
+    const rare = accuracyHeld(content.notes, this.notesHeld);
+    const epilogue = epilogueFor(rare.found, content.ending.epilogues);
+    this.persist();
+    if (!epilogue) {
+      // Cannot happen - the build refuses a table with no zero-note entry -
+      // but a missing epilogue must not be a black screen with no way out.
+      this.title.show(true, this.runSummary());
+      return;
+    }
+
+    this.ending.play(epilogue, this.runSummary(), () => {
+      this.started = false;
+      this.title.show(true, this.runSummary());
+    });
+  }
+
   private runSummary(): string {
     const minutes = Math.round(this.playtimeMs / 60000);
     const rare = accuracyHeld(content.notes, this.notesHeld);
+    const out = this.finished ? 'Out - ' : '';
     return (
-      `Level ${this.progression.level} - ${this.progression.countSeen('firstMaterial')} of ` +
+      `${out}Level ${this.progression.level} - ${this.progression.countSeen('firstMaterial')} of ` +
       `${content.materials.length} materials - ${rare.found} of ${rare.total} notes - ${minutes} min`
     );
   }

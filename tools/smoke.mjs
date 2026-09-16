@@ -349,7 +349,7 @@ check('the menu opens', await page.locator('.sheet.on').isVisible());
 // the same reason: this is the only menu there is.
 check(
   'it is one menu holding both disciplines',
-  (await page.locator('.sheet .tabs button').allTextContents()).join(',') === 'Craft,Alchemy,Screen',
+  (await page.locator('.sheet .tabs button').allTextContents()).join(',') === 'Craft,Alchemy,Log,Screen',
 );
 // GDD 6.1 has the world keep running here; the author asked for a pause, so the
 // flag in content decides and this checks whichever is configured rather than
@@ -373,7 +373,14 @@ check(
   `${movedWhileOpen.toFixed(2)}s advanced`,
 );
 
-check('crafting lists the four gauntlet upgrades', (await page.locator('.sheet .row-item').count()) === 4);
+// A row for every recipe the content defines, rather than a fixed number: the
+// tree is no longer canon's four and pinning the count here would mean a test
+// that has to be edited every time a recipe is added.
+{
+  const rows = await page.locator('.sheet .row-item').count();
+  const defined = await peek(() => window.maelstrom.world.content.crafting.recipes.length);
+  check('crafting lists every gauntlet upgrade there is', rows === defined && rows > 4, `${rows} of ${defined}`);
+}
 check(
   'the menu button says what it opens',
   /transmute/i.test((await page.locator('.nav-btn').textContent()) ?? ''),
@@ -420,10 +427,30 @@ check(
   /level 2/i.test((await page.locator('.sheet .locked-note').textContent()) ?? ''),
 );
 check('the element pool is shown', (await page.locator('.sheet .pool .chip').count()) === 10);
-check(
-  'the three handed-over combinations are listed',
-  (await page.locator('.sheet .row-item').count()) === 3,
-);
+{
+  const rows = await page.locator('.sheet .row-item').count();
+  const defined = await peek(() => window.maelstrom.world.content.alchemy.length);
+  const handed = await peek(() => window.maelstrom.world.content.alchemy.filter((c) => c.tutorial).length);
+  check(
+    'every combination is listed, locked ones included, so the player sees what is coming',
+    rows === defined && handed === 3,
+    `${rows} rows, ${handed} handed over`,
+  );
+  // Computed from the level the run is actually at rather than from a number
+  // written down here: at this point the player is Level 0, so even the three
+  // handed-over combinations are still shut.
+  const shut = await peek(() => {
+    const g = window.maelstrom;
+    const level = g.progression.level;
+    return g.world.content.alchemy.filter((c) => !g.alchemy.unlocked(c, level)).length;
+  });
+  check(
+    'and the ones that are not open yet are marked as locked',
+    (await page.locator('.sheet .row-item.locked').count()) === shut,
+    `${shut} shut of ${defined}, at the level the run is on`,
+  );
+  void handed;
+}
 await page.screenshot({ path: join(SHOTS, '04-alchemy.png') });
 
 await page.locator('.sheet header .close').click();
@@ -563,12 +590,20 @@ check(
 const unlocked = await peek(() => {
   const g = window.maelstrom;
   const want = g.world.content.progression.alchemyUnlockLevel;
-  // Distinct keys, because novelty XP is paid once per key by design.
+  /*
+   * Through the game's own award path, not straight into the tracker.
+   *
+   * awardXp is what notices a level change and hands over whatever the new
+   * level unlocked; calling progression.award() directly banks the XP and
+   * skips all of it, so the cast bar stayed empty and the failure looked like
+   * a broken loadout rather than a test reaching past the thing it was
+   * testing. Distinct keys, because novelty XP is paid once per key by design.
+   */
   for (let i = 0; g.progression.level < want && i < 200; i++) {
-    g.progression.award('firstMaterial', `probe-${i}`);
+    g.awardXp(g.progression.award('firstMaterial', `probe-${i}`), 'probe');
   }
   g.ui.refresh(g.hudState());
-  return { level: g.progression.level, want };
+  return { level: g.progression.level, want, carried: g.loadout.carried.length };
 });
 await page.waitForTimeout(200);
 check(
@@ -576,7 +611,15 @@ check(
   unlocked.level >= unlocked.want,
   `level ${unlocked.level} of ${unlocked.want}`,
 );
-check('the skills sit as buttons beside the attack', (await page.locator('.skillarc .skill').count()) > 0);
+check(
+  'the skills sit as buttons beside the attack',
+  (await page.locator('.skillarc .skill').count()) > 0,
+  `${unlocked.carried} carried`,
+);
+check(
+  'and the bar never holds more than it has room to draw',
+  (await page.locator('.skillarc .skill').count()) <= 4,
+);
 
 const enemyBefore = await peek(() => {
   const g = window.maelstrom;
@@ -1106,6 +1149,195 @@ await page.waitForTimeout(300);
   await peek(() => {
     window.maelstrom.world.enemies.length = 0;
   });
+}
+
+// ------------------------------------------------------------------ ending
+
+/*
+ * How someone beats the game.
+ *
+ * Everything here is reachable only after an hour of play, which is exactly
+ * why it is worth driving from a script: a win condition that cannot be
+ * reached looks, from outside, identical to a game that simply goes on
+ * forever - and that had already happened once, to the Level 5 escalation.
+ *
+ * State is set directly rather than played into, and then the REAL frame
+ * method is stepped, so what is being tested is the shipped logic and the
+ * shipped HUD rather than a re-implementation of either.
+ */
+{
+  await peek(() => {
+    const g = window.maelstrom;
+    g.world.enemies.length = 0;
+    g.breach = 0;
+    g.breachStage = -1;
+    g.finished = false;
+    g.world.player.x = 0;
+    g.world.player.y = 0;
+    g.updateBreach(0.016);
+  });
+  check(
+    'the boundary is not mentioned from the middle of the world',
+    await page.locator('.breachbar').isHidden(),
+  );
+
+  // Walk to the edge with nothing: the game says which of the two is missing.
+  const atEdge = await peek(() => {
+    const g = window.maelstrom;
+    g.crafting.load([], g.inventory);
+    g.progression.load({ xp: 0, seen: [] });
+    g.world.player.x = g.world.boundaryRadius - 40;
+    g.world.player.y = 0;
+    g.updateBreach(0.016);
+    return document.querySelector('.breachbar b')?.textContent ?? '';
+  });
+  check(
+    'standing at the edge too early says what is missing, rather than nothing',
+    /Level \d/.test(atEdge),
+    atEdge,
+  );
+
+  const withLevel = await peek(() => {
+    const g = window.maelstrom;
+    g.progression.load({ xp: 99999, seen: [] });
+    g.updateBreach(0.016);
+    return document.querySelector('.breachbar b')?.textContent ?? '';
+  });
+  check(
+    'and with the level but not the gauntlet, it names the gauntlet',
+    /Maelstrom Draw/.test(withLevel),
+    withLevel,
+  );
+
+  // Now with everything. Hold the pull and watch it climb.
+  const climbed = await peek(() => {
+    const g = window.maelstrom;
+    g.crafting.load([g.world.content.ending.requires.recipe], g.inventory);
+    g.pulling = true;
+    const seen = [];
+    for (let i = 0; i < 300; i++) {
+      g.updateBreach(1 / 30);
+      if (i % 100 === 0) seen.push(Math.round(g.breach * 100));
+    }
+    return { seen, at: Math.round(g.breach * 100), text: document.querySelector('.breachbar b')?.textContent ?? '' };
+  });
+  check(
+    'holding the pull at the boundary opens it, and says so as it goes',
+    climbed.at > 15 && climbed.at < 100 && /Breaching/.test(climbed.text),
+    JSON.stringify(climbed),
+  );
+
+  // Let go and fight for twenty seconds: it should cost, not undo.
+  const held = await peek(() => {
+    const g = window.maelstrom;
+    const before = g.breach;
+    g.pulling = false;
+    for (let i = 0; i < 600; i++) g.updateBreach(1 / 30);
+    return { before: Math.round(before * 100), after: Math.round(g.breach * 100) };
+  });
+  check(
+    'breaking off to fight costs progress without undoing the attempt',
+    held.after < held.before && held.after > held.before - 20,
+    JSON.stringify(held),
+  );
+
+  // And the system arrives while it is happening.
+  const attacked = await peek(() => {
+    const g = window.maelstrom;
+    g.world.enemies.length = 0;
+    g.pulling = true;
+    for (let i = 0; i < 600; i++) g.updateBreach(1 / 30);
+    return g.world.enemies.length;
+  });
+  check('the system stops scheduling and starts arriving', attacked > 0, `${attacked} live`);
+
+  // Finish it, holding none of the rare channel.
+  const plain = await peek(() => {
+    const g = window.maelstrom;
+    g.notesHeld.clear();
+    g.pulling = true;
+    for (let i = 0; i < 4000 && !g.finished; i++) g.updateBreach(1 / 30);
+    return {
+      finished: g.finished,
+      title: document.querySelector('.ecard h1')?.textContent ?? '',
+      paragraphs: document.querySelectorAll('.ecard p').length,
+      barGone: document.querySelector('.breachbar')?.hidden ?? null,
+    };
+  });
+  check(
+    'filling the meter ends the run, with an epilogue and no leftover HUD',
+    plain.finished && plain.title.length > 5 && plain.paragraphs >= 2 && plain.barGone === true,
+    JSON.stringify(plain),
+  );
+
+  /*
+   * Let the scene settle before looking at it.
+   *
+   * It opens on a full white flash that takes most of a second to clear, and
+   * a screenshot taken on the frame the ending starts is a white rectangle -
+   * which is exactly what the first run of this produced.
+   */
+  await page.waitForTimeout(2600);
+  await page.screenshot({ path: join(SHOTS, 'ending.png') });
+  const settled = await peek(() => {
+    const card = document.querySelector('.ecard');
+    const flash = document.querySelector('.eflash');
+    return {
+      cardOpacity: Number(card?.style.opacity ?? 0),
+      flash: getComputedStyle(flash).backgroundColor,
+    };
+  });
+  check(
+    'the flash clears and the text is actually readable',
+    settled.cardOpacity === 1 && /rgba\(255, 255, 255, 0\)|^rgba\(0, 0, 0, 0\)$/.test(settled.flash),
+    JSON.stringify(settled),
+  );
+
+  // Close it, and check the run survived rather than being wiped.
+  await page.locator('.ecard .tbtn').click();
+  await page.waitForTimeout(200);
+  const after = await peek(() => ({
+    title: document.querySelector('.title') && !document.querySelector('.title').hidden,
+    summary: document.querySelector('.title .tsub')?.textContent ?? '',
+  }));
+  check(
+    'and hands the player back to the menu with the run marked as finished',
+    after.title && after.summary.startsWith('Out -'),
+    JSON.stringify(after),
+  );
+
+  /*
+   * The same ending, read by somebody who found the other channel.
+   *
+   * This is the whole payoff of Information Integrity being two channels: the
+   * game is winnable either way and the two players are told different things
+   * about what they just did. A build where both got the same page would look
+   * completely fine.
+   */
+  const informed = await peek(async () => {
+    const g = window.maelstrom;
+    const rare = g.world.content.notes.filter((n) => n.channel === 'jakindur');
+    g.notesHeld.clear();
+    for (const note of rare) g.notesHeld.add(note.id);
+    g.finished = false;
+    g.breach = 1;
+    g.started = true;
+    g.updateBreach(1 / 30);
+    return {
+      title: document.querySelector('.ecard h1')?.textContent ?? '',
+      rare: rare.length,
+    };
+  });
+  check(
+    'a player who found the rare channel is told something different at the end',
+    informed.title.length > 5 && informed.title !== plain.title,
+    `${JSON.stringify(plain.title)} vs ${JSON.stringify(informed.title)}`,
+  );
+
+  await page.waitForTimeout(2600);
+  await page.screenshot({ path: join(SHOTS, 'ending-informed.png') });
+  await page.locator('.ecard .tbtn').click();
+  await page.waitForTimeout(200);
 }
 
 // --------------------------------------------------------------- installing

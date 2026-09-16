@@ -262,6 +262,31 @@ export class WaveDirector {
     this.timer = this.roll(this.pacing.secondsBetweenWaves);
   }
 
+  /**
+   * Everything, now, at the player.
+   *
+   * The breach is the one moment the director stops being a schedule. It is
+   * called once per interval by the game layer while the boundary is being
+   * pulled apart, and it deliberately ignores bundles, gaps and phases: the
+   * system is not running an assessment any more.
+   *
+   * Still capped, because the cap is a phone rather than a design opinion, and
+   * still spawned off screen, because arriving on top of the player is not
+   * difficulty.
+   */
+  assault(pressure: number): void {
+    const rows = this.content.waves.composition;
+    const row = (rows[rows.length - 1] ?? {}) as unknown as Record<string, readonly number[]>;
+    for (const [id, range] of Object.entries(row)) {
+      if (id === 'bundleIndex' || id.startsWith('$')) continue;
+      const wanted = scaledCount(Math.round(this.roll(range)), pressure);
+      const alive = this.world.census().alive;
+      for (let i = 0; i < roomFor(wanted, alive, this.content.waves.escalation); i++) {
+        this.spawnOne(id, 380, 700);
+      }
+    }
+  }
+
   private composition(): Record<string, readonly number[]> {
     const rows = this.content.waves.composition;
     const row = rows[Math.min(this.bundleIndex, rows.length - 1)] ?? rows[0] ?? {};

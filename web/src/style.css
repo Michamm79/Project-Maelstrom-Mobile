@@ -2506,3 +2506,98 @@ button.ghost.wide {
   color: #f0c98a;
   border-color: rgba(240, 201, 138, 0.4);
 }
+
+/* ---------------------------------------------------------------- the breach
+
+   Shown as soon as the player is standing somewhere the boundary could be
+   pulled apart, not only once it has started: "walk to the edge of the world
+   and hold the pull" is not something anybody guesses unaided, and the one
+   note that says so is in the channel a player can finish the game without
+   ever finding. */
+
+.breachbar {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-t) + 54px);
+  transform: translateX(-50%);
+  width: min(320px, calc(var(--box-w) - 48px));
+  padding: 6px 10px 8px;
+  border-radius: 10px;
+  background: rgba(14, 10, 20, 0.82);
+  border: 1px solid rgba(240, 201, 138, 0.45);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 4;
+}
+.breachbar b {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #f0c98a;
+  text-align: center;
+  margin-bottom: 5px;
+}
+.breachbar i {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #f0c98a, #fff3d6);
+  box-shadow: 0 0 10px rgba(240, 201, 138, 0.6);
+  transition: width 0.12s linear;
+}
+/* Not started, or out of reach: the same bar, saying so quietly. */
+.breachbar.waiting {
+  border-color: rgba(240, 201, 138, 0.2);
+}
+.breachbar.waiting b {
+  color: rgba(240, 201, 138, 0.65);
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- the ending */
+
+.ending {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px calc(var(--safe-r) + 18px) 20px calc(var(--safe-l) + 18px);
+  z-index: 40;
+}
+.eflash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ecard {
+  position: relative;
+  max-width: 460px;
+  max-height: calc(var(--box-h) - 44px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  text-align: left;
+}
+.ecard h1 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: #f4ecdc;
+}
+.ecard p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #cfc7b8;
+}
+.ecard .esummary {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.ecard .tbtn {
+  margin-top: 8px;
+  pointer-events: auto;
+}

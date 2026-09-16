@@ -90,6 +90,13 @@
       "description": "Shaped after something you have seen swung at you. There is no polite way to describe having copied it."
     },
     {
+      "id": "maelstrom_draw",
+      "name": "Maelstrom Draw",
+      "cost": { "dark_fiber": 4, "coldiron_ore": 4, "sunfused_glass": 4, "bogiron_nodule": 4, "loamstone": 4 },
+      "effect": { "stat": "pullRadius", "amount": 400 },
+      "description": "Every region, wound into one aperture. It draws harder than anything you have made, and it is the first thing the gauntlets have done that the notices have an opinion about."
+    },
+    {
       "id": "long_reach",
       "name": "The Long Reach",
       "cost": { "rimeshard": 5, "riverglass": 5, "marshgas_bladder": 4 },

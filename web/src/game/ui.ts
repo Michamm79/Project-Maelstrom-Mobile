@@ -99,6 +99,9 @@ export class Ui {
   private readonly fragment = el('div', 'fragment');
   private fragmentTimer = 0;
   private readonly objective = el('div', 'objective');
+  private readonly breach = el('div', 'breachbar');
+  private readonly breachFill = el('i');
+  private readonly breachText = el('b');
   private readonly place = el('div', 'place');
   private readonly placeName = el('b');
   private readonly placeMood = el('span');
@@ -174,7 +177,13 @@ export class Ui {
     this.pauseBtn.setAttribute('aria-label', 'Pause');
     onPress(this.pauseBtn, () => this.hooks.onPause());
     bar.append(this.place, this.vitals, this.levelChip, this.muteBtn, this.pauseBtn);
-    this.root.append(bar, this.objective);
+
+    this.breach.append(this.breachText, this.breachFill);
+    this.breach.hidden = true;
+
+    // Under the top bar and above the objective, so a breach in progress never
+    // covers the health bar it is the reason you are watching.
+    this.root.append(bar, this.breach, this.objective);
     this.objective.hidden = true;
   }
 
@@ -342,6 +351,37 @@ export class Ui {
     this.fragmentTimer = 0;
     this.fragment.classList.add('going');
     this.fragment.hidden = true;
+  }
+
+  /**
+   * The boundary, coming apart.
+   *
+   * Shown as soon as the player is standing somewhere it could happen, not
+   * only once it has started - the whole reason the bar exists is that "walk
+   * to the edge of the world and hold the pull" is not a thing anybody guesses
+   * without being told. `blocked` says which of the three conditions is not
+   * met, because nothing happening at the edge of the world with no
+   * explanation is indistinguishable from a bug.
+   */
+  setBreach(progress: number | null, blocked: string | null): void {
+    const show = progress !== null || blocked === 'recipe' || blocked === 'level';
+    this.breach.hidden = !show;
+    if (!show) return;
+
+    this.breach.classList.toggle('waiting', blocked !== null);
+    this.breachFill.style.width = `${Math.round((progress ?? 0) * 100)}%`;
+
+    if (blocked === 'level') {
+      this.breachText.textContent = `The boundary is code. Level ${this.content.ending.requires.level} first.`;
+    } else if (blocked === 'recipe') {
+      const recipe = this.content.crafting.recipes.find((r) => r.id === this.content.ending.requires.recipe);
+      this.breachText.textContent = `The boundary is code. You need the ${recipe?.name ?? 'last gauntlet'}.`;
+    } else if (blocked === 'distance') {
+      this.breachText.textContent = 'Held. Go back to the edge.';
+    } else {
+      this.breachText.textContent =
+        progress && progress > 0 ? `Breaching - ${Math.round(progress * 100)}%` : 'Hold the pull here.';
+    }
   }
 
   /** Ticked from the game loop, so it does not expire while the game is paused. */

@@ -50,6 +50,16 @@ export const STEPS = [
   'sawContradiction',
   'sawAllBiomes',
   'died',
+  /*
+   * The two that say whether anybody finishes.
+   *
+   * `startedBreach` means a player worked out what the boundary is for -
+   * either from the one note that says so, or from the bar that appears when
+   * they walk to the edge holding the right gauntlet. The gap between these
+   * two is the only measure of whether the ending is too long a hold.
+   */
+  'startedBreach',
+  'gotOut',
   'restarted',
   /*
    * Last because it can happen at any point, and because it is the one

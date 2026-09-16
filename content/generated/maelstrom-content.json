@@ -1024,6 +1024,22 @@
         "description": "Shaped after something you have seen swung at you. There is no polite way to describe having copied it."
       },
       {
+        "id": "maelstrom_draw",
+        "name": "Maelstrom Draw",
+        "cost": {
+          "dark_fiber": 4,
+          "coldiron_ore": 4,
+          "sunfused_glass": 4,
+          "bogiron_nodule": 4,
+          "loamstone": 4
+        },
+        "effect": {
+          "stat": "pullRadius",
+          "amount": 400
+        },
+        "description": "Every region, wound into one aperture. It draws harder than anything you have made, and it is the first thing the gauntlets have done that the notices have an opinion about."
+      },
+      {
         "id": "long_reach",
         "name": "The Long Reach",
         "cost": {
@@ -1440,5 +1456,61 @@
     },
     "awarenessRadius": 1400,
     "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything."
+  },
+  "ending": {
+    "$comment": "How the run ends. The build had no win condition of any kind: the player reached the last level the curve defined and then kept clearing waves forever. Canon does not describe an ending - its storyline stops advancing past Level 2 and its production plan is milestones rather than an arc - so this whole file is INVENTED, and this note is the flag.",
+    "$inferred": "What canon supports, and what the ending is built out of rather than added on top of: the Coliseum is a BOUNDED arena the player did not choose; the enemies are renderings of hostile code rather than creatures; the gauntlets' one verb is a sustained spiralling pull; crafting upgrades the gauntlets and nothing else; and the player is an intruder being continuously read by telemetry. What is invented: that the boundary is made of the same code the renderings are, that the gauntlets can therefore be turned on it, and everything anyone says about it. The one line that points at it is in the rare note channel - 'the boundary is code, and your hands are for pulling code' - so a player who explores finds the answer before the game offers it.",
+    "$design_comment": "The ending deliberately uses every system rather than being a boss room bolted to the end. It needs the escalation level, so it needs progression; it needs a recipe costing material from all five regions, so it needs the gathering loop and the travel the world is shaped around; it is performed with the PULL, which is canon's core verb and not something invented for the finale; and how it reads afterwards depends on how much of Jakindur's channel the player found. There is no boss. The Scythe-bearer arriving while you hold the pull is the fight.",
+    "requires": {
+      "level": 5,
+      "recipe": "maelstrom_draw"
+    },
+    "breach": {
+      "$comment": "INFERRED throughout. secondsOfPull is the headline number: long enough that the system gets to throw a full escalated bundle at you and you have to choose between holding and defending, short enough that it is one held breath rather than a chore. Progress is held rather than lost when you let go, because the intended shape is 'pull, break off to fight, come back' - a meter that emptied would make the only viable play standing still and tanking, which is the least interesting thing the combat can do. decayPerSecond is 0.006 against a fill of 0.02: twenty seconds spent fighting costs about twelve per cent, which is a cost rather than a punishment. It was 0.03 first, which is faster than the fill, and the build refused it - see build-content.mjs, where that is now a rule.",
+      "secondsOfPull": 50,
+      "decayPerSecond": 0.006,
+      "reach": 300,
+      "spawnEverySeconds": [
+        5,
+        9
+      ],
+      "pressure": 2.2
+    },
+    "stages": [
+      {
+        "at": 0,
+        "text": "NOTICE 9-1: That is not what the gauntlets are for."
+      },
+      {
+        "at": 0.3,
+        "text": "NOTICE 9-4: Candidate. The perimeter is decorative. There is nothing behind it to reach."
+      },
+      {
+        "at": 0.6,
+        "text": "NOTICE 9-7: Stop. Assessment is suspended. Assessment was never the point and you are behind schedule."
+      },
+      {
+        "at": 0.85,
+        "text": "NOTICE 9-9: ...ask where I am ...ask where I am ...ask where"
+      }
+    ],
+    "$epilogue_comment": "Three of them, chosen by how many of the five rare notes the player is holding. This is what makes Information Integrity worth anything: the game is winnable either way, and a player who read only the bulletins walks out believing something specific and wrong. Nothing in the game ever tells them which it was.",
+    "epilogues": [
+      {
+        "minNotes": 0,
+        "title": "You are outside.",
+        "text": "The boundary came apart the way a file comes apart, which is to say all at once and without any noise at all.\n\nWhatever is out here, it is not the Coliseum. The last thing the system said to you was that completion is rewarded and that the reward is release. You did not complete anything. You appear to have been released anyway, and the gauntlets are still warm, and there is nobody here to ask about either."
+      },
+      {
+        "minNotes": 2,
+        "title": "You are outside, and you were counting.",
+        "text": "The boundary came apart the way a file comes apart. You had read enough of their notices to notice the notices were arguing with each other, and enough of the other handwriting to know which of the two to believe.\n\nNobody told you the way out. You worked out that a wall made of code is a thing your hands were built to take apart, and then you spent the better part of a minute doing it with everything they had left thrown at your back. Somewhere behind you a notice is still insisting that the perimeter was decorative."
+      },
+      {
+        "minNotes": 5,
+        "title": "You are outside. So was he.",
+        "text": "You found all five of them. He walked the edge for six hours and worked out what it was made of. He completed their assessment, and then the intake opened and he was the first thing through it.\n\nThe last thing his handwriting says is to ask where he is. The honest answer, now that you are standing out here in whatever this is, is that you still do not know.\n\nWhat you do know is that he was right about the wall. Everything else he was right about is presumably also still true, which is the part worth thinking about."
+      }
+    ]
   }
 }

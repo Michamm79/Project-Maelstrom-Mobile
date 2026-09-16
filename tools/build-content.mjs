@@ -60,6 +60,7 @@ const fragments = tutorialFile.fragments?.list ?? [];
 const progression = read('content/progression.json');
 const notesFile = read('content/notes.json');
 const notes = notesFile.notes;
+const ending = read('content/ending.json');
 
 // ---------------------------------------------------------------- elements
 
@@ -557,6 +558,7 @@ for (const step of progression.levelCurve?.thresholds ?? []) {
 const gated = [
   ['progression.alchemyUnlockLevel', progression.alchemyUnlockLevel],
   ['progression.classLevel', progression.classLevel],
+  ['ending.requires.level', ending?.requires?.level],
   ['waves.gates.firstBundleAtLevel', waves.gates?.firstBundleAtLevel],
   ['waves.gates.repeatingBundlesFromLevel', waves.gates?.repeatingBundlesFromLevel],
   ['waves.gates.ambientFromLevel', waves.gates?.ambientFromLevel],
@@ -710,6 +712,60 @@ for (const id of biomeIds) {
   if (!found.some((n) => n.biome === id)) warn(`region "${id}" holds none of the rare channel`);
 }
 
+// ---------------------------------------------------------------- the ending
+
+/*
+ * The one thing the build did not have at all.
+ *
+ * Every failure here is a run that cannot be finished, discovered by whoever
+ * walks all the way to the edge of the world holding the right gauntlet: a
+ * recipe id that no longer exists, a reach so short the boundary can never be
+ * stood next to, a meter that decays faster than it fills, or an epilogue
+ * table with a hole in it that ends the game on a blank screen.
+ */
+if (!ending) fail('content/ending.json is missing, so there is no way to finish a run');
+else {
+  if (!craftIds.has(ending.requires?.recipe)) {
+    fail(`the ending needs recipe "${ending.requires?.recipe}", which crafting does not define`);
+  }
+  const breach = ending.breach ?? {};
+  if (!(breach.secondsOfPull > 0)) fail('the breach takes no time at all, so the ending fires on contact');
+  if (breach.secondsOfPull > 180) fail(`the breach takes ${breach.secondsOfPull}s of held pull, which is a chore rather than a finale`);
+  if (!(breach.reach > 0)) fail('the breach has no reach, so the boundary can never be stood close enough to');
+  // The player has to be able to get inside it without leaving the world.
+  if (breach.reach > biomesFile.boundaryRadius * 0.2) {
+    fail(`the breach reach is ${breach.reach}uu of a ${biomesFile.boundaryRadius}uu world; that is not the edge, that is most of the map`);
+  }
+  if (!(breach.decayPerSecond >= 0)) fail('the breach meter gains progress while the pull is off');
+  // Decay has to be slower than gain, or letting go to fight is a losing move
+  // and the only viable play is standing still and tanking.
+  if (breach.decayPerSecond >= 1 / breach.secondsOfPull) {
+    fail(
+      `the breach meter decays at ${breach.decayPerSecond}/s and fills at ${(1 / breach.secondsOfPull).toFixed(3)}/s - ` +
+        'breaking off to fight would lose more than holding gains, so the only play is standing still',
+    );
+  }
+
+  let last = -Infinity;
+  for (const stage of ending.stages ?? []) {
+    if (!(stage.at >= 0) || stage.at > 1) fail(`ending stage at ${stage.at} is outside the meter`);
+    if (stage.at < last) fail('the ending stages are out of order, so they will fire out of order');
+    last = stage.at;
+    if (!stage.text) fail('an ending stage has no text');
+  }
+
+  const epilogues = ending.epilogues ?? [];
+  if (!epilogues.length) fail('the ending has no epilogue, so finishing the game shows nothing');
+  if (!epilogues.some((e) => e.minNotes === 0)) {
+    fail('no epilogue covers a player holding none of the rare channel, and the game is winnable without it');
+  }
+  const rare = notes.filter((n) => n.channel === 'jakindur').length;
+  for (const e of epilogues) {
+    if (!e.title || !e.text) fail(`epilogue at minNotes ${e.minNotes} is missing a title or text`);
+    if (e.minNotes > rare) fail(`an epilogue needs ${e.minNotes} rare notes and only ${rare} exist, so nobody can ever see it`);
+  }
+}
+
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -759,6 +815,7 @@ const bundle = {
   alchemy,
   enemies: enemyTiers,
   waves,
+  ending,
 };
 
 /**

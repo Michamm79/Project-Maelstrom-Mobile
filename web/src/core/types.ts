@@ -12,6 +12,7 @@
  */
 import type { EscalationRules } from './escalation';
 import type { NoteDef } from './notes';
+import type { EndingDef } from './ending';
 
 export type ElementId = string;
 export type MaterialId = string;
@@ -349,6 +350,8 @@ export interface ContentBundle {
   alchemy: readonly AlchemyCombination[];
   enemies: readonly EnemyDef[];
   waves: WavesDef;
+  /** How a run is finished. See core/ending.ts. */
+  ending: EndingDef;
   unitsPerPixel?: number;
 }
 

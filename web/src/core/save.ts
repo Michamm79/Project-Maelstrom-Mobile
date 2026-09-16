@@ -36,6 +36,8 @@ export interface SavedRun {
   playtimeMs: number;
   fragmentsSeen?: string[];
   notesHeld?: string[];
+  breach?: number;
+  finished?: boolean;
   loadout?: { carried?: string[]; known?: string[] };
 }
 
@@ -61,6 +63,16 @@ export interface RunState {
    */
   notesHeld: string[];
   /**
+   * How far along the boundary breach the run got, 0..1.
+   *
+   * Saved because it is minutes of held pull under everything the system has
+   * left, and closing the app on a phone mid-attempt is not a decision to
+   * throw that away.
+   */
+  breach: number;
+  /** Whether this run has already got out. The world survives it; the ending does not repeat. */
+  finished: boolean;
+  /**
    * The four on the arc, and everything that has ever been offered a slot.
    *
    * `known` is saved alongside `carried` because without it a deliberate
@@ -82,6 +94,8 @@ export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
     playtimeMs: Math.round(run.playtimeMs),
     fragmentsSeen: [...run.fragmentsSeen],
     notesHeld: [...run.notesHeld],
+    breach: run.breach,
+    finished: run.finished,
     loadout: { carried: [...run.loadout.carried], known: [...run.loadout.known] },
   };
 }
@@ -117,6 +131,11 @@ export function deserialize(content: Content, bundle: SaveBundle, raw: unknown):
     // Also optional: a run saved before the arc had slots simply has none
     // chosen, and admit() hands it the first four the moment it loads.
     notesHeld: ids(saved.notesHeld),
+    // Clamped rather than trusted: a hand-edited or half-written save must not
+    // be able to hand somebody the ending, or to hand them a meter above full
+    // that never completes.
+    breach: clamp(saved.breach ?? 0, 0, 1),
+    finished: saved.finished === true,
     loadout: {
       carried: ids(saved.loadout?.carried),
       known: ids(saved.loadout?.known),
