@@ -85,12 +85,54 @@ the absence of a cycle.
 - **Level 1** — one bundle of three waves, after an unmistakable warning.
 - **Cleared** — the world goes quiet. Nothing is scheduled.
 - **Level 5** — repeating bundles and the ambient population begin.
+- **After that** — the shape stays and the size grows. Past the four authored
+  composition rows a bundle gets 18% heavier per bundle up to 2.2×, the quiet
+  shrinks geometrically to a seven-minute floor, and the ambient population is
+  topped back up during the gaps. The scaling is also what makes canon's *"only
+  a few"* Scythe-bearers mean scarcity rather than a hard limit of one.
 
-XP is **novelty only**: first material, first craft, first cast, first visit,
-cleared wave. Nothing can be farmed. The curve is tuned against the guide, since
-reaching Level 1 is what arms the waves: three distinct materials pays 90, the
-craft the next card asks for pays 60, and Level 1 is 150 — so the warning lands
-exactly on the card that explains it. Unit tests assert that alignment.
+`maxLiveEnemies` caps the whole thing at 30. That is a phone, not a design
+opinion, and it is measured: a field held at the cap while a third of it is
+deleted every half second runs at a p50 of 16.6ms and a p95 of 17.5ms in
+headless software rasterisation, which is a pessimistic floor.
+
+XP is **novelty only**: first note, first material, first craft, first cast,
+first visit, cleared wave. Nothing can be farmed. The curve is tuned against the
+guide, since reaching Level 1 is what arms the waves: three distinct materials
+pays 90, the craft the next card asks for pays 60, and Level 1 is 150 — so the
+warning lands exactly on the card that explains it. Unit tests assert that
+alignment.
+
+Because novelty is finite, the total a run can earn is **computable**, and the
+build computes it. Doing everything once pays 2,895. The escalation and the
+ending both sit at Level 5, which is 1,420 — about half of everything. This
+matters because it was wrong: the curve previously put Level 5 at 1,970 against
+a ceiling of 1,400, so the entire late game sat behind a door that could not
+open in any run. Nothing failed. The game simply stopped having a second half.
+`build-content.mjs` now fails the build when any gated level sits above the
+ceiling.
+
+## Getting out
+
+There is a win condition, and it is made out of the systems that already exist
+rather than bolted to the end of them.
+
+It needs **Level 5**, so it needs progression. It needs the **Maelstrom Draw**,
+which costs material from all five regions, so it needs the gathering loop and
+the travel the world is shaped around. And it is performed with the **pull**,
+which is canon's verb rather than something invented for a finale. Walk to the
+edge of the Coliseum and hold it: the boundary takes about fifty seconds, and
+the system stops scheduling and starts arriving while you do. There is no boss —
+the Scythe-bearer turning up while you are holding the pull is the fight.
+
+Breaking off to fight costs progress without undoing the attempt. A meter that
+emptied would make the only viable play standing still and tanking, which is the
+least interesting thing the combat can do, and the build refuses a decay rate
+faster than the fill rate for exactly that reason — it caught the first numbers
+written for it.
+
+The epilogue depends on how many of Jakindur's five notes you found. Three of
+them. Nothing ever tells the player which one they got.
 
 Only the spacing *inside* a bundle is compressed for mobile. `content/waves.json`
 carries both; set `activePacing` to `"canon"` for the PC timings.
@@ -123,6 +165,29 @@ gather XP; a bundle that is not three waves; a notice radius wide enough to be a
 detection sweep; a biome with no terrain. CI also fails if the committed bundle
 has drifted from `content/`.
 
+Most of the rules exist because the thing they catch had already happened and
+nothing had reported it. The ones added with the late game are all of that kind:
+
+- **an element no combination wants.** Seven of the ten sat in that state
+  through several releases — gatherable, carryable, readable about, and then
+  nothing — while canon's own gating rule was buying travel that paid out in it.
+- **a gated level above the XP ceiling.** See above.
+- **a region no recipe wants anything from.** Canon's four recipes are all
+  buildable at the spawn, which left the outer four regions paying in elements
+  only.
+- **a self-cast that does nothing to the caster**, a beam with no range, a chain
+  that cannot leap, a shield with no duration, a slow that speeds things up.
+  Every one of them spends the elements, plays the sound, starts the cooldown,
+  and does not do anything.
+- **one channel and a rumour** — a rare note channel that agrees with
+  everything, a note arguing with something that does not exist, or a bulletin
+  allowed to be right on purpose. Information Integrity with nothing
+  contradicting anything plays exactly like the working version.
+- **an escalation that does not escalate**, a gap multiplier at or above 1, a
+  live cap below a single wave.
+- **an ending gated on a recipe that no longer exists**, a breach meter that
+  decays faster than it fills, or an epilogue table with a hole in it.
+
 ## Everything is generated
 
 No binary art, no audio files. Icons, creatures, the character sprite and every
@@ -144,7 +209,7 @@ sound are produced by code:
   redrawing anything.
 - **Sound** — oscillators and shaped noise through envelopes. No samples.
 
-The whole build is about 210KB unpacked, 43KB over the wire. That is the reason for all of the above, and it
+The whole build is about 268KB unpacked, 60KB over the wire. That is the reason for all of the above, and it
 is also what makes the offline cache trivial.
 
 ## Shipping
@@ -207,18 +272,48 @@ you. Each fires once per run, and starting over gives them back.
 
 Every word of them is **inferred, and flagged as such** in the content file
 alongside what canon does support. They are deliberately one channel with no
-narrator, so the Jakindur system below can replace them rather than having to
-argue with them.
+narrator, and they claim to be neither of the two below.
+
+## Information Integrity
+
+Canon describes two channels of information about the world: one plentiful and
+unreliable, one rare and accurate, with Jakindur as the author of the second.
+The system only means anything if the two can **disagree**, so the disagreement
+is modelled rather than implied.
+
+Fourteen **system bulletins** in `content/notes.json`, numbered and
+procedurally reassuring, at least two in every region and the most at the spawn.
+Five **found notes** in the other hand, one per region, sitting further out than
+the material nodes cluster — he was not posting them where a notice board would
+go. Both are picked up by the pull, with no capacity check, because paper is not
+ore.
+
+Each of the five names the bulletin it contradicts. The Log tab draws the
+pairing only when the player is holding **both halves**: showing it otherwise
+hands them the accurate channel's conclusion without the unreliable one's claim,
+which is the single thing this system asks them to work out for themselves. It
+is never marked which side is right.
+
+A player who reads only the bulletins can finish the game believing something
+specific and wrong. That is the intended outcome, and it is the only reason to
+build two channels instead of one.
+
+Every word of it is invented and flagged in the content file, alongside what
+canon does support.
 
 ## Not built
 
-Deliberately, because they need canon decisions rather than code:
+Deliberately, because it needs canon decisions rather than code:
 
-- **Jakindur and the found notes.** Information Integrity only works if the two
-  channels can disagree — plentiful and unreliable against rare and accurate —
-  so it needs the actual prose. The fragments above are a placeholder that
-  claims to be neither channel.
 - **Telemetry and the rune.** The seven signals, and the Level 2 read that
   assigns an archetype without ever showing a menu. Canon warns this cannot be
   retrofitted, since the rune reads the tutorial period as roughly half its
-  evidence.
+  evidence. The class at Level 5 is the same system and has the same problem.
+
+And one thing that is built but is the author's to replace:
+
+- **Everything past canon.** Eight of the eleven alchemy combinations, nine of
+  the thirteen recipes, all nineteen notes, the ending, and every level above 2
+  are inferred. Each is flagged in its own content file with what canon does
+  support and what was invented on top of it — so replacing any of them is an
+  edit to one JSON file, not an archaeology exercise.

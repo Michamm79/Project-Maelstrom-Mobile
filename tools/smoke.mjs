@@ -1151,6 +1151,108 @@ await page.waitForTimeout(300);
   });
 }
 
+// -------------------------------------------------------------- under load
+
+/*
+ * The cap on live enemies is a claim about phones, so it gets measured.
+ *
+ * content/waves.json caps a fully escalated bundle at maxLiveEnemies on the
+ * grounds that the device cannot carry more, and that number was chosen rather
+ * than measured. This holds the world at the cap and deletes a third of it
+ * every half second - so the silhouette sampling and up to ten simultaneous
+ * glyph clouds are running the whole time, which is the worst frame the game
+ * has.
+ *
+ * Timed across real animation frames rather than by calling draw() in a loop.
+ * The first version of this check did the latter and reported a 211ms worst
+ * frame, which sent a good half hour into chasing a stall that was not there:
+ * ninety synchronous draws never yield to the compositor, so the rasteriser
+ * batches the work and flushes it in chunks, and the spikes land on a tidy
+ * five-frame period that looks exactly like a real periodic cost. Frame pacing
+ * has to be measured frame to frame.
+ *
+ * Headless Chromium here rasterises in software, so this is a pessimistic
+ * floor rather than a phone measurement. That is the useful direction to be
+ * wrong in.
+ */
+{
+  const load = await peek(async () => {
+    const g = window.maelstrom;
+    const cap = g.world.content.waves.escalation.maxLiveEnemies;
+    const mix = ['goblin', 'goblin', 'goblin', 'minotaur', 'scythe_bearer'];
+
+    // Unkillable, so the field stays at the cap for the whole measurement
+    // rather than thinning out into an easier one.
+    const fill = () => {
+      while (g.world.census().alive < cap) {
+        const i = g.world.enemies.length;
+        const def = JSON.parse(JSON.stringify(g.world.content.enemy(mix[i % mix.length])));
+        const angle = (i / cap) * Math.PI * 2;
+        g.world.spawn(def, Math.cos(angle) * 260, Math.sin(angle) * 260).hp = 9999;
+      }
+    };
+
+    g.world.player.x = 0;
+    g.world.player.y = 0;
+    g.world.enemies.length = 0;
+    fill();
+
+    let deleted = 0;
+    const killer = setInterval(() => {
+      let n = Math.floor(cap / 3);
+      for (const enemy of g.world.enemies) {
+        if (n-- <= 0) break;
+        if (enemy.dead) continue;
+        enemy.hp = 0;
+        enemy.dead = true;
+        g.world.events.push({ kind: 'enemy-killed', enemy });
+        deleted += 1;
+      }
+      g.drainEvents();
+      fill();
+    }, 500);
+
+    const gaps = [];
+    let last = performance.now();
+    await new Promise((done) => {
+      let n = 0;
+      const tick = () => {
+        const now = performance.now();
+        gaps.push(now - last);
+        last = now;
+        if (++n < 150) requestAnimationFrame(tick);
+        else done();
+      };
+      requestAnimationFrame(tick);
+    });
+    clearInterval(killer);
+
+    // The first twenty are dropped: they are the frames where each tier's
+    // silhouette is sampled and cached for the first time.
+    const warm = gaps.slice(20).sort((a, b) => a - b);
+    return {
+      alive: g.world.census().alive,
+      deleted,
+      p50: Number(warm[Math.floor(warm.length * 0.5)].toFixed(1)),
+      p95: Number(warm[Math.floor(warm.length * 0.95)].toFixed(1)),
+      worst: Number(warm[warm.length - 1].toFixed(1)),
+    };
+  });
+  // 33.4ms is 30fps. A p95 inside it means the cap is a number the device can
+  // actually carry rather than one somebody liked the look of.
+  check(
+    'a full escalated field, deleting a third of itself every half second, holds frame',
+    load.p50 < 20 && load.p95 < 33.4,
+    JSON.stringify(load),
+  );
+
+  await peek(() => {
+    const g = window.maelstrom;
+    g.world.enemies.length = 0;
+    g.renderer.deletions.length = 0;
+  });
+}
+
 // ------------------------------------------------------------------ ending
 
 /*

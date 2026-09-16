@@ -158,7 +158,9 @@ export class Game {
       sound: this.sound,
       facts: [
         ['World', `${content.elements.length} elements, ${content.materials.length} materials, ${content.biomes.length} regions`],
+        ['Workshop', `${content.crafting.recipes.length} gauntlet upgrades, ${content.alchemy.length} combinations`],
         ['Enemies', `${content.enemies.length} tiers, wandering`],
+        ['Lying about', `${content.notes.length} things to read, in two hands that disagree`],
         ['Everything', 'Drawn and synthesised by code, no asset files'],
       ],
     };

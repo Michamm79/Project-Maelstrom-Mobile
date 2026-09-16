@@ -39,7 +39,7 @@ icon, creature and sound is produced by code at runtime:
 | Sound | oscillators and shaped noise through envelopes, via Web Audio |
 | App icons | generated from code, including the favicon and manifest |
 
-The whole build is **43KB gzipped**. That is the reason it installs instantly,
+The whole build is **60KB gzipped**. That is the reason it installs instantly,
 caches completely and plays with no network.
 
 The **cover art** in `docs/cover/` is drawn the same way, by the game's own
@@ -60,19 +60,25 @@ in the shape a mobile action MMO uses.
 - **ATTACK** — large, under the thumb. Auto-targets the nearest enemy and turns
   to face before swinging. Staying on one target builds the hits; backing off
   resets them. A tap lands one; holding chains them.
-- **Skills** — arced above the attack, one per combination you have, with the
-  element cost on the face and a cooldown sweeping up from the bottom. Tapping
-  fires immediately.
+- **Skills** — arced above the attack, with the element cost on the face and a
+  cooldown sweeping up from the bottom. Tapping fires immediately. Four of them
+  fit; the workshop is where you choose which four.
 - **PULL** — set apart so it is never hit mid-fight. Gathering is a **toggle
   that starts on**, so walking is enough; the button exists to turn it off.
 - **Transmute** — the menu holding both crafting and alchemy, with a live count
   of what can actually be made or cast right now. The world pauses while it is
-  open. Its third tab is **Screen**: the view size (Close / Normal / Wide) and
+  open. **Log** keeps everything you have picked up and read, in its two
+  disagreeing halves; **Screen** holds the view size (Close / Normal / Wide) and
   whether to play sideways.
 
 A short guide runs on a new game and is completed by playing, never by pressing
 *next*. Progress saves to the device. Keyboard works too (WASD/arrows), and Esc
 pauses, which is handy in a desktop browser.
+
+There is a **way out of the Coliseum**, and finding it is the point of the
+thing. It is not a door and it is not a boss. Something lying on the ground in
+the worst region in the world says what it is, and how the ending reads depends
+on how many of those you found.
 
 The title screen is a menu — **Settings**, **How to play** and **About** — and
 the same pages are reachable mid-run from the pause control in the top bar.
@@ -138,7 +144,7 @@ npm run dev          # http://localhost:5173 — open it on your phone over the 
 ```
 
 ```bash
-npm test             # 147 unit tests over the core systems
+npm test             # 256 unit tests over the core systems
 npm run build        # content + icons + typecheck + bundle + service worker
 npm run smoke        # builds, then drives the real game in headless Chromium
 npm run screenshots  # regenerates docs/screenshots/

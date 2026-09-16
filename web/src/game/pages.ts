@@ -224,8 +224,10 @@ export function renderHowTo(host: HTMLElement): void {
     ['Move', 'Press and drag anywhere on the left of the screen. The stick appears where your thumb lands, so there is nothing to find.'],
     ['Gather', 'Nothing. The gauntlets pull whatever you walk past, at walking pace. PULL is a toggle that starts on — the button is there to turn it off.'],
     ['Attack', 'The large button under your right thumb. It turns you to face the nearest thing before it swings. Staying on one target builds the hit; backing off resets it.'],
-    ['Skills', 'Arced above the attack, one per combination you have made. The cost is on the face and the cooldown sweeps up from the bottom.'],
+    ['Skills', 'Arced above the attack. Four of them, and the workshop is where you choose which four. The cost is on the face and the cooldown sweeps up from the bottom.'],
     ['Transmute', 'Crafting and alchemy in one menu, with a live count of what you could actually make right now. The world holds still while it is open.'],
+    ['Reading', 'There is paper lying about in every region, and the gauntlets take it the same way they take everything else. Some of it is printed. Some of it is not, and the two do not agree. The Log tab keeps everything you have picked up.'],
+    ['Getting out', 'There is a way out of the Coliseum. Nothing in the opening will tell you what it is, and one of the things lying on the ground will.'],
     ['Keyboard', 'WASD or the arrow keys walk, which is handy in a desktop browser. Everything else is a tap.'],
   ] as const) {
     const item = el('div', 'howrow');
