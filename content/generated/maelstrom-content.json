@@ -3,7 +3,7 @@
   "note": "GENERATED FILE - do not edit. Source of truth is content/*.json; run npm run build:content.",
   "version": 2,
   "progression": {
-    "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening and are canon. Levels 3 and up are INFERRED: canon's storyline does not advance past Level 2, but its own systems gate things at Level 5 - the deck calls that the point the game escalates, and content/waves.json holds repeating bundles and the ambient population there - so the levels in between have to exist and have to be reachable. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu; neither is built yet.",
+    "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening and are canon. Levels 3 and up are INFERRED: canon's storyline does not advance past Level 2, but its own systems gate things at Level 5 - the deck calls that the point the game escalates, and content/waves.json holds repeating bundles and the ambient population there - so the levels in between have to exist and have to be reachable. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu; both are built, in web/src/core/telemetry.ts.",
     "alchemyUnlockLevel": 2,
     "classLevel": 5,
     "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
@@ -61,7 +61,7 @@
       {
         "level": 5,
         "trigger": "INFERRED, but the level itself is canon - the deck calls this the point the game escalates",
-        "grants": "Sunlance and Clarion. Bundles start repeating and an ambient population moves in. Canon also reads a class here, which is not built."
+        "grants": "Sunlance and Clarion. Bundles start repeating and an ambient population moves in. Canon also reads a class here, and it is read from how you have been playing."
       },
       {
         "level": 6,
