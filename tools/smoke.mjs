@@ -864,6 +864,125 @@ check('and it wakes up again', await page.locator('.opening').isVisible());
 await page.locator('.opening').dispatchEvent('pointerdown');
 await page.waitForTimeout(300);
 
+// -------------------------------------------------------------------- menus
+
+/*
+ * The main menu, and the way out of a run.
+ *
+ * Before this there was no way to stop except closing the tab, and no way to
+ * reach a setting without starting a run first.
+ */
+{
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+
+  check(
+    'the title screen is a menu rather than two buttons',
+    (await page.locator('.tnavbtn').allTextContents()).join(',') === 'Settings,How to play,About',
+  );
+
+  /*
+   * The bug this section exists for.
+   *
+   * Both overlays set `display: flex`, which outranks the user agent's
+   * `[hidden] { display: none }` - so a CLOSED pause menu stayed laid out over
+   * the whole screen and ate every touch meant for the game behind it. Nothing
+   * threw; the game was simply unplayable.
+   */
+  const blocking = await page.evaluate(() => {
+    const at = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+    return at?.closest('.pause') !== null;
+  });
+  check('a closed pause menu does not swallow touches', !blocking);
+
+  for (const [label, marker] of [
+    ['Settings', '.setrow'],
+    ['How to play', '.howrow'],
+    ['About', '.aboutfacts'],
+  ]) {
+    await page.locator('.tnavbtn', { hasText: label }).click();
+    await page.waitForTimeout(200);
+    check(`the title opens ${label}`, (await page.locator(marker).count()) > 0);
+    await page.locator('.tback').click();
+    await page.waitForTimeout(200);
+  }
+  check('and Back returns to the menu', await page.locator('.tnav').isVisible());
+
+  await page.locator('.title .tbtn.primary').click();
+  await page.waitForTimeout(500);
+  await page.locator('.opening').dispatchEvent('pointerdown');
+  await page.waitForTimeout(700);
+
+  await page.locator('.topbar .pause-btn').click();
+  await page.waitForTimeout(250);
+  check('the HUD has a pause control that works', await page.locator('.pcard').isVisible());
+
+  /*
+   * Paused means paused. Driving the stick while it is open must move nothing,
+   * or "pause" is just an overlay with the game still running under it.
+   */
+  const held = await peek(() => ({ x: window.maelstrom.world.player.x, y: window.maelstrom.world.player.y }));
+  await page.keyboard.down('d');
+  await page.waitForTimeout(500);
+  await page.keyboard.up('d');
+  const after = await peek(() => ({ x: window.maelstrom.world.player.x, y: window.maelstrom.world.player.y }));
+  check(
+    'the world does not move while it is paused',
+    Math.hypot(after.x - held.x, after.y - held.y) < 0.5,
+    `moved ${Math.hypot(after.x - held.x, after.y - held.y).toFixed(1)}uu`,
+  );
+
+  /*
+   * One settings panel, three doors. Changing the view here has to be the same
+   * setting the gauntlet menu's Screen tab shows, or there are two of it.
+   */
+  await page.locator('.pcard .tbtn', { hasText: 'Settings' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.pcard .setchip', { hasText: 'Wide' }).click();
+  await page.waitForTimeout(250);
+  const pausedView = await peek(() => window.maelstrom.screen.view);
+  check('settings reached from the pause menu take effect', pausedView === 'wide', pausedView);
+
+  await page.locator('.pcard .tback').click();
+  await page.waitForTimeout(150);
+  await page.locator('.pcard .tbtn', { hasText: 'Resume' }).click();
+  await page.waitForTimeout(300);
+  check('Resume hands the world back', (await page.locator('.pcard').count()) === 0);
+
+  await page.locator('.nav-btn').click();
+  await page.waitForTimeout(250);
+  await page.locator('.tabs button[data-tab="screen"]').click();
+  await page.waitForTimeout(200);
+  const sheetShows = await page.locator('.sheet .setchip.on', { hasText: 'Wide' }).count();
+  check('and the gauntlet menu shows the same setting, not its own copy', sheetShows === 1);
+  await page.locator('.sheet .setchip', { hasText: 'Normal' }).click();
+  await page.waitForTimeout(150);
+  await page.locator('.sheet .close').click();
+  await page.waitForTimeout(200);
+
+  /*
+   * Quitting is not starting over. The run has to survive it, because "I want
+   * to stop" and "I want this erased" are different sentences.
+   */
+  await peek(() => {
+    window.maelstrom.inventory.add('loamstone', 4);
+  });
+  await page.locator('.topbar .pause-btn').click();
+  await page.waitForTimeout(250);
+  await page.locator('.pcard .tbtn', { hasText: 'Quit to menu' }).click();
+  await page.waitForTimeout(400);
+  check('Quit goes back to the menu', await page.locator('.title').isVisible());
+  check(
+    'and offers to continue the run it saved',
+    (await page.locator('.title .tbtn.primary').textContent())?.startsWith('Continue'),
+  );
+
+  await page.locator('.title .tbtn.primary').click();
+  await page.waitForTimeout(400);
+  const kept = await peek(() => window.maelstrom.inventory.used);
+  check('the run is still there afterwards', kept > 0, `${kept} units carried`);
+}
+
 // ----------------------------------------------------------------- deletion
 
 /*

@@ -75,7 +75,7 @@ sentence in itself. `docs/STORE.md` has player-facing copy to go with it.
 | **Runtime dependencies** | **Zero.** No engine, no framework, no libraries. |
 | **Build size** | 43KB gzipped (37KB JS + 6KB CSS), 213KB unpacked |
 | **Source** | ~14,000 lines across game, tooling and content |
-| **Tests** | 140 unit tests, 109 browser checks in headless Chromium |
+| **Tests** | 140 unit tests, 123 browser checks in headless Chromium |
 | **Art assets** | None. Every sprite, icon and creature is drawn procedurally. |
 | **Audio assets** | None. Every sound is synthesised through Web Audio. |
 | **Offline** | Full PWA — service worker, installable, plays with no network |
@@ -202,7 +202,7 @@ Use, cut or rewrite freely. All factually checked against the build.
 > loaded from a file, which keeps the entire game under 45KB gzipped and lets it
 > install as an offline PWA. The world is one continuous arena of five regions,
 > each with its own movement, concealment and visibility rules. 140 unit tests
-> and 109 browser-driven checks run on every commit.
+> and 123 browser-driven checks run on every commit.
 
 ### Case-study intro (~150 words)
 

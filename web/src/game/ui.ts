@@ -21,8 +21,10 @@ import type { Crafting } from '../core/crafting';
 import type { Alchemy } from '../core/alchemy';
 import type { Progression } from '../core/progression';
 import type { CombinationId, ElementId, Hand, MaterialId, RecipeId, TutorialStep } from '../core/types';
-import { VIEW_LABELS, VIEW_ORDER, VIEW_SPANS, type Screen } from './screen';
+import type { Screen } from './screen';
 import type { Install } from './install';
+import type { Sound } from './sound';
+import { renderSettings } from './pages';
 
 export interface HudState {
   inventory: Inventory;
@@ -40,6 +42,8 @@ export interface UiHooks {
   onTogglePull(): void;
   /** Returns the new muted state, so the button can label itself from truth. */
   onToggleMute(): boolean;
+  /** Stop the world and open the pause menu. */
+  onPause(): void;
 }
 
 type Tone = 'info' | 'good' | 'bad' | 'big';
@@ -102,6 +106,7 @@ export class Ui {
   private readonly carry = el('div', 'carry');
   private readonly menuBtn = el('button', 'nav-btn');
   private readonly muteBtn = el('button', 'mute-btn');
+  private readonly pauseBtn = el('button', 'pause-btn', '⏸');
   /** Counts what can be made or cast right now, so the menu is worth opening. */
   private readonly menuBadge = el('i', 'badge');
   private readonly sheet = el('div', 'sheet');
@@ -125,6 +130,7 @@ export class Ui {
     private readonly content: Content,
     private readonly screen: Screen,
     private readonly install: Install,
+    private readonly sound: Sound,
     private readonly hooks: UiHooks,
   ) {
     this.buildTopBar();
@@ -155,7 +161,9 @@ export class Ui {
     // opening a menu, and it is the one control a player reaches for in a hurry
     // when the room they are in turns out not to be theirs.
     onPress(this.muteBtn, () => this.setMuteLabel(this.hooks.onToggleMute()));
-    bar.append(this.place, this.vitals, this.levelChip, this.muteBtn);
+    this.pauseBtn.setAttribute('aria-label', 'Pause');
+    onPress(this.pauseBtn, () => this.hooks.onPause());
+    bar.append(this.place, this.vitals, this.levelChip, this.muteBtn, this.pauseBtn);
     this.root.append(bar, this.objective);
     this.objective.hidden = true;
   }
@@ -439,135 +447,12 @@ export class Ui {
    * while looking at the world, not before starting.
    */
   private renderScreen(): void {
-    const body = this.sheetBody;
-
-    body.append(
-      el('p', 'note', 'How much of the world fits on screen, and which way the game sits.'),
-    );
-
-    // --- view size
-    const view = el('div', 'setrow');
-    view.append(el('b', undefined, 'View'));
-    const choices = el('div', 'choices');
-    for (const size of VIEW_ORDER) {
-      const button = el('button', 'setchip', VIEW_LABELS[size]);
-      button.append(el('span', 'sub', `${VIEW_SPANS[size]} units`));
-      button.classList.toggle('on', this.screen.view === size);
-      onPress(button, () => {
-        this.screen.setView(size);
-        this.renderSheet();
-      });
-      choices.append(button);
-    }
-    view.append(choices);
-    body.append(view);
-
-    // --- landscape
-    const land = el('div', 'setrow');
-    land.append(el('b', undefined, 'Play sideways'));
-    const landChoices = el('div', 'choices');
-    for (const [on, label, sub] of [
-      [true, 'On', 'Turn the phone'],
-      [false, 'Off', 'Follow the device'],
-    ] as const) {
-      const button = el('button', 'setchip', label);
-      button.append(el('span', 'sub', sub));
-      button.classList.toggle('on', this.screen.landscape === on);
-      onPress(button, () => {
-        this.screen.setLandscape(on);
-        this.renderSheet();
-      });
-      landChoices.append(button);
-    }
-    land.append(landChoices);
-    body.append(land);
-
-    /*
-     * Which way to turn, offered only while we are the ones doing the turning.
-     *
-     * When the device rotates itself there is nothing to choose - the phone
-     * already knows which way up it is. It is only the transform fallback that
-     * has to guess, and guessing wrong is the difference between a game that
-     * reads upside down and one that does not, so the player gets to say.
-     */
-    if (this.screen.landscape && this.screen.selfRotated) {
-      const turn = el('div', 'setrow');
-      turn.append(el('b', undefined, 'Turn'));
-      const turnChoices = el('div', 'choices');
-      for (const [id, label, sub] of [
-        ['cw', '↻ Right', 'Top edge goes right'],
-        ['ccw', '↺ Left', 'Top edge goes left'],
-      ] as const) {
-        const button = el('button', 'setchip', label);
-        button.append(el('span', 'sub', sub));
-        button.classList.toggle('on', this.screen.turn === id);
-        onPress(button, () => {
-          this.screen.setTurn(id);
-          this.renderSheet();
-        });
-        turnChoices.append(button);
-      }
-      turn.append(turnChoices);
-      body.append(turn);
-      body.append(
-        el(
-          'p',
-          'note',
-          'Your phone is refusing to rotate, so the game is turning itself. ' +
-            'Unlock rotation in your device settings and this row disappears.',
-        ),
-      );
-    }
-
-    this.renderInstallRow(body);
-  }
-
-  /**
-   * Keeping a copy, offered permanently.
-   *
-   * The title screen makes the same offer once and takes no for an answer
-   * forever. This row does not honour that dismissal, because somebody who has
-   * opened a settings tab is looking for the thing rather than being sold it -
-   * and it is the only route back for a player who tapped Not now and then
-   * wanted it after all.
-   */
-  private renderInstallRow(body: HTMLElement): void {
-    const state = this.install.state;
-    const row = el('div', 'setrow');
-    row.append(el('b', undefined, 'Keep a copy'));
-
-    if (state === 'installed') {
-      row.append(el('p', 'note', 'Installed. It runs from your home screen and plays offline.'));
-      body.append(row);
-      return;
-    }
-
-    if (state === 'ready') {
-      const choices = el('div', 'choices');
-      const button = el('button', 'setchip', 'Install');
-      button.append(el('span', 'sub', 'Home screen, works offline'));
-      onPress(button, () => {
-        void this.install.prompt().then(() => this.renderSheet());
-      });
-      choices.append(button);
-      row.append(choices);
-      body.append(row);
-      return;
-    }
-
-    /*
-     * No prompt to raise. On iOS there never will be one, and elsewhere the
-     * browser has decided the moment is wrong - either way the only honest
-     * thing to show is the route the player can take themselves.
-     */
-    row.append(
-      el(
-        'p',
-        'note',
-        `Add it to your home screen and it plays with no signal at all. ${this.install.manualSteps}`,
-      ),
-    );
-    body.append(row);
+    renderSettings(this.sheetBody, {
+      screen: this.screen,
+      install: this.install,
+      sound: this.sound,
+      onChange: () => this.renderSheet(),
+    });
   }
 
   private renderCraft(state: HudState): void {

@@ -21,7 +21,8 @@ import { World } from './world';
 import { Renderer } from './renderer';
 import { Ui } from './ui';
 import { InputController } from './input';
-import { TitleScreen } from './title';
+import { TitleScreen, type MenuDeps } from './title';
+import { PauseMenu } from './pause';
 import { WaveDirector } from './waves';
 import { OpeningScene } from './opening';
 import { Sound } from './sound';
@@ -37,6 +38,7 @@ export class Game {
   private readonly ui: Ui;
   private readonly input: InputController;
   private readonly title: TitleScreen;
+  private readonly pause: PauseMenu;
   private readonly opening: OpeningScene;
   private readonly sound = new Sound();
   private readonly install = new Install();
@@ -81,7 +83,7 @@ export class Game {
     this.renderer = new Renderer(canvas, content, this.screen);
     this.waves = new WaveDirector(content, this.world);
 
-    this.ui = new Ui(uiRoot, content, this.screen, this.install, {
+    this.ui = new Ui(uiRoot, content, this.screen, this.install, this.sound, {
       onCraft: (id) => this.craft(id),
       onSelectCombination: (id) => this.selectCombination(id),
       onAttack: () => this.attack(),
@@ -93,16 +95,66 @@ export class Game {
         this.sound.unlock();
         return this.sound.toggleMute();
       },
+      onPause: () => {
+        // Closing the gauntlet sheet first, so two overlays are never stacked
+        // and Resume never uncovers a menu the player had forgotten was open.
+        this.ui.closeSheet();
+        this.pause.open();
+      },
     });
 
     this.input = new InputController(canvas, this.screen);
+    // Escape pauses from a desktop keyboard. Bound as an event rather than
+    // polled: a keypress is over before the next frame runs.
+    this.input.onKey('escape', () => {
+      if (!this.started || this.opening.active || this.title.visible) return;
+      if (this.pause.visible) {
+        this.pause.close();
+        this.syncObjective();
+        return;
+      }
+      this.ui.closeSheet();
+      this.pause.open();
+    });
     this.ui.setPullActive(this.pulling);
 
     this.opening = new OpeningScene(uiRoot);
 
     // Every path out of the title screen is a genuine user gesture, which is
     // the only moment a browser will let audio start.
-    this.title = new TitleScreen(uiRoot, this.install, {
+    /*
+     * One set of dependencies for both menus, so Settings opened before a run
+     * and Settings opened during one are the same rows reading the same state.
+     */
+    const menuDeps: MenuDeps = {
+      install: this.install,
+      screen: this.screen,
+      sound: this.sound,
+      facts: [
+        ['World', `${content.elements.length} elements, ${content.materials.length} materials, ${content.biomes.length} regions`],
+        ['Enemies', `${content.enemies.length} tiers, wandering`],
+        ['Everything', 'Drawn and synthesised by code, no asset files'],
+      ],
+    };
+
+    this.pause = new PauseMenu(uiRoot, menuDeps, {
+      onResume: () => this.syncObjective(),
+      /*
+       * Quitting is not starting over.
+       *
+       * It saves and hands the player back to the menu with the run intact,
+       * because "I want to stop" and "I want this erased" are different
+       * sentences and only one of them can be taken back.
+       */
+      onQuit: () => {
+        this.persist();
+        this.started = false;
+        this.ui.closeSheet();
+        this.title.show(true, this.runSummary());
+      },
+    });
+
+    this.title = new TitleScreen(uiRoot, menuDeps, {
       onContinue: () => {
         this.sound.unlock();
         this.goLandscape();
@@ -439,6 +491,18 @@ export class Game {
     // the opposite of that.
     if (this.opening.active) {
       this.opening.update(dt);
+      return;
+    }
+
+    /*
+     * Paused: nothing moves, including the pull.
+     *
+     * Ahead of the menu check below because the pause is the stronger claim -
+     * a player who asked for the world to stop should not find the gauntlets
+     * still gathering for them.
+     */
+    if (this.pause.visible) {
+      this.castQueued = false;
       return;
     }
 

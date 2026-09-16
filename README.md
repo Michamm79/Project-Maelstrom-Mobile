@@ -71,8 +71,13 @@ in the shape a mobile action MMO uses.
   whether to play sideways.
 
 A short guide runs on a new game and is completed by playing, never by pressing
-*next*. Progress saves to the device. Keyboard works too (WASD/arrows), which is
-handy in a desktop browser.
+*next*. Progress saves to the device. Keyboard works too (WASD/arrows), and Esc
+pauses, which is handy in a desktop browser.
+
+The title screen is a menu — **Settings**, **How to play** and **About** — and
+the same pages are reachable mid-run from the pause control in the top bar.
+Quitting there saves and returns to the menu; it is not the same as starting
+over, and only one of those can be taken back.
 
 ## The loop
 
@@ -141,7 +146,7 @@ npm run cover        # regenerates the cover art in docs/cover/
 ```
 
 `npm run smoke` is the interesting one: it runs the built game in a phone-sized
-browser and asserts **109 behaviours** — playing from the title screen through
+browser and asserts **123 behaviours** — playing from the title screen through
 the opening, gathering, crafting, combat and a restart; driving **real
 multi-touch through CDP**, because a browser does not synthesise a `click` for a
 touch inside a multi-touch sequence and a click-bound control silently does
@@ -209,6 +214,8 @@ web/src/
     sound.ts            synthesised audio
     deletion.ts         enemies coming apart into binary
     install.ts          the offer to keep it on a home screen
+    pages.ts            settings, controls and about, shared by both menus
+    pause.ts            the way to stop mid-run
     opening.ts, input.ts, ui.ts, title.ts, waves.ts, game.ts
 
 tools/

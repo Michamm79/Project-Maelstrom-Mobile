@@ -60,6 +60,7 @@ export class InputController {
   private tapOnlyPointer: number | null = null;
   private pointerStart: { x: number; y: number; time: number } | null = null;
   private readonly keys = new Set<string>();
+  private readonly taps = new Map<string, () => void>();
   private readonly disposers: (() => void)[] = [];
   private readonly space: PointerSpace;
 
@@ -192,8 +193,27 @@ export class InputController {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    this.keys.add(event.key.toLowerCase());
+    const key = event.key.toLowerCase();
+    this.keys.add(key);
+    const handler = this.taps.get(key);
+    if (handler) {
+      event.preventDefault();
+      handler();
+    }
   };
+
+  /**
+   * A key that does something once, delivered as an event.
+   *
+   * Not polled. A keypress is down and up again inside a few milliseconds, and
+   * the frame that would have noticed it routinely happens after the keyup has
+   * already removed it - so a polled one-shot key works intermittently, which
+   * is worse than not working. The held keys above are a different question and
+   * polling is exactly right for those.
+   */
+  onKey(key: string, handler: () => void): void {
+    this.taps.set(key.toLowerCase(), handler);
+  }
 
   private onKeyUp = (event: KeyboardEvent): void => {
     this.keys.delete(event.key.toLowerCase());
@@ -219,12 +239,6 @@ export class InputController {
 
   isKeyDown(key: string): boolean {
     return this.keys.has(key);
-  }
-
-  consumeKey(key: string): boolean {
-    if (!this.keys.has(key)) return false;
-    this.keys.delete(key);
-    return true;
   }
 
   destroy(): void {
