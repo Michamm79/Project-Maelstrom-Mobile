@@ -1,9 +1,10 @@
 /**
  * The run: owns the systems, the world, the loop and the input wiring.
  *
- * Two thumbs. The left half of the screen walks. On the right, PULL is held
- * rather than tapped - canon's core verb is a sustained spiralling draw, not a
- * pickup press - and CAST fires the readied combination.
+ * Two thumbs. The left half of the screen walks. On the right, PULL is a toggle
+ * - canon's core verb is a sustained spiralling draw that works at a walk, not
+ * a pickup press - the large button swings, and the arc above it fires the four
+ * combinations the player chose to carry.
  */
 import { content } from '../core/content';
 import { Inventory } from '../core/inventory';
@@ -30,6 +31,7 @@ import { Screen } from './screen';
 import { Install } from './install';
 import { Funnel } from '../core/funnel';
 import { fragmentFor, type Fragment, type FragmentTrigger } from '../core/fragments';
+import { admit, toggleCarried, LOADOUT_SLOTS, type LoadoutState } from '../core/loadout';
 import type { CombinationId, RecipeId } from '../core/types';
 
 export class Game {
@@ -51,10 +53,10 @@ export class Game {
   private readonly alchemy = new Alchemy(content as never);
   private readonly progression = new Progression(content.progression);
 
-  private selected: CombinationId | null = null;
+  /** The four under the thumb, and which have ever been offered a slot. */
+  private loadout: LoadoutState = { carried: [], known: [] };
   /** Gathering is on unless the player turns it off. */
   private pulling = true;
-  private castQueued = false;
   /** Seconds left on each combination, ticked every frame. */
   private readonly cooldowns = new Map<CombinationId, number>();
 
@@ -88,7 +90,7 @@ export class Game {
 
     this.ui = new Ui(uiRoot, content, this.screen, this.install, this.sound, {
       onCraft: (id) => this.craft(id),
-      onSelectCombination: (id) => this.selectCombination(id),
+      onToggleCarry: (id) => this.toggleCarry(id),
       onAttack: () => this.attack(),
       onSkill: (id) => this.useSkill(id),
       onTogglePull: () => this.togglePull(),
@@ -194,6 +196,9 @@ export class Game {
     });
 
     this.ui.setMuteLabel(this.sound.isMuted);
+    // Before the first bind: the arc is drawn from the loadout, and a restored
+    // run that has not been reconciled yet draws an empty one.
+    this.syncLoadout();
     this.ui.bind(this.hudState());
     // currentBiome is deliberately left empty: refreshPlace() skips when the
     // biome has not changed, so seeding it here meant the place card never got
@@ -244,8 +249,7 @@ export class Game {
 
   private useSkill(id: CombinationId): void {
     if ((this.cooldowns.get(id) ?? 0) > 0) return;
-    this.selected = id;
-    this.cast();
+    this.cast(id);
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -292,8 +296,7 @@ export class Game {
     this.waves.reset();
 
     this.cooldowns.clear();
-    this.selected = null;
-    this.castQueued = false;
+    this.loadout = { carried: [], known: [] };
     this.pulling = true;
     this.playtimeMs = 0;
     this.sinceSave = 0;
@@ -311,6 +314,7 @@ export class Game {
     this.ui.setPullActive(this.pulling);
     this.ui.setCombo(0);
     this.ui.setCooldowns(this.cooldowns);
+    this.syncLoadout();
     this.ui.refresh(this.hudState());
     this.refreshPlace();
   }
@@ -331,6 +335,7 @@ export class Game {
     this.guided = run.tutorialStep >= 0;
     this.fragmentsSeen.clear();
     for (const id of run.fragmentsSeen) this.fragmentsSeen.add(id);
+    this.loadout = { carried: [...run.loadout.carried], known: [...run.loadout.known] };
   }
 
   /**
@@ -358,6 +363,7 @@ export class Game {
         tutorialStep: this.tutorialStep,
         playtimeMs: this.playtimeMs,
         fragmentsSeen: [...this.fragmentsSeen],
+        loadout: this.loadout,
       },
     );
   }
@@ -370,7 +376,8 @@ export class Game {
       crafting: this.crafting,
       alchemy: this.alchemy,
       progression: this.progression,
-      selected: this.selected,
+      carried: this.loadout.carried,
+      slots: LOADOUT_SLOTS,
     };
   }
 
@@ -399,20 +406,28 @@ export class Game {
     this.ui.refresh(this.hudState());
   }
 
-  private selectCombination(id: CombinationId): void {
-    this.selected = this.selected === id ? null : id;
+  /**
+   * Put a combination on the arc, or take it off.
+   *
+   * A full bar refuses rather than evicting: four things the player chose are
+   * worth more than the one they just tapped, and a bar that rearranges itself
+   * is a bar nobody trusts.
+   */
+  private toggleCarry(id: CombinationId): void {
+    const result = toggleCarried(this.loadout.carried, id, LOADOUT_SLOTS);
+    if (result.change === 'full') {
+      this.ui.toast(`Only ${LOADOUT_SLOTS} fit - take one off first`, 'bad');
+      return;
+    }
+    this.loadout = { carried: result.carried, known: this.loadout.known };
+    this.sound.play('ui');
     this.ui.refresh(this.hudState());
   }
 
-  private cast(): void {
-    this.readyFirstCombination();
-    if (!this.selected) {
-      this.ui.toast('Nothing to cast yet', 'bad');
-      return;
-    }
-    const combination = this.alchemy.cast(this.selected, this.inventory, this.progression.level);
+  private cast(id: CombinationId): void {
+    const combination = this.alchemy.cast(id, this.inventory, this.progression.level);
     if (!combination) {
-      this.ui.toast(this.whyNotCastable(this.selected), 'bad');
+      this.ui.toast(this.whyNotCastable(id), 'bad');
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
@@ -483,15 +498,23 @@ export class Game {
     if (to >= content.progression.alchemyUnlockLevel) {
       this.ui.toast('The workshop is open. Alchemy, in the menu.', 'big');
     }
-    this.readyFirstCombination();
+    this.syncLoadout();
   }
 
-  /** Put something in the player's hand rather than making them find the menu. */
-  private readyFirstCombination(): void {
-    if (this.selected) return;
+  /**
+   * Hand over anything newly unlocked, once.
+   *
+   * A combination that unlocks and then waits in a menu for the player to go
+   * and find it is a combination most players never cast. So the first free
+   * slot takes it - and because `admit` remembers what it has offered, taking
+   * it back off again sticks.
+   */
+  private syncLoadout(): void {
     const level = this.progression.level;
-    const first = content.alchemy.find((c) => this.alchemy.unlocked(c, level));
-    if (first) this.selected = first.id;
+    const available = content.alchemy.filter((c) => this.alchemy.unlocked(c, level)).map((c) => c.id);
+    const before = this.loadout.carried.join(',');
+    this.loadout = admit(this.loadout, available, LOADOUT_SLOTS);
+    if (this.loadout.carried.join(',') !== before) this.ui.refresh(this.hudState());
   }
 
   // ---------------------------------------------------------------- loop
@@ -534,10 +557,7 @@ export class Game {
      * a player who asked for the world to stop should not find the gauntlets
      * still gathering for them.
      */
-    if (this.pause.visible) {
-      this.castQueued = false;
-      return;
-    }
+    if (this.pause.visible) return;
 
     // GDD 6.1 has the world keep running while the menu is open, reasoning that
     // a pause "would have erased wave pressure in exactly the moment it should
@@ -545,7 +565,6 @@ export class Game {
     // the pull is suspended with it, since a menu that kept gathering for you
     // would be a stranger answer than either.
     if (content.progression.pauseWithMenu && this.ui.sheetOpen) {
-      this.castQueued = false;
       this.world.updatePull(dt, false, 0, content.progression.player.pullSeconds, 0);
       return;
     }
@@ -595,11 +614,6 @@ export class Game {
         `New material: ${content.material(material).name}`,
       );
       this.ui.refresh(this.hudState());
-    }
-
-    if (this.castQueued) {
-      this.castQueued = false;
-      this.cast();
     }
 
     if (this.ui.attacking) this.attack();

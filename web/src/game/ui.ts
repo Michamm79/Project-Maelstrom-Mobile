@@ -31,12 +31,16 @@ export interface HudState {
   crafting: Crafting;
   alchemy: Alchemy;
   progression: Progression;
-  selected: CombinationId | null;
+  /** The combinations on the arc, in the order they sit there. */
+  carried: readonly CombinationId[];
+  /** How many fit, so the menu can say "full" rather than just refusing. */
+  slots: number;
 }
 
 export interface UiHooks {
   onCraft(id: RecipeId): void;
-  onSelectCombination(id: CombinationId): void;
+  /** Put a combination on the arc, or take it off. */
+  onToggleCarry(id: CombinationId): void;
   onAttack(): void;
   onSkill(id: CombinationId): void;
   onTogglePull(): void;
@@ -435,7 +439,19 @@ export class Ui {
    */
   private renderSkills(state: HudState): void {
     const level = state.progression.level;
-    const available = state.alchemy.outlooks(state.inventory, level).filter((o) => o.unlocked);
+    /*
+     * The arc is the loadout, in the loadout's order.
+     *
+     * It used to be every unlocked combination, which was fine at three and
+     * would not survive eleven: four circles is what fits up the side of a
+     * phone held sideways before they start running over the menu button.
+     * `unlocked` is still checked, because a bar restored from a save can name
+     * something the player's current level has not opened.
+     */
+    const byId = new Map(state.alchemy.outlooks(state.inventory, level).map((o) => [o.combination.id, o]));
+    const available = state.carried
+      .map((id) => byId.get(id))
+      .filter((o): o is NonNullable<typeof o> => !!o && o.unlocked);
 
     const wanted = available.map((o) => o.combination.id).join(',');
     if (wanted !== this.skillSignature) {
@@ -598,6 +614,19 @@ export class Ui {
     }
     this.sheetBody.append(poolRow);
 
+    // What the bar is for, said once and near the top. Without it the Carry
+    // buttons look like a second kind of crafting rather than the choice of
+    // which four things end up under the right thumb.
+    if (state.alchemy.menuInteractive(level)) {
+      this.sheetBody.append(
+        el(
+          'p',
+          'note',
+          `Carrying ${state.carried.length} of ${state.slots}. These are the buttons above the attack.`,
+        ),
+      );
+    }
+
     for (const outlook of state.alchemy.outlooks(state.inventory, level)) {
       const row = el('div', 'row-item');
       row.classList.toggle('short', !outlook.can);
@@ -612,10 +641,9 @@ export class Ui {
       if (!outlook.unlocked) {
         row.append(el('span', 'tag', `Locked until level ${this.content.progression.alchemyUnlockLevel}`));
       } else {
-        const readied = state.selected === outlook.combination.id;
-        row.classList.toggle('on', readied);
-        const button = el('button', 'go', readied ? 'Readied' : 'Ready this');
-        button.disabled = readied;
+        const carried = state.carried.includes(outlook.combination.id);
+        const full = !carried && state.carried.length >= state.slots;
+        row.classList.toggle('on', carried);
         if (!outlook.can) {
           row.append(
             el('span', 'tag', `Short of ${Object.keys(outlook.shortfall)
@@ -623,10 +651,15 @@ export class Ui {
               .join(' and ')}`),
           );
         }
+        // Take-off is offered on a carried row rather than hidden, because with
+        // a full bar that is the only move available and a row with no button
+        // reads as a row that is not listening.
+        const button = el('button', 'go', carried ? 'Carrying' : full ? 'Bar full' : 'Carry');
+        button.disabled = full;
         row.append(button);
         // The whole row is the target: a 40px button is a poor tap area when
         // the world may be moving behind the menu.
-        onPress(row, () => this.hooks.onSelectCombination(outlook.combination.id));
+        onPress(row, () => this.hooks.onToggleCarry(outlook.combination.id));
       }
       this.sheetBody.append(row);
     }

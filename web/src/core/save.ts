@@ -13,7 +13,8 @@ import type { Content } from './content';
 import type { Inventory } from './inventory';
 import type { Crafting } from './crafting';
 import type { Progression } from './progression';
-import type { MaterialId } from './types';
+import type { LoadoutState } from './loadout';
+import type { CombinationId, MaterialId } from './types';
 
 const STORAGE_KEY = 'maelstrom.save.v2';
 const SAVE_VERSION = 2;
@@ -34,6 +35,7 @@ export interface SavedRun {
   tutorialStep: number;
   playtimeMs: number;
   fragmentsSeen?: string[];
+  loadout?: { carried?: string[]; known?: string[] };
 }
 
 export interface RunState {
@@ -49,6 +51,14 @@ export interface RunState {
    * that it lands the first time.
    */
   fragmentsSeen: string[];
+  /**
+   * The four on the arc, and everything that has ever been offered a slot.
+   *
+   * `known` is saved alongside `carried` because without it a deliberate
+   * removal only lasts until the next load: the fill pass would see a free
+   * slot, decide the combination was new, and put it straight back.
+   */
+  loadout: LoadoutState;
 }
 
 export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
@@ -62,6 +72,7 @@ export function serialize(bundle: SaveBundle, run: RunState): SavedRun {
     tutorialStep: run.tutorialStep,
     playtimeMs: Math.round(run.playtimeMs),
     fragmentsSeen: [...run.fragmentsSeen],
+    loadout: { carried: [...run.loadout.carried], known: [...run.loadout.known] },
   };
 }
 
@@ -93,8 +104,18 @@ export function deserialize(content: Content, bundle: SaveBundle, raw: unknown):
     // Optional in the saved shape: a run written before fragments existed
     // simply has none read yet, which is the right answer for it.
     fragmentsSeen: Array.isArray(saved.fragmentsSeen) ? saved.fragmentsSeen.filter((id) => typeof id === 'string') : [],
+    // Also optional: a run saved before the arc had slots simply has none
+    // chosen, and admit() hands it the first four the moment it loads.
+    loadout: {
+      carried: ids(saved.loadout?.carried),
+      known: ids(saved.loadout?.known),
+    },
     playtimeMs: Math.max(0, saved.playtimeMs ?? 0),
   };
+}
+
+function ids(value: unknown): CombinationId[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
 }
 
 function clamp(value: number, min: number, max: number): number {
