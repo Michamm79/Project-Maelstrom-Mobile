@@ -15,6 +15,14 @@
 import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
 import { abilityTargets, applyDamage } from '../core/combat';
+import {
+  absorbDamage,
+  beginHeal,
+  freshStatus,
+  raiseShield,
+  tickStatus,
+  type PlayerStatus,
+} from '../core/status';
 import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId, TerrainDef } from '../core/types';
 
 /** Screen units travelled per walk-cycle frame. */
@@ -78,12 +86,17 @@ export interface Enemy {
   dead: boolean;
   facing: number;
   burn: number;
+  /** Seconds left moving at `slowScale` of its own pace. */
+  slow: number;
+  slowScale: number;
 }
 
 export interface CombatEvent {
   kind: 'player-hit' | 'enemy-hit' | 'enemy-killed' | 'player-died';
   enemy?: Enemy;
   amount?: number;
+  /** player-hit: how much of it the shield took, so the HUD can say so. */
+  soaked?: number;
 }
 
 /** Non-interactive scenery, so the world does not read as an empty field. */
@@ -120,6 +133,8 @@ export interface Player {
   mirrored: boolean;
   frame: number;
   travelled: number;
+  /** Shield, heal, concealment and revelation - see core/status.ts. */
+  status: PlayerStatus;
 }
 
 export interface BiomeDisc {
@@ -177,6 +192,7 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
     mirrored: false,
     frame: 0,
     travelled: 0,
+    status: freshStatus(),
   };
 }
 
@@ -187,6 +203,17 @@ const ROAM_SEED = 0x9e3779b9;
 const ARRIVE_DISTANCE = 14;
 /** Share of the full shove that a combo-less hit delivers. */
 const COMBO_SHOVE_FLOOR = 0.4;
+
+/**
+ * How fast an enemy is moving right now, as a fraction of its own speed.
+ *
+ * Applied to the wander as well as the chase, because a slow that only bit
+ * while something was pursuing you would let a frozen crowd stroll away at
+ * full speed the moment they lost interest.
+ */
+function paceScale(enemy: Enemy): number {
+  return enemy.slow > 0 ? Math.max(0.1, enemy.slowScale) : 1;
+}
 
 /** How long a swing takes to draw. The renderer reads attackAnim against it. */
 export const SWING_SECONDS = 0.26;
@@ -657,6 +684,8 @@ export class World {
       dead: false,
       facing: 0,
       burn: 0,
+      slow: 0,
+      slowScale: 1,
     };
     this.enemies.push(enemy);
     return enemy;
@@ -765,6 +794,12 @@ export class World {
 
   /** Resolve one alchemical combination against whatever it catches. */
   cast(combination: AlchemyCombination): Enemy[] {
+    const effect = combination.effect;
+    // Whatever the shape, the caster's own timers are set first: a self-cast
+    // catches nobody and would otherwise fall straight past the loop below and
+    // do nothing at all.
+    this.applySelf(combination);
+
     const hits = abilityTargets(
       combination,
       this.player.x,
@@ -776,14 +811,28 @@ export class World {
     for (const hit of hits) {
       const enemy = hit.target;
       enemy.hitFlash = 0.18;
+      /*
+       * A cast gives you away.
+       *
+       * Even from inside a veil: dampening what notices you is not the same as
+       * being able to hit things from inside it for free, and an ability that
+       * broke canon's asymmetry in the player's favour permanently would make
+       * every other combination pointless.
+       */
       enemy.aggro = true;
       const heft = Math.max(1, enemy.def.weight);
       enemy.stagger = Math.max(enemy.stagger, this.content.progression.combat.basicAttack.staggerSeconds / heft);
       enemy.windUp = 0;
-      const push = combination.effect.knockback / heft;
+      const push = effect.knockback / heft;
       enemy.knockX += hit.pushX * push;
       enemy.knockY += hit.pushY * push;
-      if (combination.effect.burnSeconds) enemy.burn = combination.effect.burnSeconds;
+      if (effect.burnSeconds) enemy.burn = effect.burnSeconds;
+      if (effect.slowSeconds) {
+        // Longest wins, rather than latest: a fresh short slow landing on a
+        // long one should not cut it short.
+        enemy.slow = Math.max(enemy.slow, effect.slowSeconds);
+        enemy.slowScale = Math.min(enemy.slowScale, effect.slowScale ?? 0.5);
+      }
       const died = applyDamage(enemy, hit.damage);
       this.events.push({ kind: 'enemy-hit', enemy, amount: hit.damage });
       if (died) {
@@ -794,11 +843,43 @@ export class World {
     return killed;
   }
 
+  /** The half of a combination that lands on the caster rather than on a target. */
+  private applySelf(combination: AlchemyCombination): void {
+    const { shieldAmount, shieldSeconds, healAmount, healSeconds, hideSeconds, revealSeconds } =
+      combination.effect;
+    const status = this.player.status;
+
+    if (shieldAmount) raiseShield(status, shieldAmount, shieldSeconds ?? 0);
+    if (healAmount) beginHeal(status, healAmount, healSeconds ?? 0);
+    if (hideSeconds) {
+      status.hidden = Math.max(status.hidden, hideSeconds);
+      /*
+       * Going quiet drops what is already chasing you.
+       *
+       * Without this the veil only stopped new enemies noticing, which meant
+       * casting it while being chased did nothing whatsoever - and being
+       * chased is the only time anybody would cast it.
+       */
+      for (const enemy of this.enemies) {
+        if (enemy.dead) continue;
+        enemy.aggro = false;
+        enemy.alertFor = 0;
+        enemy.windUp = 0;
+        this.chooseRoam(enemy);
+      }
+    }
+    if (revealSeconds) status.revealed = Math.max(status.revealed, revealSeconds);
+  }
+
   private updateEnemies(dt: number): void {
     const player = this.player;
     const cover = this.terrainAt(player.x, player.y).concealment;
     for (const enemy of this.enemies) {
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
+      if (enemy.slow > 0) {
+        enemy.slow = Math.max(0, enemy.slow - dt);
+        if (enemy.slow === 0) enemy.slowScale = 1;
+      }
 
       if (enemy.burn > 0) {
         enemy.burn -= dt;
@@ -836,7 +917,9 @@ export class World {
       // Scaled by the ground the PLAYER is standing on, not the enemy: this is
       // how visible the player is, so the Wetland's cover and the Desert's
       // exposure are properties of where you chose to stand.
-      const notice = def.noticeRadius * cover;
+      // A veil is dampening, not invisibility: it is the noticing that stops,
+      // and this is the one place canon's asymmetry is decided.
+      const notice = player.status.hidden > 0 ? 0 : def.noticeRadius * cover;
       if (distance <= notice) {
         enemy.aggro = true;
         enemy.alertFor = def.forgetSeconds;
@@ -892,8 +975,9 @@ export class World {
       enemy.facing = Math.atan2(dy, dx);
       return;
     }
-    enemy.x += (dx / distance) * enemy.def.speed * dt;
-    enemy.y += (dy / distance) * enemy.def.speed * dt;
+    const pace = enemy.def.speed * paceScale(enemy);
+    enemy.x += (dx / distance) * pace * dt;
+    enemy.y += (dy / distance) * pace * dt;
     enemy.facing = Math.atan2(dy, dx);
   }
 
@@ -919,8 +1003,9 @@ export class World {
       return;
     }
 
-    enemy.x += (tx / toTarget) * enemy.def.wanderSpeed * dt;
-    enemy.y += (ty / toTarget) * enemy.def.wanderSpeed * dt;
+    const pace = enemy.def.wanderSpeed * paceScale(enemy);
+    enemy.x += (tx / toTarget) * pace * dt;
+    enemy.y += (ty / toTarget) * pace * dt;
     enemy.facing = Math.atan2(ty, tx);
   }
 
@@ -950,10 +1035,14 @@ export class World {
     const player = this.player;
     if (player.invulnerable > 0 || player.dead) return;
     const combat = this.content.progression.combat;
-    player.hp = Math.max(0, player.hp - amount);
+    // The shield soaks what it can and the rest lands. It still costs the hit:
+    // invulnerability and the regen delay both start, because being shielded
+    // is not the same as not having been hit.
+    const { soaked, through } = absorbDamage(player.status, amount);
+    player.hp = Math.max(0, player.hp - through);
     player.invulnerable = combat.invulnerableSeconds;
     player.sinceHit = 0;
-    this.events.push({ kind: 'player-hit', amount, enemy });
+    this.events.push({ kind: 'player-hit', amount: through, enemy, soaked });
     if (player.hp <= 0) {
       player.dead = true;
       player.respawnAt = this.elapsed + combat.respawnSeconds;
@@ -969,6 +1058,10 @@ export class World {
     const combat = this.content.progression.combat;
 
     player.invulnerable = Math.max(0, player.invulnerable - dt);
+    // Before the regen below, so a heal and the passive regen in the same frame
+    // both count against the same maxHp rather than the heal being clamped away.
+    const healed = tickStatus(player.status, dt);
+    if (healed > 0 && !player.dead) player.hp = Math.min(player.maxHp, player.hp + healed);
     player.sinceHit += dt;
     player.bob += dt;
     player.attackAnim = Math.max(0, player.attackAnim - dt);
@@ -985,6 +1078,9 @@ export class World {
         player.x = 0;
         player.y = 0;
         player.invulnerable = combat.invulnerableSeconds;
+        // Dying clears what you were holding. A shield that survives the thing
+        // it failed to stop is a shield that was not doing anything.
+        Object.assign(player.status, freshStatus());
       }
     } else if (player.sinceHit >= combat.regenDelaySeconds && player.hp < player.maxHp) {
       player.hp = Math.min(player.maxHp, player.hp + combat.regenPerSecond * dt);

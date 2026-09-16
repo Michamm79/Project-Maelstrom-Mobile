@@ -243,6 +243,18 @@ for (const r of crafting.recipes) {
 
 // ---------------------------------------------------------------- alchemy
 
+/*
+ * The shapes an ability can resolve in, read out of the type union rather than
+ * listed again here. A combination naming a kind the engine does not implement
+ * falls through every branch and resolves as "hits nobody, does nothing",
+ * which ships perfectly happily.
+ */
+const typeSource = readFileSync(join(ROOT, 'web/src/core/types.ts'), 'utf8');
+const kindBlock = typeSource.match(/export type AbilityKind =([^;]*);/);
+if (!kindBlock) fail('could not find AbilityKind in web/src/core/types.ts');
+const abilityKinds = new Set([...(kindBlock?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1]));
+
+const elementsUsed = new Set();
 const alchemyIds = new Set();
 for (const c of alchemy) {
   if (alchemyIds.has(c.id)) fail(`duplicate alchemy combination id "${c.id}"`);
@@ -251,6 +263,7 @@ for (const c of alchemy) {
   if (!required.length) fail(`alchemy combination "${c.id}" requires no elements`);
   for (const [el, qty] of required) {
     if (!elementIds.has(el)) fail(`alchemy combination "${c.id}" requires unknown element "${el}"`);
+    else elementsUsed.add(el);
     if (!Number.isInteger(qty) || qty <= 0) fail(`alchemy combination "${c.id}" asks for ${qty} x ${el}`);
   }
   // Canon: the tutorial combinations are all craftable from Plains/Forest
@@ -267,8 +280,73 @@ for (const c of alchemy) {
     }
   }
   if (!(c.effect?.damage >= 0)) fail(`alchemy combination "${c.id}" has no effect damage`);
+
+  /*
+   * The shape, and whether it has been given what that shape needs to resolve.
+   *
+   * Every one of these is a silent nothing rather than a crash: a beam with no
+   * range reaches zero units and catches nobody, a chain with no jumps is an
+   * expensive single hit, and a self-cast with no self-effect spends the
+   * elements, plays the sound, starts the cooldown and does not do anything.
+   */
+  const effect = c.effect ?? {};
+  if (!abilityKinds.has(effect.kind)) {
+    fail(`alchemy combination "${c.id}" has kind "${effect.kind}", which the engine does not resolve`);
+  }
+  if (effect.kind === 'beam' && !(effect.range > 0)) fail(`beam "${c.id}" has no range, so it reaches nothing`);
+  if ((effect.kind === 'shove' || effect.kind === 'burst') && !(effect.radius > 0)) {
+    fail(`${effect.kind} "${c.id}" has no radius, so it catches nothing`);
+  }
+  if (effect.kind === 'chain') {
+    if (!(effect.range > 0)) fail(`chain "${c.id}" has no range, so it cannot find a first target`);
+    if (!(effect.radius > 0)) fail(`chain "${c.id}" has no radius, so it can never leap`);
+    if (!(effect.jumps >= 1)) fail(`chain "${c.id}" makes ${effect.jumps} jumps; that is a single hit with extra steps`);
+  }
+
+  const selfKeys = ['shieldAmount', 'healAmount', 'hideSeconds', 'revealSeconds'];
+  const lands = selfKeys.filter((key) => effect[key] > 0);
+  if (effect.kind === 'self') {
+    if (!lands.length) fail(`self-cast "${c.id}" does nothing to the caster, so casting it is a cooldown and a bill`);
+    if (effect.damage > 0) fail(`self-cast "${c.id}" has damage ${effect.damage}, which it can never deliver to anyone`);
+  }
+  if (effect.shieldAmount > 0 && !(effect.shieldSeconds > 0)) fail(`"${c.id}" raises a shield with no duration, which lapses on the same frame`);
+  if (effect.healAmount > 0 && !(effect.healSeconds > 0)) fail(`"${c.id}" heals over no time at all`);
+  if (effect.slowSeconds > 0 && !(effect.slowScale > 0 && effect.slowScale < 1)) {
+    fail(`"${c.id}" slows to ${effect.slowScale} of pace; outside 0..1 that is a stop or a speed boost`);
+  }
+  if (effect.damage === 0 && !lands.length && !(effect.slowSeconds > 0) && !(effect.knockback > 0)) {
+    fail(`alchemy combination "${c.id}" does no damage, no knockback and nothing to the caster`);
+  }
+
+  // Tutorial combinations are handed over at Level 1, so a minLevel on one is
+  // two rules disagreeing about the same combination.
+  if (c.tutorial && c.minLevel !== undefined) fail(`tutorial combination "${c.id}" also sets minLevel ${c.minLevel}`);
+  if (c.minLevel !== undefined) {
+    if (!Number.isInteger(c.minLevel) || c.minLevel < progression.alchemyUnlockLevel) {
+      fail(`"${c.id}" opens at level ${c.minLevel}, before the workshop it lives in opens at ${progression.alchemyUnlockLevel}`);
+    }
+  }
 }
 if (![...alchemy].some((c) => c.tutorial)) fail('no alchemy combination is marked as a tutorial combination');
+
+/*
+ * Every element has to be reachable through something.
+ *
+ * Canon's gating rule - Glacite and Umbrel withheld from the spawn, "the
+ * world's only reason to leave the centre" - is buying travel, and travel that
+ * pays out in an element no combination wants is travel that pays out in
+ * nothing. Seven of the ten sat in that state through several releases without
+ * anything being obviously broken, which is exactly why this is a build error
+ * and not a note in a design document.
+ */
+for (const e of elements) {
+  if (!elementsUsed.has(e.id)) {
+    fail(
+      `element "${e.id}" is in no alchemy combination - it can be gathered, carried and read about, ` +
+        'and then it does nothing, which makes every material carrying it and every walk to fetch one pointless',
+    );
+  }
+}
 
 // ---------------------------------------------------------------- enemies & waves
 

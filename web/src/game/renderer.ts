@@ -237,7 +237,13 @@ export class Renderer {
     if (this.floaters.length > 40) this.floaters.splice(0, this.floaters.length - 40);
   }
 
+  /** Seconds the renderer has been running, for effects that pulse. */
+  private time = 0;
+
   update(dt: number): void {
+    // A wall clock for anything that pulses on its own - the shield ring, the
+    // heal motes - rather than each of them counting its own frames.
+    this.time += dt;
     // Smoothed hard, so one slow frame during a load never dims the world.
     this.frameMs += (Math.min(100, dt * 1000) - this.frameMs) * 0.05;
     if (this.frameMs > SLOW_FRAME_MS) this.fogQuality = Math.max(0, this.fogQuality - dt * 0.6);
@@ -625,7 +631,10 @@ export class Renderer {
           // visibility" and the Desert is "visible from far off", and both of
           // those cut in the player's direction as well as the enemies'.
           const sight = world.terrainAt(world.player.x, world.player.y).sight;
-          const sense = state.showEnemies ? Infinity : this.content.waves.awarenessRadius * sight;
+          // Solvane's whole domain is revealing, so a live Clarion is the same
+          // affordance the first bundle gets for free: everything, marked.
+          const revealed = state.showEnemies || world.player.status.revealed > 0;
+          const sense = revealed ? Infinity : this.content.waves.awarenessRadius * sight;
           const limit = Number.isFinite(sense) ? sense : this.content.waves.awarenessRadius * sight;
           if (reach <= sense) this.drawOffscreenMarker(enemy, world, Math.min(1, reach / limit));
         }
@@ -844,12 +853,65 @@ export class Renderer {
 
     if (player.invulnerable > 0 && Math.floor(player.invulnerable * 12) % 2 === 0) ctx.globalAlpha = 0.45;
     if (player.dead) ctx.globalAlpha = 0.3;
+    /*
+     * Under a veil, you can still see yourself - dimmed.
+     *
+     * Canon's Umbrel is dampening rather than invisibility, and the player has
+     * to keep track of where they are, so this is a state you can read at a
+     * glance rather than a sprite that disappears.
+     */
+    if (player.status.hidden > 0) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.55);
 
     if (this.sheetReady) this.drawPlayerSprite(ctx, player);
     else this.drawPlayerFallback(ctx, bob);
 
     ctx.globalAlpha = 1;
+    this.drawStatus(ctx, player);
     ctx.restore();
+  }
+
+  /**
+   * The timers, drawn on the player rather than in a corner of the HUD.
+   *
+   * A shield is something you check in the half-second before deciding to take
+   * a hit, and a number in the top-left is not where anyone is looking then.
+   */
+  private drawStatus(ctx: CanvasRenderingContext2D, player: World['player']): void {
+    const { status } = player;
+
+    if (status.shield > 0) {
+      // Pulses faster as it runs out of time, so "about to lapse" is legible
+      // without the player having to read a countdown.
+      const urgency = status.shieldFor < 3 ? 9 : 2.5;
+      const pulse = 0.55 + Math.sin(this.time * urgency) * 0.2;
+      ctx.strokeStyle = withAlpha('#98a4b0', pulse);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(0, -2, 20, 26, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (status.healLeft > 0) {
+      // Motes rising, rather than a ring: growth going up is the one shape
+      // that cannot be confused with the shield around it.
+      ctx.fillStyle = withAlpha('#7fbf5a', 0.75);
+      for (let i = 0; i < 3; i++) {
+        const t = (this.time * 0.9 + i / 3) % 1;
+        ctx.globalAlpha = 0.75 * (1 - t);
+        ctx.beginPath();
+        ctx.arc(Math.sin((t + i) * 6) * 11, 14 - t * 34, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (status.hidden > 0) {
+      ctx.strokeStyle = withAlpha('#5b4a72', 0.5 + Math.sin(this.time * 3) * 0.15);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 24, 12, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   private drawPlayerSprite(ctx: CanvasRenderingContext2D, player: World['player']): void {

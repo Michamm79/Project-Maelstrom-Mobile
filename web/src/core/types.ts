@@ -108,7 +108,50 @@ export interface CraftingDef {
   recipes: readonly CraftingRecipe[];
 }
 
-export type AbilityKind = 'shove' | 'beam' | 'burst';
+/**
+ * The SHAPE an ability resolves in. Statuses are separate, below, so that any
+ * shape can carry any of them rather than every combination of the two needing
+ * its own kind.
+ *
+ *   shove / burst - a radius around the caster, no aiming
+ *   beam          - a forward cone, out to `range`
+ *   chain         - one target inside `range`, then leaps of `radius`
+ *   self          - nobody. The whole effect lands on the caster.
+ */
+export type AbilityKind = 'shove' | 'beam' | 'burst' | 'chain' | 'self';
+
+/**
+ * What a combination does when it lands.
+ *
+ * Split into a shape, damage, and a set of optional statuses. Seven of canon's
+ * ten elements had no combination at all, and giving them one meant either five
+ * more damage numbers - which is not what Umbrel's "absorption, dampening,
+ * concealment" or Solvane's "revealing" describe - or a vocabulary wide enough
+ * to say what those domains actually do. This is that vocabulary.
+ */
+export interface AbilityEffect {
+  kind: AbilityKind;
+  damage: number;
+  knockback: number;
+  radius?: number;
+  range?: number;
+  burnSeconds?: number;
+  /** chain: how many further targets the charge leaps to after the first. */
+  jumps?: number;
+  /** How long a caught enemy moves at `slowScale` of its own pace. */
+  slowSeconds?: number;
+  slowScale?: number;
+  /** Damage soaked before health is touched. Expires with shieldSeconds. */
+  shieldAmount?: number;
+  shieldSeconds?: number;
+  /** Health returned, spread evenly over healSeconds rather than all at once. */
+  healAmount?: number;
+  healSeconds?: number;
+  /** Seconds during which nothing notices the player. Canon's Umbrel. */
+  hideSeconds?: number;
+  /** Seconds during which everything nearby is marked. Canon's Solvane. */
+  revealSeconds?: number;
+}
 
 export interface AlchemyCombination {
   id: CombinationId;
@@ -118,15 +161,17 @@ export interface AlchemyCombination {
   elements: Quantities;
   /** One of the two or three someone else made, handed over at Level 1. */
   tutorial?: boolean;
+  /**
+   * The level this opens at, when the workshop opening is not enough.
+   *
+   * Element cost already gates whatever needs travel - Nightfall cannot be
+   * cast without walking to the Data-Center, because Dark Fiber is the only
+   * Umbrel there is. This paces the rest, so Level 2 opens a workshop with a
+   * few things in it rather than eleven rows to scroll past once.
+   */
+  minLevel?: number;
   cooldownSeconds: number;
-  effect: {
-    kind: AbilityKind;
-    damage: number;
-    knockback: number;
-    radius?: number;
-    range?: number;
-    burnSeconds?: number;
-  };
+  effect: AbilityEffect;
 }
 
 /** A rendering of hostile code, in one of exactly three tiers. */

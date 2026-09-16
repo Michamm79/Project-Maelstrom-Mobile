@@ -639,7 +639,7 @@ export class Ui {
       row.append(el('p', undefined, outlook.combination.description));
 
       if (!outlook.unlocked) {
-        row.append(el('span', 'tag', `Locked until level ${this.content.progression.alchemyUnlockLevel}`));
+        row.append(el('span', 'tag', `Locked until level ${state.alchemy.opensAt(outlook.combination)}`));
       } else {
         const carried = state.carried.includes(outlook.combination.id);
         const full = !carried && state.carried.length >= state.slots;

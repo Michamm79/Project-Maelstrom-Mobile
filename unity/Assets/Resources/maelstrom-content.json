@@ -836,6 +836,199 @@
           "quantity": 2
         }
       ]
+    },
+    {
+      "id": "arcwhip",
+      "name": "Arcwhip",
+      "minLevel": 2,
+      "effect": {
+        "kind": "chain",
+        "damage": 11,
+        "knockback": 70,
+        "range": 260,
+        "radius": 150,
+        "jumps": 3
+      },
+      "description": "Charge looking for the next thing to be in. It will find three, and each one takes less of it than the last.",
+      "cooldownSeconds": 7,
+      "elements": [
+        {
+          "element": "arcen",
+          "quantity": 2
+        },
+        {
+          "element": "aeryl",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "rimebind",
+      "name": "Rimebind",
+      "minLevel": 3,
+      "effect": {
+        "kind": "burst",
+        "damage": 8,
+        "knockback": 40,
+        "radius": 200,
+        "slowSeconds": 4,
+        "slowScale": 0.4
+      },
+      "description": "Water taught to stop being water. Nothing caught in it is going anywhere quickly.",
+      "cooldownSeconds": 10,
+      "elements": [
+        {
+          "element": "glacite",
+          "quantity": 2
+        },
+        {
+          "element": "vossen",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "duststorm",
+      "name": "Duststorm",
+      "minLevel": 3,
+      "effect": {
+        "kind": "burst",
+        "damage": 6,
+        "knockback": 120,
+        "radius": 300,
+        "slowSeconds": 3,
+        "slowScale": 0.55
+      },
+      "description": "Half the desert, lifted and thrown outward. It hurts very little and reaches very far.",
+      "cooldownSeconds": 12,
+      "elements": [
+        {
+          "element": "terrix",
+          "quantity": 3
+        },
+        {
+          "element": "aeryl",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "verdance",
+      "name": "Verdance",
+      "minLevel": 4,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "healAmount": 35,
+        "healSeconds": 6
+      },
+      "description": "Growth, aimed inward, over about six seconds. Not fast enough to save you from a mistake you are still making.",
+      "cooldownSeconds": 24,
+      "elements": [
+        {
+          "element": "sporel",
+          "quantity": 3
+        },
+        {
+          "element": "vossen",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "ironward",
+      "name": "Ironward",
+      "minLevel": 4,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "shieldAmount": 40,
+        "shieldSeconds": 12
+      },
+      "description": "Structure, laid over you rather than around you. It takes forty and then it is gone.",
+      "cooldownSeconds": 22,
+      "elements": [
+        {
+          "element": "ferrune",
+          "quantity": 3
+        },
+        {
+          "element": "glacite",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "sunlance",
+      "name": "Sunlance",
+      "minLevel": 5,
+      "effect": {
+        "kind": "beam",
+        "damage": 26,
+        "knockback": 110,
+        "range": 420,
+        "burnSeconds": 2
+      },
+      "description": "Radiance with somewhere to be. The single hardest thing you can point at something.",
+      "cooldownSeconds": 11,
+      "elements": [
+        {
+          "element": "solvane",
+          "quantity": 3
+        },
+        {
+          "element": "cindral",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "clarion",
+      "name": "Clarion",
+      "minLevel": 5,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "revealSeconds": 20
+      },
+      "description": "Every rendering nearby, marked, for twenty seconds. It does not touch them. It just stops them being a surprise.",
+      "cooldownSeconds": 25,
+      "elements": [
+        {
+          "element": "solvane",
+          "quantity": 2
+        },
+        {
+          "element": "arcen",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "nightfall",
+      "name": "Nightfall",
+      "minLevel": 6,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "hideSeconds": 8
+      },
+      "description": "Dampening, worn. For eight seconds nothing notices you, and everything that already had stops. Cast anything and it is over.",
+      "cooldownSeconds": 30,
+      "elements": [
+        {
+          "element": "umbrel",
+          "quantity": 2
+        },
+        {
+          "element": "vossen",
+          "quantity": 1
+        }
+      ]
     }
   ],
   "enemies": [
