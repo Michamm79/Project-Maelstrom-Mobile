@@ -62,7 +62,7 @@
       "respawnSeconds": 3,
       "$attack_comment": "Canon has no weapon ITEMS, but it plainly has a basic attack: section 9 gives Nahaste 'near-zero unarmed capability' as its cost, which only means something if everyone else has some; Amorratua scales damage with 'consecutive hits without disengaging'; and Dotore builds charge 'released into the next attack'. So this is the gauntlets themselves - the same hands that pull. Numbers are INFERRED.",
       "basicAttack": {
-        "damage": 6,
+        "damage": 9,
         "range": 46,
         "arcDegrees": 110,
         "cooldownSeconds": 0.42,
@@ -70,7 +70,10 @@
         "comboWindowSeconds": 1.8,
         "comboBonus": 1.5,
         "comboMax": 5,
-        "knockback": 40
+        "knockback": 320,
+        "$knockback_comment": "Knockback is a velocity that bleeds off at 7/s, so the distance it actually moves something is roughly knockback/7 world units - the old 40 was about six units, less than a quarter of a body and invisible in play. 320 is about 46, roughly one body length, which also pushes a goblin back out of its own 34-unit attack range so the hit buys space as well as damage. Divided by each tier weight.",
+        "staggerSeconds": 0.28,
+        "$stagger_comment": "A hit interrupts. Without it the shove was real but invisible: the full 46 units of knockback went in while a goblin walked back at 62/s, so the measured peak was 23 and the hit read as nothing. Staggered, the shove lands whole and a swing also cancels a wind-up, which is what makes the basic attack feel like it connects rather than needing a bigger number. Divided by tier weight, so the heavy ones are never stunlocked."
       }
     },
     "$pause_comment": "GDD section 6.1 says the menu does NOT pause the world, reasoning that a pause 'would have erased wave pressure in exactly the moment it should bite'. The author has since asked for a pause, so it is on - kept as a flag rather than hard-coded, because canon and the build disagree here and the disagreement should be visible rather than buried.",
@@ -131,12 +134,52 @@
       "hint": "Gust, Torrent and Emberlash. Someone else made them. At Level 2 you get the workshop."
     }
   ],
+  "fragments": [
+    {
+      "id": "intake",
+      "on": "firstMaterial",
+      "title": "Intake",
+      "text": "The orb takes it without being asked. Whatever these are, they were built to do this - and they were sized for your hands."
+    },
+    {
+      "id": "specification",
+      "on": "firstCraft",
+      "title": "Specification",
+      "text": "The weave closes the way something does when it already knew the shape. You are not inventing. You are assembling a thing that has been made before."
+    },
+    {
+      "id": "deletion",
+      "on": "firstKill",
+      "title": "Deletion",
+      "text": "It does not fall. It comes apart into the digits it was standing in for, and they go out one at a time. Whatever that was, it was never alive. It was allocated."
+    },
+    {
+      "id": "boundary",
+      "on": "newBiome",
+      "title": "Boundary",
+      "text": "The ground changes underfoot and simply keeps going. No wall, no door, nothing loads. Whoever laid this out did not expect anyone to walk between the parts of it."
+    },
+    {
+      "id": "assessment",
+      "on": "waveCleared",
+      "title": "Assessment",
+      "text": "The quiet comes back all at once, which is not how quiet works. Something decided the test had finished. Something is keeping the result."
+    },
+    {
+      "id": "privilege",
+      "on": "firstCast",
+      "title": "Privilege",
+      "text": "Two elements go in and something leaves your hands that you did not design. This was stocked. Someone expected you to need it, and put it where you would find it."
+    }
+  ],
   "opening": {
     "fadeSeconds": 2.4,
-    "lineSeconds": 2.8,
+    "lineSeconds": 2.5,
     "lines": [
       "You wake.",
       "Two half-orbs hang above your hands. They were not there before.",
+      "The ground is warm. Something under it is still running.",
+      "There is a horizon, and there is an edge. They are not the same distance away.",
       "Nobody explains why. Only what to do, and where to go."
     ]
   },
@@ -450,6 +493,19 @@
       },
       "nodeCount": 240,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 1,
+        "concealment": 1,
+        "sight": 1,
+        "fog": 0,
+        "propDensity": 1,
+        "props": [
+          "tuft",
+          "tuft",
+          "stone",
+          "tree"
+        ]
+      },
       "materials": [
         "heartwood_burl",
         "riverglass",
@@ -478,6 +534,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.86,
+        "concealment": 1.05,
+        "sight": 0.92,
+        "fog": 0.2,
+        "propDensity": 0.85,
+        "props": [
+          "drift",
+          "crag",
+          "shard"
+        ]
+      },
       "materials": [
         "rimeshard",
         "coldiron_ore",
@@ -503,6 +571,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.94,
+        "concealment": 1.45,
+        "sight": 1.3,
+        "fog": 0,
+        "propDensity": 0.6,
+        "props": [
+          "dune",
+          "stone",
+          "bone"
+        ]
+      },
       "materials": [
         "sunfused_glass",
         "dustbloom",
@@ -528,6 +608,19 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.78,
+        "concealment": 0.6,
+        "sight": 0.7,
+        "fog": 0.3,
+        "propDensity": 1.35,
+        "props": [
+          "reed",
+          "reed",
+          "pool",
+          "tuft"
+        ]
+      },
       "materials": [
         "bogiron_nodule",
         "marshgas_bladder",
@@ -553,6 +646,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 1,
+        "concealment": 0.8,
+        "sight": 0.72,
+        "fog": 0.42,
+        "propDensity": 1.1,
+        "props": [
+          "rack",
+          "conduit",
+          "tuft"
+        ]
+      },
       "materials": [
         "coolant_residue",
         "capacitor_core",
@@ -700,10 +805,19 @@
       "shape": "blob",
       "color": "#6f8f4a",
       "hp": 16,
+      "weight": 1,
       "damage": 4,
       "speed": 62,
-      "aggroRadius": 220,
+      "noticeRadius": 90,
+      "loseRadius": 210,
+      "forgetSeconds": 3.5,
       "attackRange": 34,
+      "wanderSpeed": 26,
+      "roamRadius": 900,
+      "pauseSeconds": [
+        0.7,
+        2.4
+      ],
       "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
     },
     {
@@ -714,10 +828,19 @@
       "shape": "bone",
       "color": "#a2603a",
       "hp": 58,
+      "weight": 1.8,
       "damage": 12,
       "speed": 54,
-      "aggroRadius": 280,
+      "noticeRadius": 112,
+      "loseRadius": 260,
+      "forgetSeconds": 5,
       "attackRange": 44,
+      "wanderSpeed": 22,
+      "roamRadius": 700,
+      "pauseSeconds": [
+        1,
+        3
+      ],
       "description": "Something in the program decided you were worth spending on. Only ever a few."
     },
     {
@@ -728,10 +851,19 @@
       "shape": "blade",
       "color": "#8b2f4a",
       "hp": 140,
+      "weight": 2.6,
       "damage": 26,
       "speed": 70,
-      "aggroRadius": 360,
+      "noticeRadius": 140,
+      "loseRadius": 330,
+      "forgetSeconds": 6.5,
       "attackRange": 60,
+      "wanderSpeed": 30,
+      "roamRadius": 1100,
+      "pauseSeconds": [
+        0.6,
+        2
+      ],
       "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
     }
   ],
@@ -854,6 +986,8 @@
       "firstBundleAtLevel": 1,
       "repeatingBundlesFromLevel": 5,
       "ambientFromLevel": 5
-    }
+    },
+    "awarenessRadius": 1400,
+    "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything."
   }
 }

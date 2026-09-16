@@ -5,12 +5,11 @@
  * there is no separate inventory screen, because the orbs already give the
  * at-a-glance view. Crafting and alchemy are two tabs of that one menu.
  *
- * The menu does not pause the world. Enemies keep moving and waves keep
- * arriving while it is open, which makes opening it a risk decision rather than
- * a free action - and puts a hard requirement on this file: every row has to be
- * readable and actionable at a glance, because a menu that demands sustained
- * attention while the world is trying to kill you is a menu that never gets
- * opened when it matters.
+ * The menu pauses the world, which is a deliberate departure from canon at the
+ * author's request - GDD 6.1 wanted wave pressure to keep biting. The
+ * requirement it puts on this file survives the pause either way: every row has
+ * to be readable and actionable at a glance, because a menu that demands
+ * sustained attention is a menu that gets closed rather than used.
  *
  * Kept apart from the canvas renderer on purpose: text, scrolling lists and tap
  * targets are things the browser is already good at.
@@ -22,6 +21,10 @@ import type { Crafting } from '../core/crafting';
 import type { Alchemy } from '../core/alchemy';
 import type { Progression } from '../core/progression';
 import type { CombinationId, ElementId, Hand, MaterialId, RecipeId, TutorialStep } from '../core/types';
+import type { Screen } from './screen';
+import type { Install } from './install';
+import type { Sound } from './sound';
+import { renderSettings } from './pages';
 
 export interface HudState {
   inventory: Inventory;
@@ -37,10 +40,14 @@ export interface UiHooks {
   onAttack(): void;
   onSkill(id: CombinationId): void;
   onTogglePull(): void;
+  /** Returns the new muted state, so the button can label itself from truth. */
+  onToggleMute(): boolean;
+  /** Stop the world and open the pause menu. */
+  onPause(): void;
 }
 
 type Tone = 'info' | 'good' | 'bad' | 'big';
-type Tab = 'craft' | 'alchemy';
+type Tab = 'craft' | 'alchemy' | 'screen';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -82,6 +89,8 @@ function onPress(target: HTMLElement, handler: () => void): void {
 
 export class Ui {
   private readonly toasts = el('div', 'toasts');
+  private readonly fragment = el('div', 'fragment');
+  private fragmentTimer = 0;
   private readonly objective = el('div', 'objective');
   private readonly place = el('div', 'place');
   private readonly placeName = el('b');
@@ -98,6 +107,8 @@ export class Ui {
   };
   private readonly carry = el('div', 'carry');
   private readonly menuBtn = el('button', 'nav-btn');
+  private readonly muteBtn = el('button', 'mute-btn');
+  private readonly pauseBtn = el('button', 'pause-btn', '⏸');
   /** Counts what can be made or cast right now, so the menu is worth opening. */
   private readonly menuBadge = el('i', 'badge');
   private readonly sheet = el('div', 'sheet');
@@ -119,12 +130,16 @@ export class Ui {
   constructor(
     private readonly root: HTMLElement,
     private readonly content: Content,
+    private readonly screen: Screen,
+    private readonly install: Install,
+    private readonly sound: Sound,
     private readonly hooks: UiHooks,
   ) {
     this.buildTopBar();
     this.buildOrbs();
     this.buildCluster();
     this.buildSheet();
+    this.buildFragment();
     this.root.append(this.toasts);
   }
 
@@ -145,7 +160,13 @@ export class Ui {
     levelRow.append(this.levelText);
     this.levelChip.append(levelRow, xp);
 
-    bar.append(this.place, this.vitals, this.levelChip);
+    // Top right, next to the level: a sound toggle has to be findable without
+    // opening a menu, and it is the one control a player reaches for in a hurry
+    // when the room they are in turns out not to be theirs.
+    onPress(this.muteBtn, () => this.setMuteLabel(this.hooks.onToggleMute()));
+    this.pauseBtn.setAttribute('aria-label', 'Pause');
+    onPress(this.pauseBtn, () => this.hooks.onPause());
+    bar.append(this.place, this.vitals, this.levelChip, this.muteBtn, this.pauseBtn);
     this.root.append(bar, this.objective);
     this.objective.hidden = true;
   }
@@ -194,6 +215,13 @@ export class Ui {
     this.root.append(wrap);
   }
 
+  /** Draws the speaker from the real muted state rather than a local guess. */
+  setMuteLabel(muted: boolean): void {
+    this.muteBtn.textContent = muted ? '🔇' : '🔊';
+    this.muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+    this.muteBtn.classList.toggle('off', muted);
+  }
+
   /** True while the attack button is down, so the game can chain swings. */
   get attacking(): boolean {
     return this.attackHeld;
@@ -232,6 +260,7 @@ export class Ui {
     for (const [id, label] of [
       ['craft', 'Craft'],
       ['alchemy', 'Alchemy'],
+      ['screen', 'Screen'],
     ] as const) {
       const button = el('button', undefined, label);
       button.dataset.tab = id;
@@ -250,6 +279,62 @@ export class Ui {
     this.sheet.append(header, this.tabs, warn, this.sheetBody);
     this.sheet.hidden = true;
     this.root.append(this.sheet);
+  }
+
+  /**
+   * The world saying something about itself.
+   *
+   * Not a toast: a toast is a receipt for something the player just did and is
+   * gone in two seconds. This is a sentence worth finishing, so it holds until
+   * it is dismissed or until long enough has passed that it has been read, and
+   * it is styled as a reading rather than as feedback.
+   *
+   * It never blocks. Nothing here pauses the world, because a wave clearing is
+   * one of the moments it fires on and stopping the game to narrate that would
+   * take the beat away from the thing it is narrating.
+   */
+  private buildFragment(): void {
+    this.fragment.dataset.ui = '';
+    this.fragment.hidden = true;
+    onPress(this.fragment, () => this.hideFragment());
+    /*
+     * In the flow, directly under the objective banner.
+     *
+     * Floated at a fixed offset it landed on that banner - measured at 367x68
+     * of overlap in portrait and 187px wide in landscape - because the banner
+     * is three lines sometimes and one line others, and no constant is right
+     * for both. Stacked, it cannot overlap whatever the banner turned out to
+     * be. Landscape overrides this back to absolute, because there the banner
+     * is overlaid and the right half of the screen is empty.
+     */
+    this.objective.after(this.fragment);
+  }
+
+  showFragment(title: string, text: string): void {
+    this.fragment.replaceChildren(
+      el('b', undefined, title),
+      el('p', undefined, text),
+      el('span', 'fdismiss', 'tap to dismiss'),
+    );
+    this.fragment.hidden = false;
+    this.fragment.classList.remove('going');
+    // Long enough to read twice at a walking pace, since it arrives while the
+    // player is doing something else.
+    this.fragmentTimer = 9;
+  }
+
+  hideFragment(): void {
+    if (this.fragment.hidden) return;
+    this.fragmentTimer = 0;
+    this.fragment.classList.add('going');
+    this.fragment.hidden = true;
+  }
+
+  /** Ticked from the game loop, so it does not expire while the game is paused. */
+  tickFragment(dt: number): void {
+    if (this.fragment.hidden || this.fragmentTimer <= 0) return;
+    this.fragmentTimer -= dt;
+    if (this.fragmentTimer <= 0) this.hideFragment();
   }
 
   // ---------------------------------------------------------------- state in
@@ -408,12 +493,30 @@ export class Ui {
 
     this.sheetBody.replaceChildren();
     if (this.tab === 'craft') this.renderCraft(state);
-    else this.renderAlchemy(state);
+    else if (this.tab === 'alchemy') this.renderAlchemy(state);
+    else this.renderScreen();
+  }
+
+  /**
+   * How the game sits on the device: how much world it shows, and which way up.
+   *
+   * In the crafting menu rather than a settings screen of its own because this
+   * is the only menu the game has - canon puts everything the player works with
+   * in one place - and because both settings are things you want to change
+   * while looking at the world, not before starting.
+   */
+  private renderScreen(): void {
+    renderSettings(this.sheetBody, {
+      screen: this.screen,
+      install: this.install,
+      sound: this.sound,
+      onChange: () => this.renderSheet(),
+    });
   }
 
   private renderCraft(state: HudState): void {
     // What you can make now, then what you cannot, then what is already built.
-    // A menu that does not pause has to answer "what can I do" at a glance.
+    // The menu has to answer "what can I do" before it is read line by line.
     const rank = (o: { can: boolean; built: boolean }) => (o.built ? 2 : o.can ? 0 : 1);
     const rows = [...state.crafting.outlooks(state.inventory)].sort((a, b) => rank(a) - rank(b));
     for (const outlook of rows) {

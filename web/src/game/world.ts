@@ -15,7 +15,7 @@
 import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
 import { abilityTargets, applyDamage } from '../core/combat';
-import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId } from '../core/types';
+import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId, TerrainDef } from '../core/types';
 
 /** Screen units travelled per walk-cycle frame. */
 const STEP_DISTANCE = 13;
@@ -52,10 +52,25 @@ export interface Enemy {
   x: number;
   y: number;
   hp: number;
+  /** Where it entered the world; roam targets are chosen around this. */
   homeX: number;
   homeY: number;
   /** Canon: enemies do not know where the player is until they notice them. */
   aggro: boolean;
+  /**
+   * Seconds of pursuit left once the player is past loseRadius. Aggro is not a
+   * latch: an enemy that has lost you keeps coming for a while and then gives
+   * up and goes back to wandering, which is what makes backing off work.
+   */
+  alertFor: number;
+  /** The point it is currently ambling towards, and how long it is resting first. */
+  roamX: number;
+  roamY: number;
+  roamPause: number;
+  /** Winds up before it strikes, so a hit is something you can see coming. */
+  windUp: number;
+  /** Reeling from a hit: cannot move, and whatever it was winding up is lost. */
+  stagger: number;
   cooldown: number;
   hitFlash: number;
   knockX: number;
@@ -76,7 +91,7 @@ export interface Prop {
   x: number;
   y: number;
   size: number;
-  kind: 'tuft' | 'stone' | 'spire';
+  kind: 'tuft' | 'stone' | 'tree' | 'drift' | 'crag' | 'shard' | 'dune' | 'bone' | 'reed' | 'pool' | 'rack' | 'conduit';
   tone: number;
 }
 
@@ -115,7 +130,29 @@ export interface BiomeDisc {
   radius: number;
   palette: { ground: string; groundAlt: string; accent: string; fog: string };
   mood: string;
+  terrain: TerrainDef;
 }
+
+/** What the connective forest between the regions does: nothing. */
+const NEUTRAL: TerrainDef = {
+  moveScale: 1,
+  concealment: 1,
+  sight: 1,
+  fog: 0,
+  propDensity: 1,
+  props: ['tuft', 'stone', 'tree'],
+};
+
+/** Bucket size for the prop index, in world units: about a third of a screen. */
+const PROP_CELL = 220;
+
+/** Cantor-ish pairing, so a cell is one number rather than a string key. */
+function propKey(cx: number, cy: number): number {
+  return (cx + 4096) * 8192 + (cy + 4096);
+}
+
+/** How wide the blend between a region and the forest is, in world units. */
+const TERRAIN_FEATHER = 90;
 
 /** The player as they wake: one definition, so reset() cannot drift from it. */
 function freshPlayer(combat: Content['progression']['combat']): Player {
@@ -143,9 +180,30 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
   };
 }
 
+/** Seeds the wander stream, kept apart from the world's generation stream. */
+const ROAM_SEED = 0x9e3779b9;
+
+/** How close counts as having arrived at a roam target. */
+const ARRIVE_DISTANCE = 14;
+/** Share of the full shove that a combo-less hit delivers. */
+const COMBO_SHOVE_FLOOR = 0.4;
+
+/** How long a swing takes to draw. The renderer reads attackAnim against it. */
+export const SWING_SECONDS = 0.26;
+
+/** The tell before a blow lands, so a hit is something you can see coming. */
+export const WIND_UP_SECONDS = 0.42;
+
 export class World {
   readonly nodes: WorldNode[] = [];
   readonly props: Prop[] = [];
+  /**
+   * Props bucketed by cell, so drawing walks the handful in view instead of
+   * every one in the world. At 9000 props the linear scan cost about 10fps on
+   * its own, and the scatter is fixed at generation - nothing moves - so the
+   * index never needs rebuilding.
+   */
+  private readonly propGrid = new Map<number, Prop[]>();
   readonly enemies: Enemy[] = [];
   readonly discs: BiomeDisc[] = [];
   readonly player: Player;
@@ -158,6 +216,8 @@ export class World {
 
   private elapsed = 0;
   private nextEnemyId = 0;
+  /** Its own stream, so wandering never perturbs the world's generation. */
+  private roamRng = new Rng(ROAM_SEED);
 
   constructor(private readonly content: Content) {
     const upp = content.unitsPerPixel;
@@ -172,6 +232,7 @@ export class World {
         radius: b.radius / upp,
         palette: b.palette,
         mood: b.mood,
+        terrain: b.terrain,
       });
     }
 
@@ -202,11 +263,13 @@ export class World {
   reset(): void {
     this.nodes.length = 0;
     this.props.length = 0;
+    this.propGrid.clear();
     this.enemies.length = 0;
     this.events.length = 0;
     this.absorbed.length = 0;
     this.elapsed = 0;
     this.nextEnemyId = 0;
+    this.roamRng = new Rng(ROAM_SEED);
     Object.assign(this.player, freshPlayer(this.content.progression.combat));
     this.populate();
   }
@@ -221,28 +284,113 @@ export class World {
     return null;
   }
 
+  /** Props overlapping a world rectangle, from the bucket index. */
+  propsIn(left: number, top: number, right: number, bottom: number): Prop[] {
+    const found: Prop[] = [];
+    const x0 = Math.floor(left / PROP_CELL);
+    const x1 = Math.floor(right / PROP_CELL);
+    const y0 = Math.floor(top / PROP_CELL);
+    const y1 = Math.floor(bottom / PROP_CELL);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const cell = this.propGrid.get(propKey(cx, cy));
+        if (cell) found.push(...cell);
+      }
+    }
+    return found;
+  }
+
+  /**
+   * What the ground does at a point, blended across the disc edge.
+   *
+   * A hard lookup would snap the player's speed and the enemies' reach the
+   * instant they crossed a circle, which reads as a bug rather than as a
+   * border. Over TERRAIN_FEATHER units the values ease back to neutral, so
+   * walking into the Wetland slows you down over a couple of steps.
+   */
+  terrainAt(x: number, y: number): TerrainDef {
+    for (const disc of this.discs) {
+      const from = Math.hypot(x - disc.x, y - disc.y);
+      if (from > disc.radius) continue;
+      const depth = Math.min(1, (disc.radius - from) / TERRAIN_FEATHER);
+      if (depth >= 1) return disc.terrain;
+      const t = disc.terrain;
+      return {
+        moveScale: NEUTRAL.moveScale + (t.moveScale - NEUTRAL.moveScale) * depth,
+        concealment: NEUTRAL.concealment + (t.concealment - NEUTRAL.concealment) * depth,
+        sight: NEUTRAL.sight + (t.sight - NEUTRAL.sight) * depth,
+        fog: t.fog * depth,
+        propDensity: t.propDensity,
+        props: t.props,
+      };
+    }
+    return NEUTRAL;
+  }
+
   disc(id: BiomeId): BiomeDisc {
     const d = this.discs.find((c) => c.id === id);
     if (!d) throw new Error(`unknown biome "${id}"`);
     return d;
   }
 
+  /**
+   * Scenery, drawn from whatever grows where it lands.
+   *
+   * This used to scatter grass tufts, stones and trees uniformly across the
+   * whole Coliseum and tint them with the local accent colour, so the Snowy
+   * Mountain had grass and the Data-Center had trees - just blue ones and
+   * purple ones. Each region names its own prop kinds now, which is most of
+   * what makes crossing a border look like arriving somewhere.
+   */
   private generateProps(rng: Rng): void {
-    const count = 900;
-    const kinds: Prop['kind'][] = ['tuft', 'stone', 'spire'];
+    /*
+     * 900 put 1.7 props on a screen, across a world of 116 million square
+     * units. That is not scenery, it is the occasional lonely shrub - and it
+     * is why every region read as bare ground however distinct its palette
+     * was. 9000 puts about 17 on screen, which is ground cover.
+     *
+     * The cost is a bounds comparison per prop per frame and roughly 17 fills;
+     * the draw is culled, so the scatter size is bounded by memory, not by
+     * frame time.
+     */
+    const count = 9000;
     for (let i = 0; i < count; i++) {
       const angle = rng.range(0, Math.PI * 2);
       // Square-root so props spread evenly over area rather than bunching at
       // the centre, which is what a uniform radius would do.
       const r = Math.sqrt(rng.range(0, 1)) * this.boundaryRadius;
-      this.props.push({
-        x: Math.cos(angle) * r,
-        y: Math.sin(angle) * r,
-        size: rng.range(9, 26),
-        kind: rng.weighted(kinds, (k) => (k === 'tuft' ? 6 : k === 'stone' ? 3 : 1)),
-        tone: rng.range(-0.25, 0.2),
-      });
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+
+      const terrain = this.terrainAt(x, y);
+      // Density is a rejection roll rather than a per-biome count, so the
+      // Desert thins out and the Wetland crowds without either needing its own
+      // scatter pass.
+      if (terrain.propDensity < 1 && rng.next() > terrain.propDensity) continue;
+
+      const kinds = terrain.props as Prop['kind'][];
+      const kind = kinds[rng.int(0, kinds.length)] ?? 'tuft';
+      this.addProp({ x, y, size: rng.range(9, 26), kind, tone: rng.range(-0.25, 0.2) });
+      // Over-dense regions get a second prop near the first, which reads as
+      // undergrowth rather than as a denser uniform sprinkle.
+      if (terrain.propDensity > 1 && rng.next() < terrain.propDensity - 1) {
+        this.addProp({
+          x: x + rng.range(-26, 26),
+          y: y + rng.range(-26, 26),
+          size: rng.range(8, 20),
+          kind: kinds[rng.int(0, kinds.length)] ?? 'tuft',
+          tone: rng.range(-0.25, 0.2),
+        });
+      }
     }
+  }
+
+  private addProp(prop: Prop): void {
+    this.props.push(prop);
+    const key = propKey(Math.floor(prop.x / PROP_CELL), Math.floor(prop.y / PROP_CELL));
+    const cell = this.propGrid.get(key);
+    if (cell) cell.push(prop);
+    else this.propGrid.set(key, [prop]);
   }
 
   private pushNode(rng: Rng, material: MaterialId, biome: BiomeId, x: number, y: number): void {
@@ -431,6 +579,9 @@ export class World {
   // ---------------------------------------------------------------- movement
 
   movePlayer(dt: number, dirX: number, dirY: number, speed: number): void {
+    // The Wetland is "slow going" and the Snowy Mountain is deep: the mood
+    // lines said so long before anything made them true.
+    speed *= this.terrainAt(this.player.x, this.player.y).moveScale;
     const length = Math.hypot(dirX, dirY);
     this.player.moving = length > 0.01;
 
@@ -493,6 +644,12 @@ export class World {
       homeX: x,
       homeY: y,
       aggro: false,
+      alertFor: 0,
+      roamX: x,
+      roamY: y,
+      roamPause: 0,
+      windUp: 0,
+      stagger: 0,
       cooldown: 0,
       hitFlash: 0,
       knockX: 0,
@@ -536,7 +693,7 @@ export class World {
 
     const target = this.nearestTarget(attack.range);
     player.attackCooldown = attack.cooldownSeconds;
-    player.attackAnim = 0.2;
+    player.attackAnim = SWING_SECONDS;
     if (!target) {
       this.breakCombo();
       return { hit: [], killed: [], combo: 0 };
@@ -571,8 +728,24 @@ export class World {
       const length = Math.max(0.001, Math.hypot(dx, dy));
       enemy.hitFlash = 0.16;
       enemy.aggro = true;
-      enemy.knockX += (dx / length) * attack.knockback;
-      enemy.knockY += (dy / length) * attack.knockback;
+      const weight = Math.max(1, enemy.def.weight);
+      // Interrupts: whatever it was about to do, it is not doing it now.
+      enemy.stagger = Math.max(enemy.stagger, attack.staggerSeconds / weight);
+      enemy.windUp = 0;
+
+      /*
+       * The shove grows through the combo instead of being flat.
+       *
+       * Flat, it broke the combo outright: a full 46-unit push on the first hit
+       * put a goblin past the 46-unit reach that threw it, so the second swing
+       * could never land and Amorratua's "consecutive hits" hook was dead for
+       * tier 1. Ramped, early hits hold the target inside reach and the last
+       * one sends it - which is also the more satisfying shape.
+       */
+      const through = attack.comboMax > 0 ? player.combo / attack.comboMax : 1;
+      const shove = (attack.knockback * (COMBO_SHOVE_FLOOR + (1 - COMBO_SHOVE_FLOOR) * through)) / weight;
+      enemy.knockX += (dx / length) * shove;
+      enemy.knockY += (dy / length) * shove;
       const died = applyDamage(enemy, damage);
       this.events.push({ kind: 'enemy-hit', enemy, amount: damage });
       hit.push(enemy);
@@ -604,8 +777,12 @@ export class World {
       const enemy = hit.target;
       enemy.hitFlash = 0.18;
       enemy.aggro = true;
-      enemy.knockX += hit.pushX * combination.effect.knockback;
-      enemy.knockY += hit.pushY * combination.effect.knockback;
+      const heft = Math.max(1, enemy.def.weight);
+      enemy.stagger = Math.max(enemy.stagger, this.content.progression.combat.basicAttack.staggerSeconds / heft);
+      enemy.windUp = 0;
+      const push = combination.effect.knockback / heft;
+      enemy.knockX += hit.pushX * push;
+      enemy.knockY += hit.pushY * push;
       if (combination.effect.burnSeconds) enemy.burn = combination.effect.burnSeconds;
       const died = applyDamage(enemy, hit.damage);
       this.events.push({ kind: 'enemy-hit', enemy, amount: hit.damage });
@@ -619,6 +796,7 @@ export class World {
 
   private updateEnemies(dt: number): void {
     const player = this.player;
+    const cover = this.terrainAt(player.x, player.y).concealment;
     for (const enemy of this.enemies) {
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
 
@@ -637,32 +815,62 @@ export class World {
 
       if (enemy.dead || player.dead) continue;
 
+      const def = enemy.def;
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const distance = Math.hypot(dx, dy);
 
-      // Canon's stealth asymmetry: an enemy has to notice the player first, and
-      // loses them again at a longer range than it found them - so backing off
-      // actually works rather than tethering them to you forever.
-      if (!enemy.aggro && distance <= enemy.def.aggroRadius) enemy.aggro = true;
-      else if (enemy.aggro && distance > enemy.def.aggroRadius * 2.2) enemy.aggro = false;
-
-      const targetX = enemy.aggro ? player.x : enemy.homeX;
-      const targetY = enemy.aggro ? player.y : enemy.homeY;
-      const tx = targetX - enemy.x;
-      const ty = targetY - enemy.y;
-      const toTarget = Math.hypot(tx, ty);
-
-      if (toTarget > (enemy.aggro ? enemy.def.attackRange * 0.85 : 6)) {
-        enemy.x += (tx / toTarget) * enemy.def.speed * dt;
-        enemy.y += (ty / toTarget) * enemy.def.speed * dt;
-        enemy.facing = Math.atan2(ty, tx);
+      /*
+       * Canon's asymmetry, the right way round: the program does not know where
+       * the intruder is. So noticing is an encounter - you have to be close -
+       * and it decays rather than latching.
+       *
+       * This used to be a detection sweep of 220-360uu, most of a screen, with
+       * the enemy then walking the exact line to the player's current position.
+       * That is a lock-on however it is labelled: there was no way to be near
+       * one without being found, and no way to lose one except by outrunning a
+       * radius. Now they amble between roam targets and find the player by
+       * bumping into them, which is also what makes hunting one down a thing
+       * the player can choose to do.
+       */
+      // Scaled by the ground the PLAYER is standing on, not the enemy: this is
+      // how visible the player is, so the Wetland's cover and the Desert's
+      // exposure are properties of where you chose to stand.
+      const notice = def.noticeRadius * cover;
+      if (distance <= notice) {
+        enemy.aggro = true;
+        enemy.alertFor = def.forgetSeconds;
+      } else if (enemy.aggro && distance > def.loseRadius * cover) {
+        enemy.alertFor -= dt;
+        if (enemy.alertFor <= 0) {
+          enemy.aggro = false;
+          this.chooseRoam(enemy);
+        }
       }
 
+      enemy.stagger = Math.max(0, enemy.stagger - dt);
       enemy.cooldown = Math.max(0, enemy.cooldown - dt);
-      if (enemy.aggro && distance <= enemy.def.attackRange && enemy.cooldown <= 0) {
-        enemy.cooldown = 1.2;
-        this.hurtPlayer(enemy.def.damage, enemy);
+
+      // Reeling: it takes the shove whole instead of walking through it, which
+      // is what makes the knockback something you can see.
+      if (enemy.stagger > 0) continue;
+
+      if (enemy.aggro) this.pursue(enemy, dt, dx, dy, distance);
+      else this.wander(enemy, dt);
+
+      enemy.windUp = Math.max(0, enemy.windUp - dt);
+      if (enemy.aggro && distance <= def.attackRange && enemy.cooldown <= 0) {
+        // The wind-up is the tell. A hit that lands on the same frame the enemy
+        // arrives is one the player had no way to read.
+        if (enemy.windUp <= 0) {
+          enemy.windUp = WIND_UP_SECONDS;
+        } else if (enemy.windUp <= dt) {
+          enemy.cooldown = 1.2;
+          this.hurtPlayer(def.damage, enemy);
+        }
+      } else if (!enemy.aggro || distance > def.attackRange) {
+        // Stepped out of reach mid-swing: the blow does not follow you.
+        enemy.windUp = 0;
       }
     }
 
@@ -674,6 +882,68 @@ export class World {
         this.enemies.splice(i, 1);
       }
     }
+  }
+
+  /** Closing on a player it can currently see. */
+  private pursue(enemy: Enemy, dt: number, dx: number, dy: number, distance: number): void {
+    // Stop at the edge of its reach rather than walking into the player.
+    const stopAt = enemy.def.attackRange * 0.85;
+    if (distance <= stopAt) {
+      enemy.facing = Math.atan2(dy, dx);
+      return;
+    }
+    enemy.x += (dx / distance) * enemy.def.speed * dt;
+    enemy.y += (dy / distance) * enemy.def.speed * dt;
+    enemy.facing = Math.atan2(dy, dx);
+  }
+
+  /** Ambling between roam targets, with a rest at each one. */
+  private wander(enemy: Enemy, dt: number): void {
+    if (enemy.roamPause > 0) {
+      enemy.roamPause -= dt;
+      return;
+    }
+
+    const tx = enemy.roamX - enemy.x;
+    const ty = enemy.roamY - enemy.y;
+    const toTarget = Math.hypot(tx, ty);
+
+    if (toTarget <= ARRIVE_DISTANCE) {
+      // Destructured defensively: a def assembled by hand - a test fixture, a
+      // half-migrated save, content mid-edit - used to throw here and take the
+      // whole world update with it, which reads as the game freezing rather
+      // than as one enemy being wrong.
+      const pause = enemy.def.pauseSeconds ?? [];
+      enemy.roamPause = this.roamRng.range(pause[0] ?? 0.6, pause[1] ?? 2.2);
+      this.chooseRoam(enemy);
+      return;
+    }
+
+    enemy.x += (tx / toTarget) * enemy.def.wanderSpeed * dt;
+    enemy.y += (ty / toTarget) * enemy.def.wanderSpeed * dt;
+    enemy.facing = Math.atan2(ty, tx);
+  }
+
+  /**
+   * A new point to drift to, around where this enemy entered the world and
+   * inside the boundary - the Coliseum is bounded, so nothing wanders out of it.
+   */
+  private chooseRoam(enemy: Enemy): void {
+    const angle = this.roamRng.range(0, Math.PI * 2);
+    // Square-rooted so targets spread over the area rather than bunching at the
+    // centre, the same reason the props scatter that way.
+    const reach = Math.sqrt(this.roamRng.range(0.05, 1)) * enemy.def.roamRadius;
+    let x = enemy.homeX + Math.cos(angle) * reach;
+    let y = enemy.homeY + Math.sin(angle) * reach;
+
+    const fromCentre = Math.hypot(x, y);
+    const limit = this.boundaryRadius - 40;
+    if (fromCentre > limit) {
+      x = (x / fromCentre) * limit;
+      y = (y / fromCentre) * limit;
+    }
+    enemy.roamX = x;
+    enemy.roamY = y;
   }
 
   private hurtPlayer(amount: number, enemy: Enemy): void {

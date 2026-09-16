@@ -221,10 +221,16 @@ namespace Maelstrom.ContentModel
         public string shape;
         public string color;
         public float hp;
+        public float weight;
         public float damage;
         public float speed;
-        public float aggroRadius;
+        public float noticeRadius;
+        public float loseRadius;
+        public float forgetSeconds;
         public float attackRange;
+        public float wanderSpeed;
+        public float roamRadius;
+        public float[] pauseSeconds;
     }
 
     // ------------------------------------------------------------- waves

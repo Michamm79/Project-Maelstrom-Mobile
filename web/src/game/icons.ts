@@ -59,11 +59,19 @@ function bar(ctx: Ctx, x: number, y: number, w: number, h: number, s: number, ra
   ctx.roundRect((x - w / 2) * s, (y - h / 2) * s, w * s, h * s, rx);
 }
 
-function fillStroke(ctx: Ctx, fill: string, s: number, lineScale = 0.055): void {
+/**
+ * Internal edges inside a shape.
+ *
+ * The stroke is a heavily darkened tint of the fill rather than the fill barely
+ * darkened: handheld sprite work keeps one near-black line everywhere and lets
+ * the fill carry the hue, which is most of why that art stays readable at
+ * thumbnail size. The old -0.45 left, say, a pale stone outlined in grey.
+ */
+function fillStroke(ctx: Ctx, fill: string, s: number, lineScale = 0.075): void {
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.lineWidth = Math.max(1, lineScale * s);
-  ctx.strokeStyle = shade(fill, -0.45);
+  ctx.lineWidth = Math.max(1.2, lineScale * s);
+  ctx.strokeStyle = shade(fill, -0.68);
   ctx.stroke();
 }
 
@@ -571,10 +579,16 @@ const shapes: Record<string, ShapeFn> = {
 /** The composited box, in units of `size`. The extra margin is the shadow's. */
 const PAD = 1.25;
 
-const SHADOW_OFFSET = 0.03;
+// Offset far enough to clear the keyline. At 0.03 the outline, which is 0.026
+// wide and fully opaque, sat on top of the shadow and hid it entirely.
+const SHADOW_OFFSET = 0.062;
 const SHADOW_BLUR = 0.022;
 const SHADOW_ALPHA = 0.36;
 const BEVEL = 0.022;
+/** Keyline thickness, as a fraction of the rendered box. */
+const OUTLINE_WIDTH = 0.026;
+/** Tinted toward violet rather than pure black, the way GBA-era darks are. */
+const OUTLINE_INK = '#191024';
 
 /**
  * Icons are identical every frame, so they are rendered once and blitted after
@@ -614,6 +628,29 @@ function edgeBand(
   return band;
 }
 
+/**
+ * The silhouette grown outward by `width` and filled flat.
+ *
+ * Drawn as a ring of offset copies: enough of them that a diagonal edge comes
+ * out even rather than scalloped, few enough to stay cheap. The result is
+ * cached with the icon, so this runs once per shape, colour and pixel size.
+ */
+function outlineOf(mask: HTMLCanvasElement, px: number, width: number): HTMLCanvasElement | null {
+  const ring = makeCanvas(px);
+  const ctx = ring?.getContext('2d');
+  if (!ring || !ctx) return null;
+
+  const steps = 16;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    ctx.drawImage(mask, Math.cos(angle) * width, Math.sin(angle) * width);
+  }
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = OUTLINE_INK;
+  ctx.fillRect(0, 0, px, px);
+  return ring;
+}
+
 function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement | null {
   const mask = makeCanvas(px);
   const maskCtx = mask?.getContext('2d');
@@ -641,10 +678,14 @@ function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement
     half - artSize * 0.5, half - artSize * 0.55,
     half + artSize * 0.5, half + artSize * 0.55,
   );
-  light.addColorStop(0, 'rgba(255,246,224,0.3)');
-  light.addColorStop(0.4, 'rgba(255,255,255,0)');
-  light.addColorStop(0.58, 'rgba(0,0,0,0)');
-  light.addColorStop(1, 'rgba(18,12,30,0.36)');
+  // Banded, not smooth. Two flat steps with a hard edge between them is what
+  // reads as pixel art; a continuous ramp reads as a 3D render of a pebble.
+  light.addColorStop(0, 'rgba(255,246,224,0.34)');
+  light.addColorStop(0.34, 'rgba(255,246,224,0.34)');
+  light.addColorStop(0.35, 'rgba(255,255,255,0)');
+  light.addColorStop(0.62, 'rgba(0,0,0,0)');
+  light.addColorStop(0.63, 'rgba(18,12,30,0.3)');
+  light.addColorStop(1, 'rgba(18,12,30,0.42)');
   artCtx.fillStyle = light;
   artCtx.fillRect(0, 0, px, px);
 
@@ -684,6 +725,14 @@ function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement
     outCtx.filter = 'none';
     outCtx.globalAlpha = 1;
   }
+
+  // The outline that makes it read as sprite work: one dark keyline around the
+  // whole silhouette, whatever that silhouette turned out to be. Dilating the
+  // mask gets it for all 38 shapes at once - the alternative is authoring an
+  // outline path per shape and keeping 38 of them in sync by hand.
+  const ring = outlineOf(mask, px, Math.max(1.1, px * OUTLINE_WIDTH));
+  if (ring) outCtx.drawImage(ring, 0, 0);
+
   outCtx.drawImage(art, 0, 0);
 
   return out;

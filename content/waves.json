@@ -117,5 +117,7 @@
     "firstBundleAtLevel": 1,
     "repeatingBundlesFromLevel": 5,
     "ambientFromLevel": 5
-  }
+  },
+  "awarenessRadius": 1400,
+  "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything."
 }

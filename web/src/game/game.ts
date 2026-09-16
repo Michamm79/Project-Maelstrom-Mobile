@@ -21,18 +21,29 @@ import { World } from './world';
 import { Renderer } from './renderer';
 import { Ui } from './ui';
 import { InputController } from './input';
-import { TitleScreen } from './title';
+import { TitleScreen, type MenuDeps } from './title';
+import { PauseMenu } from './pause';
 import { WaveDirector } from './waves';
 import { OpeningScene } from './opening';
+import { Sound } from './sound';
+import { Screen } from './screen';
+import { Install } from './install';
+import { Funnel } from '../core/funnel';
+import { fragmentFor, type Fragment, type FragmentTrigger } from '../core/fragments';
 import type { CombinationId, RecipeId } from '../core/types';
 
 export class Game {
   private readonly world: World;
+  private readonly screen: Screen;
   private readonly renderer: Renderer;
   private readonly ui: Ui;
   private readonly input: InputController;
   private readonly title: TitleScreen;
+  private readonly pause: PauseMenu;
   private readonly opening: OpeningScene;
+  private readonly sound = new Sound();
+  private readonly install = new Install();
+  private readonly funnel = new Funnel();
   private readonly waves: WaveDirector;
 
   private readonly inventory = new Inventory(content as never);
@@ -51,6 +62,8 @@ export class Game {
   private guided = false;
   private tutorialStep = 0;
   private readonly tutorialProgress: TutorialProgress = emptyProgress();
+  /** World fragments already read this run. Cleared by starting over. */
+  private readonly fragmentsSeen = new Set<string>();
 
   private playtimeMs = 0;
   private lastFrame = 0;
@@ -61,28 +74,100 @@ export class Game {
   constructor(
     canvas: HTMLCanvasElement,
     private readonly uiRoot: HTMLElement,
+    app: HTMLElement,
   ) {
     this.world = new World(content);
-    this.renderer = new Renderer(canvas, content);
+    /*
+     * First, and before anything that measures: the screen decides how big the
+     * app box is and which way up it sits, so a renderer built ahead of it
+     * would size its backing store to a box that is about to change shape.
+     */
+    this.screen = new Screen(app);
+    this.renderer = new Renderer(canvas, content, this.screen);
     this.waves = new WaveDirector(content, this.world);
 
-    this.ui = new Ui(uiRoot, content, {
+    this.ui = new Ui(uiRoot, content, this.screen, this.install, this.sound, {
       onCraft: (id) => this.craft(id),
       onSelectCombination: (id) => this.selectCombination(id),
       onAttack: () => this.attack(),
       onSkill: (id) => this.useSkill(id),
       onTogglePull: () => this.togglePull(),
+      onToggleMute: () => {
+        // Unlock first: the very first thing a player touches may be the mute
+        // button, and unmuting a context that was never created does nothing.
+        this.sound.unlock();
+        return this.sound.toggleMute();
+      },
+      onPause: () => {
+        // Closing the gauntlet sheet first, so two overlays are never stacked
+        // and Resume never uncovers a menu the player had forgotten was open.
+        this.ui.closeSheet();
+        this.pause.open();
+      },
     });
 
-    this.input = new InputController(canvas);
+    this.input = new InputController(canvas, this.screen);
+    // Escape pauses from a desktop keyboard. Bound as an event rather than
+    // polled: a keypress is over before the next frame runs.
+    this.input.onKey('escape', () => {
+      if (!this.started || this.opening.active || this.title.visible) return;
+      if (this.pause.visible) {
+        this.pause.close();
+        this.syncObjective();
+        return;
+      }
+      this.ui.closeSheet();
+      this.pause.open();
+    });
     this.ui.setPullActive(this.pulling);
 
     this.opening = new OpeningScene(uiRoot);
 
-    this.title = new TitleScreen(uiRoot, {
-      onContinue: () => this.resume(),
+    // Every path out of the title screen is a genuine user gesture, which is
+    // the only moment a browser will let audio start.
+    /*
+     * One set of dependencies for both menus, so Settings opened before a run
+     * and Settings opened during one are the same rows reading the same state.
+     */
+    const menuDeps: MenuDeps = {
+      install: this.install,
+      screen: this.screen,
+      sound: this.sound,
+      facts: [
+        ['World', `${content.elements.length} elements, ${content.materials.length} materials, ${content.biomes.length} regions`],
+        ['Enemies', `${content.enemies.length} tiers, wandering`],
+        ['Everything', 'Drawn and synthesised by code, no asset files'],
+      ],
+    };
+
+    this.pause = new PauseMenu(uiRoot, menuDeps, {
+      onResume: () => this.syncObjective(),
+      /*
+       * Quitting is not starting over.
+       *
+       * It saves and hands the player back to the menu with the run intact,
+       * because "I want to stop" and "I want this erased" are different
+       * sentences and only one of them can be taken back.
+       */
+      onQuit: () => {
+        this.persist();
+        this.started = false;
+        this.ui.closeSheet();
+        this.title.show(true, this.runSummary());
+      },
+    });
+
+    this.title = new TitleScreen(uiRoot, menuDeps, {
+      onContinue: () => {
+        this.sound.unlock();
+        this.goLandscape();
+        this.resume();
+      },
       onNewGame: (guided: boolean) => {
+        this.sound.unlock();
+        this.goLandscape();
         clearSave();
+        this.funnel.mark('restarted');
         this.resetRun();
         this.begin(guided);
       },
@@ -102,6 +187,13 @@ export class Game {
     // markSeen, not award: this suppresses the payout, it does not collect it.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
 
+    // The only distribution signal there is, with no store to report one.
+    if (this.install.state === 'installed') this.funnel.mark('installed');
+    this.install.onChange(() => {
+      if (this.install.state === 'installed') this.funnel.mark('installed');
+    });
+
+    this.ui.setMuteLabel(this.sound.isMuted);
     this.ui.bind(this.hudState());
     // currentBiome is deliberately left empty: refreshPlace() skips when the
     // biome has not changed, so seeding it here meant the place card never got
@@ -109,6 +201,18 @@ export class Game {
     // it makes the award() call below a no-op on its own.
     this.refreshPlace();
     this.title.show(restored !== null && restored.started, restored ? this.runSummary() : null);
+  }
+
+  /**
+   * Ask the device for landscape, on the same gesture that starts the audio.
+   *
+   * Both have to ride a real press, and this is the only one the player makes
+   * before the world appears. Deliberately not awaited: the lock resolves a
+   * frame or two later on the platforms that grant it, and the run should not
+   * wait on the platforms that never will.
+   */
+  private goLandscape(): void {
+    void this.screen.requestNative();
   }
 
   // ---------------------------------------------------------------- controls
@@ -129,6 +233,10 @@ export class Game {
   private attack(): void {
     const result = this.world.swing();
     if (!result) return;
+    this.sound.play(result.hit.length ? 'hit' : 'ui', 1 + result.combo * 0.12);
+    if (result.hit.length) this.funnel.mark('struck');
+    if (result.killed.length) this.funnel.mark('killed');
+    for (let i = 0; i < result.killed.length; i++) this.sound.play('kill');
     this.ui.setCombo(result.combo);
     if (result.killed.length) this.waves.notifyKills(result.killed.length);
     if (result.hit.length) this.tutorialProgress.struck += 1;
@@ -156,8 +264,10 @@ export class Game {
     // The waking scene comes before the first card, and holds the world while
     // it plays. It runs for whichever opening was chosen: skipping the guide
     // skips the instruction, not the fiction.
+    this.funnel.mark('began');
     this.uiRoot.classList.add('waking');
     this.opening.play(content.opening, () => {
+      this.funnel.mark('wokeUp');
       this.uiRoot.classList.remove('waking');
       this.syncObjective();
     });
@@ -189,6 +299,11 @@ export class Game {
     this.sinceSave = 0;
     this.currentBiome = '';
     Object.assign(this.tutorialProgress, emptyProgress());
+    // Given back on purpose: a reading lands once, and a new run is a player
+    // who has not read it. Anything holding run state needs a line here - the
+    // save used to write the old run straight back for exactly this reason.
+    this.fragmentsSeen.clear();
+    this.ui.hideFragment();
 
     // Waking at the spawn is not a visit, exactly as in the constructor.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
@@ -214,6 +329,24 @@ export class Game {
     this.tutorialStep = run.tutorialStep;
     this.playtimeMs = run.playtimeMs;
     this.guided = run.tutorialStep >= 0;
+    this.fragmentsSeen.clear();
+    for (const id of run.fragmentsSeen) this.fragmentsSeen.add(id);
+  }
+
+  /**
+   * One reading, the first time the player does a thing.
+   *
+   * The guide says what to do and canon withholds why; this is the narrow band
+   * in between - a sentence about what just happened, at the moment the game
+   * has shown it. Silent afterwards, because a reading about something coming
+   * apart into digits is worth nothing on the fortieth kill.
+   */
+  private fragment(on: FragmentTrigger): void {
+    const found = fragmentFor(content.fragments as readonly Fragment[], on, this.fragmentsSeen);
+    if (!found) return;
+    this.fragmentsSeen.add(found.id);
+    this.ui.showFragment(found.title, found.text);
+    this.sound.play('ui');
   }
 
   private persist(): void {
@@ -224,6 +357,7 @@ export class Game {
         started: this.started,
         tutorialStep: this.tutorialStep,
         playtimeMs: this.playtimeMs,
+        fragmentsSeen: [...this.fragmentsSeen],
       },
     );
   }
@@ -256,6 +390,9 @@ export class Game {
       pullSpeed: 'pull speed',
     };
     const stat = STAT_NAMES[recipe.effect.stat] ?? recipe.effect.stat;
+    this.sound.play('craft');
+    this.funnel.mark('crafted');
+    this.fragment('firstCraft');
     this.ui.toast(`${recipe.name}: ${stat} +${recipe.effect.amount}`, 'good');
     this.tutorialProgress.crafted += 1;
     this.awardXp(this.progression.award('firstCraft', recipe.id), `First craft: ${recipe.name}`);
@@ -279,6 +416,9 @@ export class Game {
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
+    this.sound.play('cast');
+    this.funnel.mark('cast');
+    this.fragment('firstCast');
     this.cooldowns.set(combination.id, combination.cooldownSeconds);
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
@@ -320,6 +460,9 @@ export class Game {
     const before = this.progression.levelAt(this.progression.xp - amount);
     this.ui.toast(message, 'good');
     if (after > before) {
+      if (after >= 1) this.funnel.mark('reachedLevel1');
+      if (after >= content.progression.alchemyUnlockLevel) this.funnel.mark('reachedLevel2');
+      this.sound.play('level');
       this.onLevelUp(before, after);
       // The cast bar is built from what the level unlocks, so it has to be
       // rebuilt here. Without this the combinations stayed invisible until the
@@ -363,6 +506,10 @@ export class Game {
     }
 
     this.renderer.update(dt);
+
+    // A reading the player is still in the middle of must not expire while the
+    // world is stopped, which is exactly when somebody would stop to read it.
+    if (!this.pause.visible) this.ui.tickFragment(dt);
     this.renderer.draw(this.world, {
       pullRadius: this.inventory.pullRadius / content.unitsPerPixel,
       pulling: this.pulling,
@@ -377,6 +524,18 @@ export class Game {
     // the opposite of that.
     if (this.opening.active) {
       this.opening.update(dt);
+      return;
+    }
+
+    /*
+     * Paused: nothing moves, including the pull.
+     *
+     * Ahead of the menu check below because the pause is the stronger claim -
+     * a player who asked for the world to stop should not find the gauntlets
+     * still gathering for them.
+     */
+    if (this.pause.visible) {
+      this.castQueued = false;
       return;
     }
 
@@ -397,10 +556,14 @@ export class Game {
 
     const before = { x: this.world.player.x, y: this.world.player.y };
     this.world.movePlayer(dt, move.x, move.y, player.moveSpeed);
-    this.tutorialProgress.travelled += Math.hypot(
-      this.world.player.x - before.x,
-      this.world.player.y - before.y,
-    );
+    const walked = Math.hypot(this.world.player.x - before.x, this.world.player.y - before.y);
+    this.tutorialProgress.travelled += walked;
+    // Footfalls come off distance rather than time, so slow ground - the
+    // Wetland, the Mountain - sounds heavy rather than just being slow.
+    if (walked > 0.1) {
+      this.sound.play('step');
+      this.funnel.mark('walked');
+    }
 
     this.world.updatePull(
       dt,
@@ -410,6 +573,12 @@ export class Game {
       this.inventory.free,
     );
 
+    if (this.world.absorbed.length) {
+      this.sound.play('absorb');
+      this.funnel.mark('gathered');
+      this.fragment('firstMaterial');
+      if (wasMoving) this.funnel.mark('gatheredWhileMoving');
+    }
     for (const material of this.world.absorbed) {
       const taken = this.inventory.add(material, 1);
       if (taken === 0) {
@@ -419,6 +588,8 @@ export class Game {
       this.tutorialProgress.gathered += 1;
       if (wasMoving) this.tutorialProgress.gatheredMoving += 1;
       this.tutorialProgress.distinctHeld = this.inventory.distinctCount;
+      // The carry card's bar, and the last quiet milestone before the warning.
+      if (this.inventory.distinctCount >= 3) this.funnel.mark('heldThreeMaterials');
       this.awardXp(
         this.progression.award('firstMaterial', material),
         `New material: ${content.material(material).name}`,
@@ -452,17 +623,55 @@ export class Game {
     this.sinceSave += dt;
     if (this.sinceSave > 5) {
       this.sinceSave = 0;
+      this.funnel.tick(this.playtimeMs);
       this.persist();
     }
   }
 
+  /** Where players stop, readable from the console: maelstrom.funnelReport(). */
+  funnelReport(): string {
+    return this.funnel.report();
+  }
+
   private drainEvents(): void {
     for (const event of this.world.events) {
-      if (event.kind === 'player-died') this.ui.toast('You fell. Recovering...', 'bad');
+      /*
+       * Every kill, from wherever it came.
+       *
+       * Hooked to the event rather than to swing(), because a thing can also
+       * die to a cast or to a burn ticking down, and a deletion that only
+       * happened when you hit it would make the other two look like the enemy
+       * had simply been forgotten.
+       */
+      if (event.kind === 'enemy-killed' && event.enemy) {
+        const { enemy } = event;
+        this.renderer.addDeletion(
+          enemy.def.id,
+          enemy.x,
+          enemy.y,
+          enemy.def.color,
+          // The size drawEnemies uses, so the glyphs land on the silhouette the
+          // player was actually looking at.
+          (34 + enemy.def.tier * 8) * 1.35,
+        );
+      }
+      if (event.kind === 'enemy-killed') this.fragment('firstKill');
+      if (event.kind === 'player-hit') this.sound.play('hurt');
+      if (event.kind === 'player-died') {
+        this.sound.play('hurt');
+        this.funnel.mark('died');
+        this.ui.toast('You fell. Recovering...', 'bad');
+      }
     }
     this.world.events.length = 0;
 
-    for (const message of this.waves.drainMessages()) this.ui.toast(message, 'big');
+    for (const message of this.waves.drainMessages()) {
+      // Canon calls the warning unmistakable; it is the only cue that is meant
+      // to be unpleasant.
+      this.sound.play('warn');
+      this.funnel.mark('sawWarning');
+      this.ui.toast(message, 'big');
+    }
     const cleared = this.waves.takeClearedWaves();
     for (let i = 0; i < cleared; i++) {
       this.awardXp(
@@ -470,6 +679,7 @@ export class Game {
         'Wave cleared',
       );
     }
+    if (cleared > 0) this.fragment('waveCleared');
   }
 
   private runSummary(): string {
@@ -487,10 +697,30 @@ export class Game {
 
     if (disc) {
       this.ui.setPlace(disc.name, disc.mood);
+      if (disc.id !== content.spawnBiome.id) {
+        this.funnel.mark('leftSpawnBiome');
+        this.fragment('newBiome');
+      }
+      if (this.progression.countSeen('firstBiome') >= content.biomes.length) this.funnel.mark('sawAllBiomes');
       this.awardXp(this.progression.award('firstBiome', disc.id), `Reached ${disc.name}`);
     } else {
       this.ui.setPlace('The Coliseum', 'Forest, between the regions.');
     }
+
+    /*
+     * Retune the ambient bed to the region.
+     *
+     * Pitch and brightness are derived from the terrain rather than authored
+     * per biome: fog muffles, so it closes the filter, and slow ground sits
+     * lower. That way a new region gets a sound for free the moment it gets
+     * terrain, and the two can never describe different places.
+     */
+    const terrain = this.world.terrainAt(this.world.player.x, this.world.player.y);
+    this.sound.setBiome(
+      44 + (1 - terrain.moveScale) * 90,
+      2400 - terrain.fog * 2100,
+      disc ? 0.012 + terrain.fog * 0.05 : 0.008,
+    );
   }
 
   private syncObjective(): void {
@@ -508,5 +738,6 @@ export class Game {
   destroy(): void {
     cancelAnimationFrame(this.raf);
     this.input.destroy();
+    this.sound.dispose();
   }
 }

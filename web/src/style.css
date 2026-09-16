@@ -17,11 +17,31 @@
   --tap: 46px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  /* The game box, published by screen.ts. Not the same as the viewport once
+     the box is turned sideways inside it - see #app[data-rot] below. */
+  --box-w: 100vw;
+  --box-h: 100vh;
 }
 
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * `hidden` has to actually win.
+ *
+ * Both full-screen overlays set `display: flex`, and an author rule outranks
+ * the user agent's `[hidden] { display: none }` however specific it looks. The
+ * measured result: a CLOSED pause menu stayed laid out across the whole screen
+ * and swallowed every touch meant for the title screen behind it - the game was
+ * unplayable and nothing anywhere threw. Playwright found it by refusing to
+ * click through a hidden div.
+ */
+[hidden] {
+  display: none !important;
 }
 
 html,
@@ -44,6 +64,49 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* ------------------------------------------------------------- landscape
+ *
+ * Holding the game sideways when the device will not.
+ *
+ * `screen.orientation.lock()` is the right answer and is unavailable on iOS
+ * and in an ordinary Android tab, and neither does anything at all for the
+ * player whose rotation lock is switched on - the one case where "turn your
+ * phone" is not advice. So when the viewport is portrait and the lock did not
+ * take, `screen.ts` sizes this box landscape and turns it into the screen.
+ *
+ * Width, height and the transform are written as inline styles from there,
+ * because 100vh disagrees with innerHeight by the height of a collapsing
+ * address bar and being 60px out puts the attack button under the chrome.
+ * Everything that is the same either way lives here.
+ */
+#app[data-rot] {
+  inset: auto;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+/*
+ * The insets belong to the device, so they have to be turned with the box.
+ *
+ * Rotated clockwise, the phone's top edge - the notch - is along the game's
+ * RIGHT edge, which is where the attack button lives. Left unmapped, the
+ * safe area would keep padding a top that is no longer anywhere near it.
+ */
+#app[data-rot='cw'] {
+  --safe-t: env(safe-area-inset-left, 0px);
+  --safe-b: env(safe-area-inset-right, 0px);
+  --safe-l: env(safe-area-inset-bottom, 0px);
+  --safe-r: env(safe-area-inset-top, 0px);
+}
+
+#app[data-rot='ccw'] {
+  --safe-t: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-left, 0px);
+  --safe-l: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-bottom, 0px);
 }
 
 #stage {
@@ -94,7 +157,7 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: calc(var(--safe-t) + 8px) 10px 8px;
+  padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 10px) 8px calc(var(--safe-l) + 10px);
   background: linear-gradient(to bottom, rgba(13, 17, 23, 0.92), rgba(13, 17, 23, 0));
 }
 
@@ -676,6 +739,63 @@ button {
   font-size: 13px;
 }
 
+/* ------------------------------------------------------------- settings rows
+   The Screen tab. Deliberately not the `.chip` above: that one is a 11px pill
+   inside a recipe line and this is something a thumb has to hit. */
+
+.setrow {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.setrow:last-of-type {
+  border-bottom: 0;
+}
+
+.setrow > b {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.choices {
+  display: flex;
+  gap: 8px;
+}
+
+.setchip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--tap);
+  padding: 7px 6px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setchip .sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.setchip.on {
+  background: #2a2140;
+  border-color: var(--accent);
+  color: #f0d9ff;
+}
+
+.setchip.on .sub {
+  color: var(--ink-dim);
+}
+
 .note {
   font-size: 12px;
   color: var(--ink-faint);
@@ -740,7 +860,7 @@ button {
   font-size: 13px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
   animation: rise 0.2s ease;
-  max-width: 88vw;
+  max-width: calc(var(--box-w) * 0.88);
   text-align: center;
 }
 
@@ -762,11 +882,9 @@ button {
 }
 
 /* Wider screens: keep the play column phone-shaped instead of stretching the HUD. */
-@media (min-width: 720px) {
-  #ui {
-    max-width: 520px;
-    margin: 0 auto;
-  }
+:root[data-wide] #ui {
+  max-width: 520px;
+  margin: 0 auto;
 }
 
 /* ---------------------------------------------------------------- bench */
@@ -1122,6 +1240,278 @@ button.ghost:disabled { opacity: .4; }
   color: var(--ink-faint);
 }
 
+/* ------------------------------------------------------------ world reading
+   Not a toast. A toast is a receipt for something the player did and is gone
+   in two seconds; this is the world saying something about itself and is worth
+   finishing, so it holds and it looks like a readout rather than feedback. */
+
+.fragment {
+  /* In the flow under the objective banner; see buildFragment. */
+  margin: 4px 12px 0;
+  max-width: 420px;
+  padding: 12px 14px 9px;
+  border-radius: var(--radius);
+  background: rgba(10, 18, 24, 0.93);
+  border: 1px solid rgba(159, 216, 232, 0.4);
+  border-left-width: 3px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+  animation: rise 0.28s ease;
+  z-index: 12;
+}
+
+.fragment b {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 5px;
+}
+
+.fragment p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.fdismiss {
+  display: block;
+  margin-top: 7px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+/*
+ * Landscape puts the objective banner across the top left, and a centred
+ * reading landed straight on it - measured at 187px of overlap on a 915-wide
+ * box. There is no room below either: the short axis is all playfield with
+ * thumbs at both bottom corners. So it takes the right half, which holds
+ * nothing above the skill arc.
+ */
+:root[data-squat] .fragment {
+  position: absolute;
+  top: calc(var(--safe-t) + 56px);
+  left: auto;
+  right: calc(var(--safe-r) + 12px);
+  transform: none;
+  width: min(400px, 46%);
+  padding: 10px 12px 7px;
+}
+
+:root[data-squat] .fragment p {
+  font-size: 12px;
+}
+
+/* -------------------------------------------------------------- menu pages
+   Settings, How to play and About, shared between the title screen and the
+   pause menu. A sub-page is wider than the title card and left-aligned: it is
+   a list of things to read and press, not a poster. */
+
+.tcard.sub {
+  max-width: 460px;
+  text-align: left;
+}
+
+.tnav {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.tnavbtn {
+  flex: 1;
+  min-height: 42px;
+  padding: 8px 6px;
+  border-radius: var(--radius);
+  background: rgba(22, 28, 38, 0.6);
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.tsubhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tsubhead h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.tback {
+  padding: 8px 12px;
+  min-height: var(--tap);
+  border-radius: var(--radius);
+  background: rgba(22, 28, 38, 0.8);
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pcard .tsubhead,
+.pcard .tsubbody {
+  text-align: left;
+}
+
+.tsubbody {
+  /* The sub-pages can outrun a landscape phone, and the scroll has to be here
+     rather than on the overlay or the header scrolls away with the content. */
+  max-height: calc(var(--box-h) * 0.62);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.howrow {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.howrow:last-child {
+  border-bottom: 0;
+}
+
+.howrow b {
+  display: block;
+  font-size: 13.5px;
+  margin-bottom: 3px;
+}
+
+.howrow p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.abouttext {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+}
+
+.aboutfacts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+  font-size: 12.5px;
+}
+
+.aboutfacts b {
+  color: var(--ink);
+}
+
+.aboutfacts span {
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------- pause menu
+   Same card language as the title, darker ground: the world is still there
+   behind it and is meant to look like it is waiting. */
+
+.pause {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-t) + 16px) 18px calc(var(--safe-b) + 16px);
+  background: rgba(6, 9, 14, 0.82);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+  z-index: 25;
+}
+
+.pcard {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+/*
+ * Four buttons in a row overran the card on a phone held sideways: the squat
+ * layout turns `.tactions` into a row for the title's two choices, and the
+ * pause menu has twice that. Two by two fits, and keeps every one of them a
+ * thumb's width rather than a sliver.
+ */
+:root[data-squat] .pcard {
+  max-width: 520px;
+}
+
+:root[data-squat] .pcard .tactions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.pcard h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+
+
+/* ------------------------------------------------------- the install offer
+   One line under the actions, deliberately quieter than either of them: it is
+   worth offering and it is never the reason someone opened the game. */
+
+.tinstall {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.tinstall .tbtn {
+  width: 100%;
+  min-height: 46px;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  font-size: 14px;
+}
+
+.tinstall .tbtn .tsub {
+  color: var(--ink-faint);
+}
+
+.thint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+.tdismiss {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .twarn {
   margin: 0 0 2px;
   font-size: 12px;
@@ -1144,10 +1534,8 @@ button.ghost:disabled { opacity: .4; }
  */
 
 /* Wide and short: the two thumbs are far apart, so use the whole width. */
-@media (min-width: 720px) and (max-height: 560px) and (orientation: landscape) {
-  #ui {
-    max-width: none;
-  }
+:root[data-wide][data-squat] #ui {
+  max-width: none;
 }
 
 .bacts {
@@ -1329,7 +1717,7 @@ button.ghost.wide {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 40vw;
+  max-width: calc(var(--box-w) * 0.4);
 }
 
 /*
@@ -1673,7 +2061,7 @@ button.ghost.wide {
 
 .action.attack {
   position: absolute;
-  right: 14px;
+  right: calc(var(--safe-r) + 14px);
   bottom: 18px;
   width: 92px;
   height: 92px;
@@ -1692,7 +2080,7 @@ button.ghost.wide {
 
 .action.pull {
   position: absolute;
-  right: 122px;
+  right: calc(var(--safe-r) + 122px);
   bottom: 22px;
   width: 58px;
   height: 58px;
@@ -1715,7 +2103,7 @@ button.ghost.wide {
 /* The arc: skills stepped up and to the left of the attack button. */
 .skillarc {
   position: absolute;
-  right: 12px;
+  right: calc(var(--safe-r) + 12px);
   bottom: 118px;
   display: flex;
   flex-direction: column-reverse;
@@ -1794,138 +2182,136 @@ button.ghost.wide {
  * corners. Paired with the camera's long-axis zoom, turning the phone gives
  * the same view rotated rather than a wide slice of a vertical one.
  */
-@media (max-height: 560px) and (orientation: landscape) {
-  .topbar {
-    padding: calc(var(--safe-t) + 5px) 10px 4px;
-    gap: 8px;
-  }
+:root[data-squat] .topbar {
+  padding: calc(var(--safe-t) + 5px) calc(var(--safe-r) + 10px) 4px calc(var(--safe-l) + 10px);
+  gap: 8px;
+}
 
-  .level {
-    padding: 4px 10px;
-  }
+:root[data-squat] .level {
+  padding: 4px 10px;
+}
 
-  .vitals {
-    margin-top: 3px;
-  }
+:root[data-squat] .vitals {
+  margin-top: 3px;
+}
 
-  .toasts {
-    top: calc(var(--safe-t) + 104px);
-  }
+:root[data-squat] .toasts {
+  top: calc(var(--safe-t) + 104px);
+}
 
-  /* Overlaid rather than in the flow: at 390px tall there is no row to spare,
-     and it is kept to the left half so it never reaches the skill arc. */
-  .objective {
-    position: absolute;
-    top: calc(var(--safe-t) + 48px);
-    left: 12px;
-    width: 44%;
-    margin: 0;
-    padding: 6px 8px 6px 10px;
-  }
+/* Overlaid rather than in the flow: at 390px tall there is no row to spare,
+   and it is kept to the left half so it never reaches the skill arc. */
+:root[data-squat] .objective {
+  position: absolute;
+  top: calc(var(--safe-t) + 48px);
+  left: calc(var(--safe-l) + 12px);
+  width: 44%;
+  margin: 0;
+  padding: 6px 8px 6px 10px;
+}
 
-  /* Left to flex, the place card ran nearly the whole 915px and turned the
-     name of where you are into a banner. */
-  .place {
-    flex: 0 1 auto;
-    max-width: 240px;
-  }
+/* Left to flex, the place card ran nearly the whole 915px and turned the
+   name of where you are into a banner. */
+:root[data-squat] .place {
+  flex: 0 1 auto;
+  max-width: 240px;
+}
 
-  .place span {
-    display: none;
-  }
+:root[data-squat] .place span {
+  display: none;
+}
 
-  /* One row along the bottom-left, under the left thumb but not in its way -
-     the orbs and the carry count are readouts and take no presses. */
-  .orbwrap {
-    left: 12px;
-    bottom: calc(var(--safe-b) + 8px);
-    grid-template-columns: auto auto auto;
-    grid-template-areas: 'orbs carry menu';
-    align-items: center;
-    gap: 8px;
-  }
+/* One row along the bottom-left, under the left thumb but not in its way -
+   the orbs and the carry count are readouts and take no presses. */
+:root[data-squat] .orbwrap {
+  left: calc(var(--safe-l) + 12px);
+  bottom: calc(var(--safe-b) + 8px);
+  grid-template-columns: auto auto auto;
+  grid-template-areas: 'orbs carry menu';
+  align-items: center;
+  gap: 8px;
+}
 
-  .orb {
-    width: 42px;
-    height: 42px;
-    padding: 4px;
-  }
+:root[data-squat] .orb {
+  width: 42px;
+  height: 42px;
+  padding: 4px;
+}
 
-  .nav-btn {
-    padding: 7px 11px;
-  }
+:root[data-squat] .nav-btn {
+  padding: 7px 11px;
+}
 
-  .action.attack {
-    width: 74px;
-    height: 74px;
-    bottom: calc(var(--safe-b) + 10px);
-  }
+:root[data-squat] .action.attack {
+  width: 74px;
+  height: 74px;
+  bottom: calc(var(--safe-b) + 10px);
+}
 
-  .action.pull {
-    right: 98px;
-    bottom: calc(var(--safe-b) + 12px);
-    width: 48px;
-    height: 48px;
-  }
+:root[data-squat] .action.pull {
+  right: calc(var(--safe-r) + 98px);
+  bottom: calc(var(--safe-b) + 12px);
+  width: 48px;
+  height: 48px;
+}
 
-  /*
-   * The arc lies down here. Stacked, three skills ran 162px tall - 39% of a
-   * 412px screen, and the bottom one sat on the attack button. As a row they
-   * cost 50px of height and run along the free width a landscape screen has
-   * plenty of, which is also where a mobile MMO puts them.
-   */
-  .skillarc {
-    flex-direction: row-reverse;
-    align-items: flex-end;
-    bottom: calc(var(--safe-b) + 96px);
-    gap: 8px;
-  }
+/*
+ * The arc lies down here. Stacked, three skills ran 162px tall - 39% of a
+ * 412px screen, and the bottom one sat on the attack button. As a row they
+ * cost 50px of height and run along the free width a landscape screen has
+ * plenty of, which is also where a mobile MMO puts them.
+ */
+:root[data-squat] .skillarc {
+  flex-direction: row-reverse;
+  align-items: flex-end;
+  bottom: calc(var(--safe-b) + 96px);
+  gap: 8px;
+}
 
-  .skillarc .skill {
-    width: 50px;
-    height: 50px;
-  }
+:root[data-squat] .skillarc .skill {
+  width: 50px;
+  height: 50px;
+}
 
-  .skillarc .skill:nth-child(2),
-  .skillarc .skill:nth-child(3),
-  .skillarc .skill:nth-child(4) {
-    margin-right: 0;
-  }
+:root[data-squat] .skillarc .skill:nth-child(2),
+:root[data-squat] .skillarc .skill:nth-child(3),
+:root[data-squat] .skillarc .skill:nth-child(4) {
+  margin-right: 0;
+}
 
-  /* A slight stagger so the row still reads as an arc rather than a toolbar. */
-  .skillarc .skill:nth-child(2) {
-    margin-bottom: 14px;
-  }
+/* A slight stagger so the row still reads as an arc rather than a toolbar. */
+:root[data-squat] .skillarc .skill:nth-child(2) {
+  margin-bottom: 14px;
+}
 
-  .skillarc .skill:nth-child(3) {
-    margin-bottom: 22px;
-  }
+:root[data-squat] .skillarc .skill:nth-child(3) {
+  margin-bottom: 22px;
+}
 
-  .skillarc .skill:nth-child(4) {
-    margin-bottom: 26px;
-  }
+:root[data-squat] .skillarc .skill:nth-child(4) {
+  margin-bottom: 26px;
+}
 
-  .sheet {
-    max-height: 94vh;
-  }
+:root[data-squat] .sheet {
+  max-height: calc(var(--box-h) * 0.94);
+}
 
-  .tcard h1 {
-    font-size: 34px;
-  }
+:root[data-squat] .tcard h1 {
+  font-size: 34px;
+}
 
-  .tblurb {
-    margin-top: 8px;
-  }
+:root[data-squat] .tblurb {
+  margin-top: 8px;
+}
 
-  .tactions {
-    flex-direction: row;
-    margin-top: 14px;
-  }
+:root[data-squat] .tactions {
+  flex-direction: row;
+  margin-top: 14px;
+}
 
-  .tbtn {
-    flex: 1;
-    min-height: 50px;
-  }
+:root[data-squat] .tbtn {
+  flex: 1;
+  min-height: 50px;
 }
 
 /* ------------------------------------------------------------- waking scene
@@ -2018,16 +2404,40 @@ button.ghost.wide {
   }
 }
 
-@media (max-height: 560px) and (orientation: landscape) {
-  .opening {
-    padding-bottom: calc(var(--safe-b) + 54px);
-  }
+:root[data-squat] .opening {
+  padding-bottom: calc(var(--safe-b) + 54px);
+}
 
-  .oline {
-    font-size: 17px;
-  }
+:root[data-squat] .oline {
+  font-size: 17px;
+}
 
-  .oskip {
-    bottom: calc(var(--safe-b) + 14px);
-  }
+:root[data-squat] .oskip {
+  bottom: calc(var(--safe-b) + 14px);
+}
+
+/* The two top-bar icon buttons: sound and pause, top right, next to the level
+   and findable without opening anything. */
+.mute-btn,
+.pause-btn {
+  flex: 0 0 auto;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  border-radius: 11px;
+  background: rgba(22, 28, 38, 0.85);
+  border: 1px solid var(--line);
+}
+
+.mute-btn.off {
+  opacity: 0.55;
+}
+
+:root[data-squat] .mute-btn,
+:root[data-squat] .pause-btn {
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 15px;
 }

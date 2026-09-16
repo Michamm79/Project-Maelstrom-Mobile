@@ -47,6 +47,7 @@ const waves = read('content/waves.json');
 const tutorialFile = read('content/tutorial.json');
 const tutorial = tutorialFile.steps;
 const opening = tutorialFile.opening;
+const fragments = tutorialFile.fragments?.list ?? [];
 const progression = read('content/progression.json');
 
 // ---------------------------------------------------------------- elements
@@ -93,6 +94,50 @@ for (const b of biomes) {
   }
 }
 if (!biomeIds.has('plains_forest')) fail('there is no "plains_forest" biome, and canon makes it the permanent spawn');
+
+/*
+ * Terrain. These are the numbers that stop a biome being a palette with a loot
+ * table, so a missing or absurd one is a region that silently plays like the
+ * spawn no matter what its mood line claims.
+ */
+const PROP_KINDS = new Set(['tuft', 'stone', 'tree', 'drift', 'crag', 'shard', 'dune', 'bone', 'reed', 'pool', 'rack', 'conduit']);
+for (const b of biomes) {
+  const t = b.terrain;
+  if (!t) {
+    fail(`biome "${b.id}" has no terrain, so it will play exactly like the spawn`);
+    continue;
+  }
+  for (const [key, min, max] of [['moveScale', 0.5, 1.2], ['concealment', 0.3, 2], ['sight', 0.4, 2], ['propDensity', 0.1, 3]]) {
+    const v = t[key];
+    if (typeof v !== 'number' || v < min || v > max) {
+      fail(`biome "${b.id}" has ${key} ${v}; outside ${min}..${max} it stops being a flavour and becomes a wall`);
+    }
+  }
+  if (typeof t.fog !== 'number' || t.fog < 0 || t.fog > 0.6) {
+    fail(`biome "${b.id}" has fog ${t.fog}; past 0.6 the player cannot see the game`);
+  }
+  if (!Array.isArray(t.props) || t.props.length === 0) fail(`biome "${b.id}" scatters no props, so it will read as bare ground`);
+  else for (const kind of t.props) {
+    if (!PROP_KINDS.has(kind)) fail(`biome "${b.id}" wants prop "${kind}", which nothing knows how to draw`);
+  }
+}
+
+// The spawn is the baseline every other region is read against, so it is the
+// one that has to be neutral - a "slow going" Wetland means nothing if the
+// Plains are slower still.
+const spawnTerrain = biomes.find((b) => b.id === 'plains_forest')?.terrain;
+if (spawnTerrain) {
+  for (const key of ['moveScale', 'concealment', 'sight']) {
+    if (spawnTerrain[key] !== 1) fail(`plains_forest has ${key} ${spawnTerrain[key]}; the spawn is the baseline and must be 1`);
+  }
+  if (spawnTerrain.fog !== 0) fail('plains_forest has fog; canon calls the spawn open and bright');
+}
+
+// Somebody has to be cover and somebody has to be exposure, or the concealment
+// axis is authored and unused.
+const conceal = biomes.map((b) => b.terrain?.concealment ?? 1);
+if (!conceal.some((c) => c < 0.9)) fail('no biome offers cover; the concealment axis exists but nothing uses it');
+if (!conceal.some((c) => c > 1.1)) fail('no biome is exposed; the concealment axis exists but nothing uses it');
 
 // ---------------------------------------------------------------- materials
 
@@ -237,12 +282,44 @@ for (const e of enemyTiers) {
   tiersSeen.add(e.tier);
   if (!knownShapes.has(e.shape)) fail(`enemy "${e.id}" uses unknown shape "${e.shape}"`);
   if (!(e.hp > 0) || !(e.damage > 0)) fail(`enemy "${e.id}" has no health or no damage`);
-  // An enemy that attacks from beyond the distance it closes to can never land
+  // Weight divides knockback; below 1 it would multiply it instead.
+  if (!(e.weight >= 1)) fail(`enemy "${e.id}" has weight ${e.weight}; a shove cannot be amplified by being heavy`);
+  // An enemy that attacks from beyond the distance it notices at can never land
   // a hit, and reads in play as an enemy that is broken rather than passive.
-  if (e.attackRange > e.aggroRadius) fail(`enemy "${e.id}" attacks from beyond the range it approaches to`);
+  if (e.attackRange > e.noticeRadius) fail(`enemy "${e.id}" attacks from beyond the range it notices at`);
+  // Canon's asymmetry is the player knowing where the program is and not the
+  // other way round. A notice radius that covers most of a screen is a
+  // detection sweep, and turns every encounter into a lock-on.
+  if (!(e.noticeRadius > 0) || e.noticeRadius > 200) {
+    fail(`enemy "${e.id}" notices from ${e.noticeRadius}uu; that is a detection sweep, not an encounter`);
+  }
+  // Losing the player has to be easier than finding them, or backing off does
+  // nothing and the pursuit is a tether by another name.
+  if (!(e.loseRadius > e.noticeRadius)) fail(`enemy "${e.id}" forgets the player closer than it notices them`);
+  if (!(e.forgetSeconds > 0)) fail(`enemy "${e.id}" never gives up the chase`);
+  // A wander that is not slower than the chase makes the two indistinguishable.
+  if (!(e.wanderSpeed > 0) || e.wanderSpeed >= e.speed) {
+    fail(`enemy "${e.id}" wanders at ${e.wanderSpeed} against a chase of ${e.speed}; a chase has to look like one`);
+  }
+  if (!(e.roamRadius > 0)) fail(`enemy "${e.id}" has nowhere to wander, so it will stand where it spawned`);
+  const pause = e.pauseSeconds;
+  if (!Array.isArray(pause) || pause.length !== 2 || !(pause[0] >= 0) || !(pause[1] > pause[0])) {
+    fail(`enemy "${e.id}" needs pauseSeconds as [min, max] with max above min`);
+  }
   if ('drops' in e) fail(`enemy "${e.id}" has a drop table; materials come from the world, not from kills`);
 }
 if (tiersSeen.size !== 3) fail(`canon defines three enemy tiers; found ${tiersSeen.size}`);
+
+// The asymmetry has a direction. If the player senses less far than an enemy
+// notices, the informational advantage sits with the program, which is backwards.
+const awareness = waves.awarenessRadius;
+if (!(awareness > 0)) fail('waves.awarenessRadius is missing; the player would have no sense of what is nearby');
+else {
+  const sharpest = Math.max(...enemyTiers.map((e) => e.noticeRadius));
+  if (awareness <= sharpest) {
+    fail(`the player senses ${awareness}uu against an enemy noticing at ${sharpest}uu; the advantage is meant to be the player's`);
+  }
+}
 
 const pacing = waves.pacing?.[waves.activePacing];
 if (!pacing) fail(`waves.activePacing is "${waves.activePacing}", which has no entry in waves.pacing`);
@@ -305,6 +382,41 @@ else {
   if (total > 15) fail(`the opening scene runs ${total.toFixed(1)}s before the player may move`);
 }
 
+/*
+ * The fragments, checked the same way the tutorial steps are.
+ *
+ * A fragment hung off a trigger the game never fires does not break anything.
+ * It just never appears, which is exactly the kind of quiet nothing that
+ * survives a release - so it is a build error instead.
+ */
+const triggerSource = readFileSync(join(ROOT, 'web/src/core/fragments.ts'), 'utf8');
+const triggerBlock = triggerSource.match(/FRAGMENT_TRIGGERS = \[([\s\S]*?)\]/);
+if (!triggerBlock) fail('could not find FRAGMENT_TRIGGERS in web/src/core/fragments.ts');
+const triggers = new Set([...(triggerBlock?.[1] ?? '').matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]));
+
+const fragmentIds = new Set();
+const usedTriggers = new Set();
+for (const fragment of fragments) {
+  if (fragmentIds.has(fragment.id)) fail(`duplicate fragment id "${fragment.id}"`);
+  fragmentIds.add(fragment.id);
+  if (!fragment.title || !fragment.text) fail(`fragment "${fragment.id}" is missing a title or text`);
+  if (!triggers.has(fragment.on)) {
+    fail(`fragment "${fragment.id}" fires on "${fragment.on}", which is not a trigger the game raises`);
+  }
+  // One per moment: two readings landing on the same action would stack on top
+  // of each other and the player would see whichever drew last.
+  if (usedTriggers.has(fragment.on)) fail(`two fragments both fire on "${fragment.on}"`);
+  usedTriggers.add(fragment.on);
+  // Long enough to say something, short enough to read while something is
+  // walking towards you.
+  if (fragment.text.length > 240) {
+    fail(`fragment "${fragment.id}" runs ${fragment.text.length} characters - too long to read mid-run`);
+  }
+}
+for (const trigger of triggers) {
+  if (!usedTriggers.has(trigger)) warn(`no fragment fires on "${trigger}"`);
+}
+
 // ---------------------------------------------------------------- emit
 
 if (errors.length) {
@@ -323,6 +435,7 @@ const bundle = {
   version: 2,
   progression: { ...progression, xpTable },
   tutorial,
+  fragments: fragments.map((f) => ({ id: f.id, on: f.on, title: f.title, text: f.text })),
   opening: {
     fadeSeconds: opening.fadeSeconds,
     lineSeconds: opening.lineSeconds,
