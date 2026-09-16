@@ -1385,6 +1385,140 @@ await page.waitForTimeout(300);
   });
 }
 
+// ---------------------------------------------------------------- the HUD
+
+/*
+ * The arcade HUD, measured.
+ *
+ * Restyled to the reference the author supplied: gauges stacked in the
+ * top-left with the value over the bar, the level in the top-right, a centred
+ * banner in yellow, and translucent circles for everything you press.
+ *
+ * Every check here is a shape rather than a colour, because the shapes are
+ * what broke. Measured with offsetTop/offsetWidth, which are layout-space: the
+ * box may be rotated, and a rotated element's bounding rect is its
+ * axis-aligned cover, which reports the same number for everything.
+ */
+{
+  const hud = await peek(() => {
+    const b = (sel) => {
+      const n = document.querySelector(sel);
+      return n ? { l: n.offsetLeft, t: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight } : null;
+    };
+    const app = document.querySelector('#app');
+    return {
+      box: { w: app.clientWidth, h: app.clientHeight },
+      hp: b('.hpbar'),
+      xp: b('.xpbar'),
+      topbar: b('.topbar'),
+      level: b('.level'),
+      orbwrap: b('.orbwrap'),
+      hptext: document.querySelector('.hpnum')?.textContent ?? '',
+    };
+  });
+
+  /*
+   * The gap that was not visible.
+   *
+   * An earlier rule gives .vitals `flex: 0 0 84px` for its share of the old
+   * horizontal bar. Stacked in a column that basis becomes a HEIGHT, so the
+   * experience bar sat eighty pixels below the health bar - which reads, in a
+   * screenshot, exactly like two bars that were meant to be far apart.
+   */
+  check(
+    'the two gauges are stacked against each other, not eighty pixels apart',
+    hud.xp.t - (hud.hp.t + hud.hp.h) < 10,
+    `${hud.xp.t - (hud.hp.t + hud.hp.h)}px between them`,
+  );
+
+  // Long enough to read as a gauge, short enough to stay a readout. The first
+  // attempt ran 721px across an 839px box, which is a horizon.
+  check(
+    'the health bar is a readout rather than a horizon',
+    hud.hp.w > hud.box.w * 0.15 && hud.hp.w < hud.box.w * 0.48,
+    `${hud.hp.w} of ${hud.box.w}`,
+  );
+
+  check(
+    'the health value is written over the bar',
+    /^\d+\/\d+$/.test(hud.hptext),
+    hud.hptext,
+  );
+
+  // The top band is chrome over a playfield that has none to spare.
+  check(
+    'the top band leaves the playfield alone',
+    hud.topbar.h < hud.box.h * 0.22,
+    `${hud.topbar.h} of ${hud.box.h}`,
+  );
+
+  check(
+    'the level sits in the opposite corner from the gauges',
+    hud.level.l > hud.box.w * 0.6 && hud.hp.l < hud.box.w * 0.3,
+    `level at ${hud.level.l}, gauges at ${hud.hp.l}`,
+  );
+
+  /*
+   * The resting stick, and the thing it used to sit on.
+   *
+   * The floating stick draws a faint ghost where a thumb would rest, which is
+   * how the left half advertises that it does anything at all. The corner it
+   * wants is also where the gauntlet orbs report what is being carried, so
+   * this asserts the two are clear of each other - the numbers come from
+   * Renderer.drawJoystick.
+   */
+  const ghostBottom = hud.box.h * 0.62 + 76;
+  check(
+    'the resting stick clears the orb readout',
+    ghostBottom + 8 < hud.orbwrap.t,
+    `ghost to ${Math.round(ghostBottom)}, orbs from ${hud.orbwrap.t}`,
+  );
+}
+
+/*
+ * The banner and the announcements both want the top-centre, and only one can
+ * have it. Ui.setObjective publishes where the banner ends and the toasts
+ * start below that; without it they land on top of each other, and both are
+ * dark boxes of light text, so the result is unreadable rather than obviously
+ * broken.
+ *
+ * Done inside one evaluate, start to finish. The game loop calls syncObjective
+ * every frame, so a check that sets the banner in one call and reads it in the
+ * next is racing the run for control of the same element.
+ */
+{
+  const banner = await peek(() => {
+    const g = window.maelstrom;
+    const ui = document.querySelector('#ui');
+    const b = (sel) => {
+      const n = document.querySelector(sel);
+      return n ? { t: n.offsetTop, h: n.offsetHeight } : null;
+    };
+
+    // Long enough to wrap, which is the case the fixed offset could not survive.
+    g.ui.setObjective({
+      id: 'probe',
+      title: 'Probe',
+      hint: 'A hint long enough to wrap onto a third row of the banner, which is what a real tutorial line does.',
+    });
+    const flagged = ui.classList.contains('banner');
+    const objective = b('.objective');
+    const toasts = b('.toasts');
+
+    g.ui.setObjective(null);
+    const cleared = !ui.classList.contains('banner');
+
+    return { flagged, cleared, objective, toasts, wrapped: (objective?.h ?? 0) > 50 };
+  });
+
+  check(
+    'an announcement starts below the banner, even when the banner wrapped',
+    banner.flagged && banner.wrapped && banner.toasts.t >= banner.objective.t + banner.objective.h,
+    JSON.stringify(banner),
+  );
+  check('and the slot is handed back when the banner goes', banner.cleared);
+}
+
 // -------------------------------------------------------------- the lists
 
 /*

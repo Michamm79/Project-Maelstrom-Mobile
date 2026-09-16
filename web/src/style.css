@@ -2675,3 +2675,469 @@ button.ghost.wide {
   color: #c9a8ea;
   border-color: rgba(176, 124, 240, 0.4);
 }
+
+/* ================================================================ arcade HUD
+
+   Restyled to the reference the author supplied: long chunky gauges stacked in
+   the top-left with the value written over the bar, a counter in the top-right,
+   a centred banner in yellow, and every control a translucent grey circle with
+   a light ring rather than a coloured pill.
+
+   The point of the neutral circles is that they stop competing with the world.
+   The old cluster had a saturated red ATTACK, a teal PULL and violet skills, so
+   the brightest things on screen were three buttons that never move - and the
+   things that do move, and can kill you, were the quiet ones. Colour is spent
+   on state here instead: PULL tints only while gathering is on, a skill dims
+   only when it cannot be cast, and the health bar is the one thing allowed to
+   be loud.
+
+   Everything below is deliberately last in the file, because it overrides the
+   layered HUD rules above rather than replacing them - the earlier blocks still
+   own layout and the responsive behaviour, and this owns how it looks. */
+
+:root {
+  --hud-ring: rgba(255, 255, 255, 0.28);
+  --hud-ring-on: rgba(255, 255, 255, 0.5);
+  --hud-face: rgba(122, 132, 148, 0.2);
+  --hud-face-on: rgba(150, 162, 180, 0.34);
+  --hud-ink: rgba(255, 255, 255, 0.82);
+  --hud-yellow: #ffe14d;
+  --hud-edge: #14141c;
+}
+
+/* ---------------------------------------------------------------- gauges */
+
+.topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'gauges level'
+    'chrome place';
+  align-items: start;
+  gap: 8px 10px;
+  background: linear-gradient(to bottom, rgba(10, 12, 18, 0.72), rgba(10, 12, 18, 0));
+}
+
+/*
+ * Long enough to read as a gauge, short enough to leave the corner alone.
+ *
+ * Full width was the first attempt and it put a 721px bar across an 839px
+ * screen, which stops being a readout and becomes a horizon. The reference
+ * runs its bar to a little under 40% of the width, and so does this.
+ */
+.gauges {
+  grid-area: gauges;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Against the box rather than the grid column: the column is auto-sized when
+     the box is lying down, so a percentage there resolves against the content
+     it is supposed to be sizing and collapses to the minimum. */
+  width: clamp(170px, calc(var(--box-w) * 0.34), 330px);
+  min-width: 0;
+}
+
+/*
+ * flex: none matters here, and it is not cosmetic.
+ *
+ * An earlier rule gives .vitals `flex: 0 0 84px` to hold a share of the old
+ * horizontal bar. In a column that basis is a HEIGHT, so the health bar came
+ * out 17px tall inside an 84px box and the experience bar underneath it sat
+ * eighty pixels lower - a gap that looks, in a screenshot, exactly like two
+ * bars that were meant to be far apart.
+ */
+.topbar .vitals {
+  display: block;
+  flex: none;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* Long, chunky and hard-edged. A 7px hairline reads as a detail; this reads as
+   the number it is standing in for. */
+.topbar .hpbar {
+  position: relative;
+  height: 17px;
+  border-radius: 4px;
+  background: #23131a;
+  border: 2px solid var(--hud-edge);
+  overflow: hidden;
+}
+
+.topbar .hpbar i {
+  background: linear-gradient(180deg, #ff6b76, #e03246);
+  border-radius: 2px;
+  transition: width 0.18s linear;
+}
+
+.topbar .hpbar i.low,
+.topbar .vitals.hurt .hpbar i {
+  background: linear-gradient(180deg, #ff8a8a, #c41f32);
+}
+
+/* Over the bar, not beside it. Centred and outlined so it stays readable at
+   both ends of the fill, where the background is a different colour. */
+.hpnum {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow:
+    0 1px 0 #000,
+    0 -1px 0 #000,
+    1px 0 0 #000,
+    -1px 0 0 #000;
+  pointer-events: none;
+}
+
+.topbar .xpbar {
+  margin: 0;
+  width: 78%;
+  height: 13px;
+  border-radius: 4px;
+  background: #13201a;
+  border: 2px solid var(--hud-edge);
+  overflow: hidden;
+}
+
+.topbar .xpbar i {
+  background: linear-gradient(180deg, #5df08a, #2fbf5d);
+  border-radius: 2px;
+}
+
+/* The level, in the corner the reference puts its step counter in. */
+.topbar .level {
+  grid-area: level;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: right;
+}
+
+.topbar .level b {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--hud-yellow);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.75);
+}
+
+.topbar .place {
+  grid-area: place;
+  justify-self: end;
+  align-items: flex-end;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: right;
+}
+
+.topbar .place b {
+  font-size: 11px;
+  opacity: 0.72;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* The mood line is flavour, and at this size it was a smear. The place name
+   carries it on its own. */
+.topbar .place span {
+  display: none;
+}
+
+/*
+ * Under the bars in portrait, beside them when the box is lying down.
+ *
+ * The reference is a portrait screen and stacks these below the gauges. This
+ * game plays landscape, where 412px of height has no row to spare for a second
+ * band of chrome - so squat keeps the reference's grouping and lays it out
+ * along the free width instead.
+ */
+.chrome {
+  grid-area: chrome;
+  display: flex;
+  justify-self: start;
+  gap: 8px;
+}
+
+:root[data-squat] .topbar {
+  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-areas:
+    'gauges chrome level'
+    'gauges chrome place';
+  align-items: center;
+  gap: 2px 10px;
+}
+
+:root[data-squat] .level,
+:root[data-squat] .place {
+  justify-self: end;
+}
+
+:root[data-squat] .mute-btn,
+:root[data-squat] .pause-btn {
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 50%;
+  font-size: 16px;
+}
+
+/* Beaten by :root[data-squat] .vitals otherwise, which still carries the old
+   margin from when this was a row. */
+:root[data-squat] .topbar .vitals {
+  margin: 0;
+}
+
+/* ------------------------------------------------------- the round chrome */
+
+.mute-btn,
+.pause-btn {
+  min-width: 42px;
+  min-height: 42px;
+  border-radius: 50%;
+  background: rgba(48, 38, 72, 0.82);
+  border: 2px solid rgba(190, 170, 235, 0.45);
+  color: var(--hud-ink);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+
+.mute-btn:active,
+.pause-btn:active {
+  background: rgba(70, 56, 104, 0.9);
+}
+
+/* ------------------------------------------------------------ the banner */
+
+.objective {
+  display: block;
+  margin: 8px auto 0;
+  max-width: min(520px, calc(var(--box-w) - 40px));
+  padding: 10px 18px;
+  border-radius: 14px;
+  background: rgba(16, 16, 22, 0.9);
+  border: none;
+  text-align: center;
+}
+
+.objective .otext {
+  flex: none;
+}
+
+/* One voice, centred, in the banner yellow. The old card split a bold title
+   from a dim subtitle, which is two things to read while something is walking
+   towards you. */
+.objective b,
+.objective span {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--hud-yellow);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.objective span {
+  font-size: 13.5px;
+  font-weight: 600;
+  opacity: 0.88;
+  margin-top: 2px;
+}
+
+.objective .oskip {
+  margin-top: 6px;
+  background: none;
+  border: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 225, 77, 0.55);
+}
+
+/* ------------------------------------------------------------ the buttons */
+
+/* Every action is the same circle. Size says how often you press it; colour is
+   kept for state, so that the only saturated things on screen are the ones
+   that changed. */
+.action,
+.skillarc .skill {
+  background: var(--hud-face);
+  border: 2px solid var(--hud-ring);
+  color: var(--hud-ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.42);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(1px);
+}
+
+.action:active,
+.skillarc .skill:active {
+  background: var(--hud-face-on);
+  border-color: var(--hud-ring-on);
+}
+
+.action b,
+.action .alabel {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.action span {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  opacity: 0.65;
+}
+
+/* The attack is the biggest circle because it is the one pressed most, not
+   because it is red. */
+.action.attack {
+  background: var(--hud-face);
+  border-color: var(--hud-ring);
+  color: var(--hud-ink);
+  animation: none;
+}
+
+.action.attack:active {
+  background: rgba(200, 120, 120, 0.3);
+  border-color: rgba(255, 190, 190, 0.6);
+}
+
+/* PULL is the one control with a mode, so it is the one that gets a colour -
+   and only while it is on. */
+.action.pull {
+  background: var(--hud-face);
+  border-color: var(--hud-ring);
+}
+
+.action.pull.on {
+  background: rgba(90, 175, 200, 0.26);
+  border-color: rgba(159, 216, 232, 0.65);
+}
+
+.action.pull:active {
+  background: var(--hud-face-on);
+}
+
+.action.cast {
+  background: var(--hud-face);
+  border-color: var(--hud-ring);
+}
+
+.skillarc .skill {
+  background: var(--hud-face);
+  border-color: var(--hud-ring);
+}
+
+.skillarc .skill b {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.skillarc .skill span {
+  opacity: 0.55;
+}
+
+/* Out of elements: dimmed rather than recoloured, so "cannot" and "did" never
+   look like each other. */
+.skillarc .skill.short {
+  opacity: 0.4;
+}
+
+/* The gauntlet menu, matched to the cluster it sits beside. */
+.nav-btn {
+  border-radius: 999px;
+  background: var(--hud-face);
+  border: 2px solid var(--hud-ring);
+  color: var(--hud-ink);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.06em;
+}
+
+.nav-btn.ready {
+  background: var(--hud-face-on);
+  border-color: var(--hud-ring-on);
+}
+
+.carry {
+  background: rgba(16, 16, 22, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* --------------------------------------------------------------- the calls
+
+   The announcements share the banner's voice, because they are the same kind
+   of thing: the world telling you something you did not ask about. Ordinary
+   ones stay quiet pills; a `big` one is the banner, in the banner's yellow. */
+
+.toasts {
+  top: calc(var(--safe-t) + 72px);
+  gap: 5px;
+}
+
+:root[data-squat] .toasts {
+  top: calc(var(--safe-t) + 66px);
+}
+
+.toast {
+  border-radius: 12px;
+  background: rgba(16, 16, 22, 0.9);
+  border: none;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.toast.good {
+  color: #9ef0bd;
+}
+
+.toast.bad {
+  color: #ff9f9f;
+}
+
+.toast.big {
+  padding: 9px 18px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hud-yellow);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* The experience track, visible as a track.
+   Nearly black, an early bar with little progress in it read as a gap in the
+   HUD rather than as a bar that is not full yet. */
+.topbar .xpbar {
+  background: rgba(30, 58, 40, 0.9);
+}
+
+/* ------------------------------------------------------- banner and calls
+
+   Both want the top-centre: the banner because that is where a tutorial line
+   belongs, the announcements because there is nowhere else on a landscape
+   screen that is not underneath a thumb. The banner wins the slot and the
+   announcements start below it while one is up - `banner` is set on #ui by
+   Ui.setObjective. */
+
+:root[data-squat] .objective {
+  top: calc(var(--safe-t) + 62px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(56%, 470px);
+  padding: 8px 16px;
+}
+
+/* Measured, not guessed: --banner-bottom is where the banner actually ends,
+   published by Ui.setObjective, because a fixed offset does not survive the
+   hint wrapping onto a third line. */
+#ui.banner .toasts {
+  top: calc(var(--banner-bottom, 168px) + 8px);
+}

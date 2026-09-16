@@ -1046,29 +1046,63 @@ export class Renderer {
     for (const effect of this.deletions) drawDeletion(this.ctx, effect);
   }
 
+  /** Outer ring and knob radius, in CSS pixels. Sized to a thumb, not a cursor. */
+  private static readonly STICK_RING = 76;
+  private static readonly STICK_KNOB = 34;
+
+  /**
+   * The stick, and the ghost of where it rests.
+   *
+   * It is a FLOATING stick - the first touch anywhere on the left half places
+   * it, so there is never anything to find and never a fixed circle to miss.
+   * That is worth keeping, and it has one cost: a player looking at a still
+   * screen has no idea the left half does anything at all, which the guide has
+   * to spend a card saying.
+   *
+   * So a faint resting ring is drawn in the bottom-left corner while no thumb
+   * is down. It is not a control - pressing it does nothing the rest of the
+   * left half does not already do - it is the advertisement, and it goes away
+   * the moment the real stick is placed.
+   */
   private drawJoystick(input: InputController): void {
-    if (!input.origin || !input.knob) return;
-    const ctx = this.ctx;
+    const ring = Renderer.STICK_RING;
+
+    if (!input.origin || !input.knob) {
+      /*
+       * Up the left edge rather than in the corner.
+       *
+       * The corner is where a resting thumb goes and where the reference draws
+       * its stick, and it is also where the gauntlet orbs report what is being
+       * carried - so a ghost drawn there sat on top of them. Placed against
+       * the height instead, it clears the orb readout in both orientations
+       * (which reserves the bottom ~110px upright and ~50px on its side)
+       * without either one needing to know the other's size.
+       */
+      const x = ring + 22;
+      const y = this.height * 0.62;
+      this.drawStickRing(x, y, ring, 0.16, 0.05);
+      this.drawStickRing(x, y, Renderer.STICK_KNOB, 0.2, 0.09);
+      return;
+    }
+
     // Already in the box's own coordinates: the input controller maps every
     // touch through the screen on the way in, so there is nothing to subtract
     // here and nothing that goes wrong when the box is rotated.
     const { x: ox, y: oy } = input.origin;
     const { x: kx, y: ky } = input.knob;
 
-    ctx.beginPath();
-    ctx.arc(ox, oy, 52, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    this.drawStickRing(ox, oy, ring, 0.3, 0.1);
+    this.drawStickRing(kx, ky, Renderer.STICK_KNOB, 0.55, 0.3);
+  }
 
+  private drawStickRing(x: number, y: number, radius: number, edge: number, face: number): void {
+    const ctx = this.ctx;
     ctx.beginPath();
-    ctx.arc(kx, ky, 24, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.24)';
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${face})`;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255,255,255,${edge})`;
+    ctx.lineWidth = 2.5;
     ctx.stroke();
   }
 }

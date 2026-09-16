@@ -111,6 +111,8 @@ export class Ui {
   private readonly placeMood = el('span');
   private readonly vitals = el('div', 'vitals');
   private readonly hpFill = el('i');
+  /** The number, written over the bar rather than beside it. */
+  private readonly hpText = el('b', 'hpnum');
   private readonly levelChip = el('div', 'level');
   private readonly levelText = el('b');
   private readonly xpFill = el('i');
@@ -159,28 +161,44 @@ export class Ui {
 
   // ---------------------------------------------------------------- chrome
 
+  /**
+   * Health and level along the top, the way an action game does it.
+   *
+   * Two long bars stacked in the top-left corner with the health value written
+   * over the bar rather than beside it, the level in the top-right, and the two
+   * chrome buttons as circles underneath. Laid out on a grid rather than a flex
+   * row so the DOM order - which is the reading order, and is health first -
+   * does not have to match the corner each piece sits in.
+   */
   private buildTopBar(): void {
     const bar = el('div', 'topbar');
 
     this.place.append(this.placeName, this.placeMood);
 
+    const gauges = el('div', 'gauges');
     const hp = el('div', 'hpbar');
-    hp.append(this.hpFill);
+    // The number sits inside the bar: a value in its own column costs width
+    // that the bar wants, and reads as a separate thing to check.
+    hp.append(this.hpFill, this.hpText);
     this.vitals.append(hp);
 
     const xp = el('div', 'xpbar');
     xp.append(this.xpFill);
-    const levelRow = el('div', 'row');
-    levelRow.append(this.levelText);
-    this.levelChip.append(levelRow, xp);
+    gauges.append(this.vitals, xp);
 
-    // Top right, next to the level: a sound toggle has to be findable without
-    // opening a menu, and it is the one control a player reaches for in a hurry
-    // when the room they are in turns out not to be theirs.
+    this.levelChip.append(this.levelText);
+
+    // Under the bars rather than beside the level: these are the two controls
+    // a player reaches for in a hurry - one to stop, one when the room they
+    // are in turns out not to be theirs - and the top-left corner is the one
+    // place nothing else is competing for.
     onPress(this.muteBtn, () => this.setMuteLabel(this.hooks.onToggleMute()));
     this.pauseBtn.setAttribute('aria-label', 'Pause');
     onPress(this.pauseBtn, () => this.hooks.onPause());
-    bar.append(this.place, this.vitals, this.levelChip, this.muteBtn, this.pauseBtn);
+    const chrome = el('div', 'chrome');
+    chrome.append(this.pauseBtn, this.muteBtn);
+
+    bar.append(gauges, this.levelChip, chrome, this.place);
 
     this.breach.append(this.breachText, this.breachFill);
     this.breach.hidden = true;
@@ -432,6 +450,7 @@ export class Ui {
     if (rounded === this.lastHp) return;
     this.lastHp = rounded;
     this.hpFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`;
+    this.hpText.textContent = `${rounded}/${Math.round(maxHp)}`;
     this.vitals.classList.toggle('hurt', hp / maxHp < 0.35);
   }
 
@@ -443,8 +462,34 @@ export class Ui {
 
   setObjective(step: TutorialStep | null): void {
     this.objective.hidden = step === null;
-    if (!step) return;
+    /*
+     * The banner and the announcements both want the top-centre.
+     *
+     * The banner sits there because that is where a tutorial line belongs and
+     * where the reference puts it; the toasts stack from there because there
+     * is nowhere else on a landscape screen that is not a thumb. So the root
+     * carries a flag and the toasts start below the banner while one is up.
+     */
+    this.root.classList.toggle('banner', step !== null);
+    if (!step) {
+      this.root.style.removeProperty('--banner-bottom');
+      return;
+    }
     this.objective.replaceChildren(el('b', undefined, step.title), el('span', undefined, step.hint));
+    /*
+     * Publish where the banner actually ends.
+     *
+     * A fixed offset was the first attempt and it does not survive a line
+     * wrapping: a three-row banner ran seventeen pixels past where the
+     * announcements had been told to start, and both are dark boxes of light
+     * text, so they do not look broken when they collide - they look
+     * unreadable. Costs one synchronous layout per tutorial step, which is a
+     * handful of times in a run.
+     */
+    this.root.style.setProperty(
+      '--banner-bottom',
+      `${this.objective.offsetTop + this.objective.offsetHeight}px`,
+    );
   }
 
   // ---------------------------------------------------------------- orbs
