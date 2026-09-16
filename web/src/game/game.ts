@@ -938,6 +938,16 @@ export class Game {
         );
       }
       if (event.kind === 'enemy-killed') this.fragment('firstKill');
+      /*
+       * Something fired at you, which you may not be looking at.
+       *
+       * The bolt is drawn with a tell and a tail, but a player fighting a
+       * Minotaur is looking at the Minotaur - so the shot gets a noise as
+       * well, at a lower volume than a hit, because "that came from somewhere
+       * else" is the whole information a Wisp exists to deliver.
+       */
+      if (event.kind === 'enemy-fired') this.sound.play('ui', 0.7);
+
       if (event.kind === 'player-hit') {
         this.sound.play('hurt');
         this.signal('risk', event.amount ?? 0);

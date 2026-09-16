@@ -291,7 +291,9 @@ export class Renderer {
     this.drawProps(world, camera);
     this.drawNodes(world, state, camera);
     this.drawNotes(world, camera);
+    this.drawMending(world);
     this.drawEnemies(world, state, camera);
+    this.drawProjectiles(world);
     this.drawDeletions();
     this.drawPullRing(world, state);
     this.drawSwing(world);
@@ -1040,6 +1042,77 @@ export class Renderer {
       ctx.fillText(floater.text, floater.x, floater.y - 20 - t * 22);
     }
     ctx.globalAlpha = 1;
+  }
+
+  /**
+   * What is in the air, and where it came from.
+   *
+   * Drawn over the enemies rather than under them, because a bolt that passes
+   * behind the thing that fired it looks like a bug, and a bolt is the one
+   * thing on screen the player has to be able to see coming.
+   */
+  private drawProjectiles(world: World): void {
+    const ctx = this.ctx;
+    for (const shot of world.projectiles) {
+      // A short tail along its own heading, so a still frame shows a direction
+      // rather than a dot. This is most of what makes it readable in motion.
+      const speed = Math.max(1, Math.hypot(shot.vx, shot.vy));
+      const tx = (shot.vx / speed) * shot.radius * 2.6;
+      const ty = (shot.vy / speed) * shot.radius * 2.6;
+
+      ctx.strokeStyle = withAlpha(shot.color, 0.4);
+      ctx.lineWidth = shot.radius * 1.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(shot.x - tx, shot.y - ty);
+      ctx.lineTo(shot.x, shot.y);
+      ctx.stroke();
+
+      ctx.fillStyle = withAlpha('#ffffff', 0.85);
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, shot.radius * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(shot.color, 0.9);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, shot.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+  }
+
+  /**
+   * The mender's work, drawn as a line to each thing it is repairing.
+   *
+   * Under the creatures, so it reads as something happening between them
+   * rather than over them. This is the only way the player can find out what
+   * a Lich is for: health bars are not shown, so an enemy quietly refilling is
+   * invisible, and "that one is putting the others back together" has to be
+   * something you can see rather than something you infer from losing.
+   */
+  private drawMending(world: World): void {
+    const ctx = this.ctx;
+    for (const healer of world.enemies) {
+      const aura = healer.def.mends;
+      if (!aura || healer.dead || healer.mendAnim <= 0) continue;
+
+      const pulse = 0.35 + Math.sin(this.time * 6) * 0.18;
+      for (const other of world.enemies) {
+        if (other === healer || other.dead || other.hp >= other.def.hp) continue;
+        if (Math.hypot(other.x - healer.x, other.y - healer.y) > aura.radius) continue;
+
+        ctx.strokeStyle = withAlpha(healer.def.color, pulse);
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(healer.x, healer.y - 10);
+        // Bowed rather than straight: a straight line between two moving
+        // things reads as a rendering artefact.
+        const midX = (healer.x + other.x) / 2;
+        const midY = (healer.y + other.y) / 2 - 22;
+        ctx.quadraticCurveTo(midX, midY, other.x, other.y - 10);
+        ctx.stroke();
+      }
+    }
   }
 
   private drawDeletions(): void {

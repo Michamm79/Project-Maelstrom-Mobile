@@ -408,15 +408,37 @@ for (const e of enemyTiers) {
   if (enemyIds.has(e.id)) fail(`duplicate enemy id "${e.id}"`);
   enemyIds.add(e.id);
   if (![1, 2, 3].includes(e.tier)) fail(`enemy "${e.id}" has tier ${e.tier}; canon defines exactly three`);
-  if (tiersSeen.has(e.tier)) fail(`two enemies both claim tier ${e.tier}`);
   tiersSeen.add(e.tier);
+  /*
+   * Several kinds may share a tier, and that is the point of having seven.
+   *
+   * This used to reject a second enemy on any tier, which was right when a
+   * tier WAS a creature. The tier is the threat scale - canon's "seeing a
+   * Minotaur tells the player the difficulty changed" - and the kind is what
+   * it does, so the rule that matters is that all three scales exist, below.
+   */
   if (!knownShapes.has(e.shape)) fail(`enemy "${e.id}" uses unknown shape "${e.shape}"`);
   if (!(e.hp > 0) || !(e.damage > 0)) fail(`enemy "${e.id}" has no health or no damage`);
   // Weight divides knockback; below 1 it would multiply it instead.
   if (!(e.weight >= 1)) fail(`enemy "${e.id}" has weight ${e.weight}; a shove cannot be amplified by being heavy`);
-  // An enemy that attacks from beyond the distance it notices at can never land
-  // a hit, and reads in play as an enemy that is broken rather than passive.
-  if (e.attackRange > e.noticeRadius) fail(`enemy "${e.id}" attacks from beyond the range it notices at`);
+  /*
+   * Reach against awareness, which means different things for the two kinds.
+   *
+   * A melee enemy that swings from beyond the distance it notices at can never
+   * land a hit, and reads in play as broken rather than passive. A RANGED one
+   * is supposed to outreach its own notice - that is the whole shape of it: it
+   * has to bump into you to wake up, and then it can keep shooting while you
+   * back off. What it must not outreach is the distance at which it forgets
+   * you, or it would be firing at somebody it has stopped believing in.
+   */
+  const reachLimit = e.ranged ? e.loseRadius : e.noticeRadius;
+  if (e.attackRange > reachLimit) {
+    fail(
+      e.ranged
+        ? `ranged enemy "${e.id}" fires ${e.attackRange}uu but forgets the player at ${e.loseRadius}uu`
+        : `enemy "${e.id}" attacks from beyond the range it notices at`,
+    );
+  }
   // Canon's asymmetry is the player knowing where the program is and not the
   // other way round. A notice radius that covers most of a screen is a
   // detection sweep, and turns every encounter into a lock-on.
@@ -439,6 +461,62 @@ for (const e of enemyTiers) {
   if ('drops' in e) fail(`enemy "${e.id}" has a drop table; materials come from the world, not from kills`);
 }
 if (tiersSeen.size !== 3) fail(`canon defines three enemy tiers; found ${tiersSeen.size}`);
+
+/*
+ * The behaviour fields, which are all optional and all silent when wrong.
+ *
+ * A ranged kind with no keepDistance closes to 85% of its attack range, which
+ * for a 300-unit range means it walks into the player's fists and stops being
+ * a ranged enemy - it still works, it just quietly is not the thing it was
+ * written to be. Armour above what the basic attack can do would be a wall the
+ * player has no way to read as a wall. A mender with no radius heals nobody.
+ */
+const basicDamage = progression.combat?.basicAttack?.damage ?? 0;
+for (const e of enemyTiers) {
+  if (e.attackCooldownSeconds !== undefined && !(e.attackCooldownSeconds > 0)) {
+    fail(`enemy "${e.id}" attacks every ${e.attackCooldownSeconds}s`);
+  }
+  if (e.keepDistance !== undefined && !(e.keepDistance > 0)) fail(`enemy "${e.id}" keeps a distance of ${e.keepDistance}`);
+
+  if (e.ranged) {
+    if (!(e.ranged.speed > 0)) fail(`ranged enemy "${e.id}" fires a bolt that does not move`);
+    if (!(e.ranged.radius > 0)) fail(`ranged enemy "${e.id}" fires a bolt with no size, which can never touch anybody`);
+    if (!(e.ranged.windUpSeconds > 0)) {
+      fail(`ranged enemy "${e.id}" fires with no wind-up; a bolt from across a clearing with no tell is damage nobody could avoid`);
+    }
+    if (!(e.keepDistance > 0)) {
+      fail(`ranged enemy "${e.id}" has no keepDistance, so it walks into melee and stops being ranged`);
+    }
+    if (e.keepDistance >= e.attackRange) {
+      fail(`ranged enemy "${e.id}" keeps ${e.keepDistance}uu but only reaches ${e.attackRange}uu, so it can never fire`);
+    }
+    // It has to be leavable on foot, or it is a tax rather than a decision.
+    if (e.ranged.speed > (progression.player?.sprintSpeed ?? 0) * 4) {
+      fail(`ranged enemy "${e.id}" fires at ${e.ranged.speed}uu/s against a player who moves at ${progression.player?.sprintSpeed}; that is a reflex check, not a thing to walk out of`);
+    }
+  }
+
+  if (e.armour !== undefined) {
+    if (!(e.armour > 0)) fail(`enemy "${e.id}" has armour ${e.armour}, which subtracts nothing`);
+    else if (e.armour >= basicDamage) {
+      warn(`"${e.id}" armour ${e.armour} against a basic attack of ${basicDamage}: only the floor gets through, so the basic attack is not weak here, it is useless`);
+    }
+  }
+
+  if (e.mends) {
+    if (!(e.mends.radius > 0)) fail(`mender "${e.id}" has no radius, so it repairs nobody`);
+    if (!(e.mends.perSecond > 0)) fail(`mender "${e.id}" repairs ${e.mends.perSecond} a second`);
+    if (e.mends.perSecond * 4 > basicDamage / (progression.combat?.basicAttack?.cooldownSeconds ?? 1)) {
+      warn(`"${e.id}" mends ${e.mends.perSecond}/s, which is close to what a player can take off a single target; a crowd may be unkillable while it lives`);
+    }
+  }
+}
+
+// Each tier wants more than one kind, or the tier is still a creature.
+for (const tier of [1, 2, 3]) {
+  const kinds = enemyTiers.filter((e) => e.tier === tier).length;
+  if (kinds < 2) warn(`tier ${tier} has only ${kinds} kind; the tier says how bad it is and the kind says what it does`);
+}
 
 // The asymmetry has a direction. If the player senses less far than an enemy
 // notices, the informational advantage sits with the program, which is backwards.
@@ -924,7 +1002,7 @@ for (const w of warnings) console.warn(`   ! ${w}`);
 console.log(
   `\n  content OK - ${elements.length} elements, ${materials.length} materials across ${biomes.length} biomes, ` +
     `${crafting.recipes.length} crafting recipes, ${alchemy.length} alchemy combinations, ` +
-    `${enemyTiers.length} enemy tiers, ${bulletins.length}+${found.length} notes` +
+    `${enemyTiers.length} enemy kinds over ${tiersSeen.size} tiers, ${bulletins.length}+${found.length} notes` +
     `${warnings.length ? ` (${warnings.length} warning(s))` : ''}`,
 );
 console.log(`  wrote:\n${outputs.map(([rel]) => `    ${rel}`).join('\n')}\n`);

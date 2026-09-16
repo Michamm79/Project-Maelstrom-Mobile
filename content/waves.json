@@ -36,76 +36,176 @@
     }
   },
   "maxLiveWaveGroups": 3,
-  "$composition_comment": "Rolled per wave. Minotaur scarcity is the tuning knob that makes tier 2 mean anything, and the scythe-bearer is rarer still - canon is explicit that 'only a few' is what gives them weight.",
+  "$composition_comment": "Rolled per wave. Minotaur scarcity is the tuning knob that makes tier 2 mean anything, and the Scythe-bearer is rarer still - canon is explicit that 'only a few' is what gives them weight. The four invented kinds are introduced ONE BUNDLE AT A TIME rather than all at once: a player meeting a swarm, a shooter, an armoured wall and a healer in the same fight learns none of them. Bundle 0 is Goblins alone, which keeps the combat tutorial the same fight it always was.",
   "composition": [
     {
       "bundleIndex": 0,
+      "$teaches": "Nothing new. This is the combat tutorial and it stays one kind.",
       "goblin": [
         3,
         5
+      ],
+      "imp": [
+        0,
+        0
+      ],
+      "wisp": [
+        0,
+        0
       ],
       "minotaur": [
         0,
         0
       ],
+      "golem": [
+        0,
+        0
+      ],
       "scythe_bearer": [
+        0,
+        0
+      ],
+      "lich": [
         0,
         0
       ]
     },
     {
       "bundleIndex": 1,
+      "$teaches": "Imps: you cannot walk away from everything.",
       "goblin": [
-        4,
-        7
+        3,
+        5
+      ],
+      "imp": [
+        2,
+        3
+      ],
+      "wisp": [
+        0,
+        0
       ],
       "minotaur": [
         0,
         1
       ],
+      "golem": [
+        0,
+        0
+      ],
       "scythe_bearer": [
+        0,
+        0
+      ],
+      "lich": [
         0,
         0
       ]
     },
     {
       "bundleIndex": 2,
+      "$teaches": "Wisps: something can hurt you from across the clearing.",
       "goblin": [
-        5,
-        8
+        3,
+        5
       ],
-      "minotaur": [
+      "imp": [
+        1,
+        3
+      ],
+      "wisp": [
         1,
         2
       ],
+      "minotaur": [
+        1,
+        1
+      ],
+      "golem": [
+        0,
+        0
+      ],
       "scythe_bearer": [
+        0,
+        0
+      ],
+      "lich": [
         0,
         0
       ]
     },
     {
       "bundleIndex": 3,
+      "$teaches": "Golems: your fists are the wrong tool, and the workshop is the right one.",
       "goblin": [
-        6,
-        9
+        3,
+        6
+      ],
+      "imp": [
+        1,
+        3
+      ],
+      "wisp": [
+        1,
+        2
       ],
       "minotaur": [
         1,
-        3
+        2
+      ],
+      "golem": [
+        0,
+        1
       ],
       "scythe_bearer": [
         0,
         1
+      ],
+      "lich": [
+        0,
+        0
+      ]
+    },
+    {
+      "bundleIndex": 4,
+      "$teaches": "Lich: what you kill first is now a question.",
+      "goblin": [
+        3,
+        6
+      ],
+      "imp": [
+        2,
+        3
+      ],
+      "wisp": [
+        1,
+        2
+      ],
+      "minotaur": [
+        1,
+        2
+      ],
+      "golem": [
+        0,
+        1
+      ],
+      "scythe_bearer": [
+        0,
+        1
+      ],
+      "lich": [
+        1,
+        1
       ]
     }
   ],
-  "$escalation_comment": "INFERRED, and the reason this section exists at all. The composition table above has four rows and the director clamped the bundle index to the last of them, so bundle 4 and bundle 40 were the same fight forever. That was invisible while Level 5 was unreachable and the cycle never started; it is the whole late game now that it is. Canon's shape is untouched - three waves to a bundle, one bundle alive at a time, the gap timed from the end of the last one - and what escalates is how much arrives and how long the quiet lasts. Growth is linear rather than compounding, because compounding reaches any cap you set and then sits on it, which makes bundle 8 and bundle 30 identical. maxLiveEnemies is the honest limit: a phone, not a design opinion.",
+  "$escalation_comment": "INFERRED, and the reason this section exists at all. The composition table above has four rows and the director clamped the bundle index to the last of them, so bundle 4 and bundle 40 were the same fight forever. That was invisible while Level 5 was unreachable and the cycle never started; it is the whole late game now that it is. Canon's shape is untouched - three waves to a bundle, one bundle alive at a time, the gap timed from the end of the last one - and what escalates is how much arrives and how long the quiet lasts. Growth is linear rather than compounding, because compounding reaches any cap you set and then sits on it, which makes bundle 8 and bundle 30 identical. maxLiveEnemies is the honest limit: a phone, not a design opinion. It went 30 -> 36 when the roster went from three kinds to seven, because a late wave now rolls seven kinds rather than three and the cap has to clear one whole scaled wave or waves never finish arriving. Measured again at 36 rather than assumed.",
   "escalation": {
     "growthPerBundle": 0.18,
     "maxMultiplier": 2.2,
     "gapShrink": 0.88,
     "minSecondsBetweenBundles": 420,
-    "maxLiveEnemies": 30
+    "maxLiveEnemies": 36
   },
   "$ambient_topup_comment": "INFERRED. The ambient population spawned exactly once and was then permanently thinned by every player who killed one, so an hour in the world was empty again between bundles. It is topped back up during the quiet, never during a bundle - canon calls it a population that persists BETWEEN bundles - and only up to the number that was rolled for it.",
   "ambientTopUpSeconds": 150,
@@ -114,6 +214,10 @@
     "goblin": [
       2,
       4
+    ],
+    "imp": [
+      1,
+      3
     ],
     "minotaur": [
       0,
@@ -129,5 +233,6 @@
     "ambientFromLevel": 5
   },
   "awarenessRadius": 1400,
-  "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything."
+  "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything.",
+  "$ambient_comment": "A separate population that persists between bundles. Never includes tier 3, and never includes the kinds that only make sense inside a fight - a lone Lich with nothing to mend is a slow enemy with no behaviour, and a Wisp shooting at a player who is only passing through is a tax on walking."
 }

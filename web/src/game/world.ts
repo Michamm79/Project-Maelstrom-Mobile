@@ -72,6 +72,30 @@ export interface WorldNote {
   pull: number;
 }
 
+/**
+ * Something in the air, on its way to the player.
+ *
+ * Nothing in the game could threaten the player at range, so closing distance
+ * was never a decision and standing still was never a mistake - which quietly
+ * wasted the Wetland's cover and the Desert's exposure, since being seen from
+ * further away cost nothing if nothing could reach you. These can.
+ *
+ * Deliberately slow and visible. It is a thing to walk out of, not a thing to
+ * react to: canon's whole input rule is that the player never has to aim
+ * precisely or move precisely, and a fast bolt would be a dodge check.
+ */
+export interface Projectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  damage: number;
+  color: string;
+  /** Seconds before it gives up, so a stray shot cannot cross the Coliseum. */
+  life: number;
+}
+
 export interface Enemy {
   id: number;
   def: EnemyDef;
@@ -107,6 +131,8 @@ export interface Enemy {
   /** Seconds left moving at `slowScale` of its own pace. */
   slow: number;
   slowScale: number;
+  /** Counts up while this one is mending, purely so the renderer can pulse. */
+  mendAnim: number;
   /**
    * Whether this one arrived as part of a wave.
    *
@@ -120,7 +146,7 @@ export interface Enemy {
 }
 
 export interface CombatEvent {
-  kind: 'player-hit' | 'enemy-hit' | 'enemy-killed' | 'player-died';
+  kind: 'player-hit' | 'enemy-hit' | 'enemy-killed' | 'player-died' | 'enemy-fired';
   enemy?: Enemy;
   amount?: number;
   /** player-hit: how much of it the shield took, so the HUD can say so. */
@@ -244,6 +270,26 @@ const ARRIVE_DISTANCE = 14;
 /** Share of the full shove that a combo-less hit delivers. */
 const COMBO_SHOVE_FLOOR = 0.4;
 
+/** The share of a blow that always gets through, however well armoured. */
+const ARMOUR_FLOOR = 0.25;
+
+/**
+ * Damage, after the armour has taken its cut.
+ *
+ * A flat subtraction rather than a percentage, because flat is what makes the
+ * decision legible: a Golem's 6 turns a 9-damage punch into 3 and a 26-damage
+ * Sunlance into 20, so the basic attack becomes a bad answer and a combination
+ * becomes a good one without a single number appearing on screen.
+ *
+ * Floored at a fraction rather than at zero: an armour value that made a kind
+ * literally immune to the only weapon a new player has would be a wall rather
+ * than a question, and nothing on screen would tell them which it was.
+ */
+export function afterArmour(amount: number, armour: number | undefined): number {
+  if (!armour || amount <= 0) return amount;
+  return Math.max(amount * ARMOUR_FLOOR, amount - armour);
+}
+
 /**
  * How fast an enemy is moving right now, as a fraction of its own speed.
  *
@@ -299,6 +345,8 @@ export class World {
    */
   private readonly propGrid = new Map<number, Prop[]>();
   readonly enemies: Enemy[] = [];
+  /** In flight, from the kinds that fight at range. Drawn and stepped here. */
+  readonly projectiles: Projectile[] = [];
   readonly discs: BiomeDisc[] = [];
   readonly player: Player;
   readonly boundaryRadius: number;
@@ -389,6 +437,7 @@ export class World {
     this.nodes.length = 0;
     this.notes.length = 0;
     this.read.length = 0;
+    this.projectiles.length = 0;
     this.props.length = 0;
     this.propGrid.clear();
     this.enemies.length = 0;
@@ -829,6 +878,7 @@ export class World {
       burn: 0,
       slow: 0,
       slowScale: 1,
+      mendAnim: 0,
       fromWave,
     };
     this.enemies.push(enemy);
@@ -943,8 +993,9 @@ export class World {
       const shove = (attack.knockback * (COMBO_SHOVE_FLOOR + (1 - COMBO_SHOVE_FLOOR) * through)) / weight;
       enemy.knockX += (dx / length) * shove;
       enemy.knockY += (dy / length) * shove;
-      const died = applyDamage(enemy, damage);
-      this.events.push({ kind: 'enemy-hit', enemy, amount: damage });
+      const dealt = afterArmour(damage, enemy.def.armour);
+      const died = applyDamage(enemy, dealt);
+      this.events.push({ kind: 'enemy-hit', enemy, amount: dealt });
       hit.push(enemy);
       if (died) {
         this.events.push({ kind: 'enemy-killed', enemy });
@@ -1001,7 +1052,7 @@ export class World {
         enemy.slow = Math.max(enemy.slow, effect.slowSeconds);
         enemy.slowScale = Math.min(enemy.slowScale, effect.slowScale ?? 0.5);
       }
-      const dealt = hit.damage * damageScale;
+      const dealt = afterArmour(hit.damage * damageScale, enemy.def.armour);
       const died = applyDamage(enemy, dealt);
       this.events.push({ kind: 'enemy-hit', enemy, amount: dealt });
       if (died) {
@@ -1115,16 +1166,21 @@ export class World {
         // The wind-up is the tell. A hit that lands on the same frame the enemy
         // arrives is one the player had no way to read.
         if (enemy.windUp <= 0) {
-          enemy.windUp = WIND_UP_SECONDS;
+          // A ranged kind needs a longer tell: a bolt you cannot see coming is
+          // damage you had no way to avoid, from something across a clearing.
+          enemy.windUp = def.ranged?.windUpSeconds ?? WIND_UP_SECONDS;
         } else if (enemy.windUp <= dt) {
-          enemy.cooldown = 1.2;
-          this.hurtPlayer(def.damage, enemy);
+          enemy.cooldown = def.attackCooldownSeconds ?? 1.2;
+          if (def.ranged) this.fire(enemy, dx, dy, distance);
+          else this.hurtPlayer(def.damage, enemy);
         }
       } else if (!enemy.aggro || distance > def.attackRange) {
         // Stepped out of reach mid-swing: the blow does not follow you.
         enemy.windUp = 0;
       }
     }
+
+    this.mend(dt);
 
     // Corpses are cleared once they have finished fading, in the game layer's
     // sight; nothing respawns on its own, because waves decide what exists.
@@ -1138,10 +1194,23 @@ export class World {
 
   /** Closing on a player it can currently see. */
   private pursue(enemy: Enemy, dt: number, dx: number, dy: number, distance: number): void {
-    // Stop at the edge of its reach rather than walking into the player.
-    const stopAt = enemy.def.attackRange * 0.85;
+    /*
+     * Stop at the edge of its reach rather than walking into the player - and
+     * for the kinds that fight from further off, at the distance they want to
+     * keep. Without keepDistance a Wisp closes to 85% of a 300-unit attack
+     * range, which is to say it walks into the player's fists and stops being
+     * a ranged enemy at all.
+     */
+    const stopAt = enemy.def.keepDistance ?? enemy.def.attackRange * 0.85;
     if (distance <= stopAt) {
       enemy.facing = Math.atan2(dy, dx);
+      // Backs off when crowded rather than standing in it, so walking at a
+      // Wisp is a way of making it stop shooting.
+      if (distance < stopAt * 0.72 && distance > 1) {
+        const pace = enemy.def.speed * paceScale(enemy) * 0.7;
+        enemy.x -= (dx / distance) * pace * dt;
+        enemy.y -= (dy / distance) * pace * dt;
+      }
       return;
     }
     const pace = enemy.def.speed * paceScale(enemy);
@@ -1200,7 +1269,89 @@ export class World {
     enemy.roamY = y;
   }
 
-  private hurtPlayer(amount: number, enemy: Enemy): void {
+  /**
+   * One shot, aimed where the player is standing now.
+   *
+   * Deliberately not led - it does not aim where the player is going. Canon's
+   * input rule is that the player never has to move precisely, and a bolt that
+   * predicted you would make walking in a straight line the mistake. Aimed at
+   * the present, it is a thing you leave by moving at all, which is the
+   * behaviour worth teaching.
+   */
+  private fire(enemy: Enemy, dx: number, dy: number, distance: number): void {
+    const shot = enemy.def.ranged;
+    if (!shot) return;
+    const length = Math.max(0.001, distance);
+    this.projectiles.push({
+      x: enemy.x,
+      y: enemy.y - 8,
+      vx: (dx / length) * shot.speed,
+      vy: (dy / length) * shot.speed,
+      radius: shot.radius,
+      damage: enemy.def.damage,
+      color: enemy.def.color,
+      // Generous enough to cross its own attack range and no further, so a
+      // stray shot cannot travel the Coliseum looking for someone.
+      life: (enemy.def.attackRange * 1.3) / Math.max(1, shot.speed),
+    });
+    this.events.push({ kind: 'enemy-fired', enemy });
+  }
+
+  /**
+   * Whatever is mending, putting the others back together.
+   *
+   * Only living enemies, and never itself: a mender that healed itself would
+   * be a damage-race against its own number rather than a decision about what
+   * to kill first, and killing it first is the entire point of it.
+   */
+  private mend(dt: number): void {
+    for (const healer of this.enemies) {
+      const aura = healer.def.mends;
+      if (!aura || healer.dead) continue;
+
+      let mended = false;
+      for (const other of this.enemies) {
+        if (other === healer || other.dead || other.hp >= other.def.hp) continue;
+        if (Math.hypot(other.x - healer.x, other.y - healer.y) > aura.radius) continue;
+        other.hp = Math.min(other.def.hp, other.hp + aura.perSecond * dt);
+        mended = true;
+      }
+      healer.mendAnim = mended ? healer.mendAnim + dt : 0;
+    }
+  }
+
+  /**
+   * Everything in the air, moved one frame.
+   *
+   * Checked against the player's radius rather than a point, and removed on
+   * the frame it connects: a bolt that kept going after landing would hit
+   * again on the next frame, which is a shot that does its damage several
+   * times for no reason anybody could see.
+   */
+  private updateProjectiles(dt: number): void {
+    const player = this.player;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const shot = this.projectiles[i];
+      if (!shot) continue;
+
+      shot.x += shot.vx * dt;
+      shot.y += shot.vy * dt;
+      shot.life -= dt;
+
+      const reach = shot.radius + this.content.progression.player.radius;
+      const hit =
+        !player.dead && Math.hypot(player.x - shot.x, player.y - shot.y) <= reach;
+
+      if (hit) this.hurtPlayer(shot.damage, null);
+      // Out of time, out of the world, or spent. The boundary check matters
+      // because a shot fired at the edge would otherwise fly out of it.
+      if (hit || shot.life <= 0 || Math.hypot(shot.x, shot.y) > this.boundaryRadius) {
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  private hurtPlayer(amount: number, enemy: Enemy | null): void {
     const player = this.player;
     if (player.invulnerable > 0 || player.dead) return;
     const combat = this.content.progression.combat;
@@ -1211,7 +1362,7 @@ export class World {
     player.hp = Math.max(0, player.hp - through);
     player.invulnerable = combat.invulnerableSeconds;
     player.sinceHit = 0;
-    this.events.push({ kind: 'player-hit', amount: through, enemy, soaked });
+    this.events.push({ kind: 'player-hit', amount: through, enemy: enemy ?? undefined, soaked });
     if (player.hp <= 0) {
       player.dead = true;
       player.respawnAt = this.elapsed + combat.respawnSeconds;
@@ -1266,6 +1417,9 @@ export class World {
     }
 
     this.updateEnemies(dt);
+    // After the enemies, so a bolt fired this frame does not also travel this
+    // frame - which would let a point-blank shot skip its own flight entirely.
+    this.updateProjectiles(dt);
   }
 
   get time(): number {

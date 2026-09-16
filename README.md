@@ -201,7 +201,7 @@ content/            the game, as data
   biomes.json         5 regions with terrain and palettes
   crafting.json       materials -> permanent gauntlet upgrades
   alchemy.json        elements -> combat abilities
-  enemies.json        3 tiers, with movement and notice ranges
+  enemies.json        7 kinds over 3 tiers, with armour, reach and mending
   waves.json          wave bundles, pacing and player awareness
   progression.json    XP curve, combat and player tuning
   tutorial.json       the waking scene, the guide, and what the world says
@@ -215,7 +215,7 @@ web/src/
     world.ts            simulation: pull, terrain, enemies, waves
     renderer.ts         canvas: camera, ground, fog, creatures, swing
     screen.ts           which way up the box sits, and how much world it shows
-    creatures.ts        the three enemy tiers, drawn
+    creatures.ts        all seven enemy kinds, drawn
     icons.ts            38 procedural item shapes
     sound.ts            synthesised audio
     deletion.ts         enemies coming apart into binary

@@ -52,14 +52,14 @@ The game plays **sideways** by default, so all but the last are landscape.
 | `01-title.png` | Title screen | — |
 | `02-waking.png` | The opening fade | "The run opens on black and fades up onto the arena." |
 | `03-gathering.png` | The core loop | "The pull works at walking pace — no aiming, no stopping." |
-| `04-combat.png` | Swing arc, all three enemy tiers | "Every creature is drawn by code at runtime." |
+| `04-combat.png` | Swing arc, a spread of the seven kinds | "Every creature is drawn by code at runtime." |
 | `05-crafting.png` | The crafting/alchemy menu | "Two disciplines, one menu." |
 | `06-wetland.png` | Wetland terrain | "Slow going, heavy cover, low visibility — the region plays differently, not just looks different." |
 | `07-data-center.png` | Data-Center terrain | "Coolant fog and neon. Fog is the only thing that adapts to your device's frame rate." |
 | `08-portrait.png` | Held upright instead | "Landscape is a preference, not a lock — the HUD relays rather than squashing." |
 
 **Best single image if only one fits:** `04-combat.png` — it has the character,
-all three enemy designs, the attack animation and the HUD in one frame.
+several of the enemy designs, the attack animation and the HUD in one frame.
 
 **For a hero image or a card, use the cover instead:** `docs/cover/cover.png`
 (1024×1024 square, with the title) or `cover-clean.png` (no type). It is drawn by
@@ -94,7 +94,7 @@ number attached, which is what makes them interesting rather than generic.
 
 The character sprite is produced from character maps and a colour palette. The
 38 material icons are procedural shapes with a dilated outline, banded shading
-and a baked drop shadow. The three enemy tiers are hand-authored vector
+and a baked drop shadow. The seven enemy kinds are hand-authored vector
 drawings, posed by wind-up and stagger values rather than animation frames. All
 sound is oscillators and shaped noise through envelopes.
 

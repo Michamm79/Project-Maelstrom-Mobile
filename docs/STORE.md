@@ -85,9 +85,15 @@ You, meanwhile, feel everything within 1400 units — a permanent, silent read o
 what is out there and how big it is. That advantage is the only one you get, and
 the whole design is built to keep it yours.
 
-Three tiers, and they are renderings of hostile code rather than animals. A
-goblin is what the system spends when you are not worth much. A Minotaur means
-something in there decided you were.
+Seven kinds over three tiers, and they are renderings of hostile code rather
+than animals. A goblin is what the system spends when you are not worth much. A
+Minotaur means something in there decided you were.
+
+They are not the same fight in different sizes. An imp is faster than you are. A
+wisp will not come closer and simply shoots. A golem shrugs off anything small
+enough to be comfortable. And a lich stands at the back putting the rest of them
+back together, which means for the first time the question is not *can you win
+this* but *what do you kill first*.
 
 ### Somebody has been leaving notices
 

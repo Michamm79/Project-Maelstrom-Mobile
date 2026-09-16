@@ -90,17 +90,43 @@ describe('the Coliseum', () => {
 });
 
 describe('the enemies', () => {
-  it('is three tiers of rendered code, not a bestiary', () => {
-    expect(content.enemies).toHaveLength(3);
-    expect(content.enemies.map((e) => e.tier).sort()).toEqual([1, 2, 3]);
+  /*
+   * Three TIERS, which is the canon part, and more than three kinds, which is
+   * not. The tier is the threat scale - canon's "seeing a Minotaur tells the
+   * player the difficulty changed without a number appearing anywhere" - and
+   * that only survives if all three scales exist and none of them is empty.
+   * What each kind DOES is a separate axis and canon says nothing about it.
+   */
+  it('keeps all three threat tiers, with every one of them filled', () => {
+    for (const tier of [1, 2, 3]) {
+      expect(content.enemies.filter((e) => e.tier === tier).length).toBeGreaterThan(0);
+    }
+    expect(new Set(content.enemies.map((e) => e.tier))).toEqual(new Set([1, 2, 3]));
+  });
+
+  it('keeps the three canon kinds by name', () => {
+    const ids = content.enemies.map((e) => e.id);
+    for (const id of ['goblin', 'minotaur', 'scythe_bearer']) expect(ids).toContain(id);
+  });
+
+  it('stays a roster rather than a bestiary', () => {
+    // Canon's point is that a tier is legible at a glance. Past a certain
+    // number of kinds nothing is legible at a glance, whatever the tiers say.
+    expect(content.enemies.length).toBeLessThanOrEqual(9);
   });
 
   it('drops nothing, so fighting is never a gathering strategy', () => {
     for (const e of content.enemies) expect(e).not.toHaveProperty('drops');
   });
 
-  it('never attacks from beyond the range it closes to', () => {
-    for (const e of content.enemies) expect(e.attackRange).toBeLessThanOrEqual(e.noticeRadius);
+  it('never swings from beyond the range it notices at', () => {
+    // A melee kind that reaches further than it notices can never land a hit.
+    // A RANGED one is supposed to outreach its notice - that is the shape of
+    // it - but never the distance at which it forgets you is there at all.
+    for (const e of content.enemies) {
+      if (e.ranged) expect(e.attackRange).toBeLessThanOrEqual(e.loseRadius);
+      else expect(e.attackRange).toBeLessThanOrEqual(e.noticeRadius);
+    }
   });
 
   /*

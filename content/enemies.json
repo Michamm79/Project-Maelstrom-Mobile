@@ -1,5 +1,5 @@
 {
-  "$comment": "Three tiers, from GDD section 2.2. These are renderings, not creatures: hostile code manifests as a goblin the way a file manifests as an icon. That is what keeps the setting a corporate dystopia rather than a fantasy world, and it makes threat legible at a glance - seeing a Minotaur tells the player the difficulty changed without a number appearing anywhere. Scarcity is the tuning knob.",
+  "$comment": "Seven kinds across canon's THREE tiers, from GDD section 2.2. These are renderings, not creatures: hostile code manifests as a goblin the way a file manifests as an icon. That is what keeps the setting a corporate dystopia rather than a fantasy world, and it makes threat legible at a glance - seeing a Minotaur tells the player the difficulty changed without a number appearing anywhere. Scarcity is the tuning knob.",
   "$stats_comment": "Tier identity and meaning are canon. Health, damage and speed are INFERRED - canon does not specify combat numbers. Enemies drop nothing: materials come from the world, and drop tables would make fighting a gathering strategy, which inverts the loop.",
   "tiers": [
     {
@@ -26,6 +26,60 @@
       "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
     },
     {
+      "id": "imp",
+      "name": "Imp",
+      "tier": 1,
+      "represents": "Swarm processes. Individually beneath notice, which is the point of them",
+      "shape": "blob",
+      "color": "#b8743a",
+      "hp": 7,
+      "weight": 1,
+      "damage": 2,
+      "speed": 96,
+      "noticeRadius": 120,
+      "loseRadius": 300,
+      "forgetSeconds": 5.0,
+      "attackRange": 26,
+      "wanderSpeed": 40,
+      "roamRadius": 1000,
+      "pauseSeconds": [
+        0.3,
+        1.1
+      ],
+      "attackCooldownSeconds": 0.7,
+      "description": "Too small to be worth a swing and too fast to walk away from. They are sent in numbers because that is the only way they are anything."
+    },
+    {
+      "id": "wisp",
+      "name": "Wisp",
+      "tier": 1,
+      "represents": "Remote probes. It is not trying to reach you; it is already in range",
+      "shape": "shard",
+      "color": "#6fa8c8",
+      "hp": 12,
+      "weight": 1,
+      "damage": 5,
+      "speed": 44,
+      "noticeRadius": 150,
+      "loseRadius": 360,
+      "forgetSeconds": 5.5,
+      "attackRange": 300,
+      "wanderSpeed": 20,
+      "roamRadius": 800,
+      "pauseSeconds": [
+        1.2,
+        3.4
+      ],
+      "keepDistance": 190,
+      "ranged": {
+        "speed": 210,
+        "radius": 9,
+        "windUpSeconds": 0.85
+      },
+      "attackCooldownSeconds": 2.2,
+      "description": "It does not close. It holds at the far edge of a clearing and spends you a little at a time while something bigger walks in."
+    },
+    {
       "id": "minotaur",
       "name": "Minotaur",
       "tier": 2,
@@ -49,6 +103,31 @@
       "description": "Something in the program decided you were worth spending on. Only ever a few."
     },
     {
+      "id": "golem",
+      "name": "Golem",
+      "tier": 2,
+      "represents": "Hardened defences in the literal sense. Built to be expensive to get through",
+      "shape": "plate",
+      "color": "#7d8794",
+      "hp": 86,
+      "weight": 3.2,
+      "damage": 16,
+      "speed": 38,
+      "noticeRadius": 104,
+      "loseRadius": 230,
+      "forgetSeconds": 4.0,
+      "attackRange": 48,
+      "wanderSpeed": 14,
+      "roamRadius": 500,
+      "pauseSeconds": [
+        1.6,
+        4.0
+      ],
+      "armour": 6,
+      "attackCooldownSeconds": 1.8,
+      "description": "Slow enough to walk away from and armoured enough that hitting it with your hands is barely worth the time. It is a question, and the workshop is the answer."
+    },
+    {
       "id": "scythe_bearer",
       "name": "Scythe-bearer",
       "tier": 3,
@@ -70,8 +149,40 @@
         2.0
       ],
       "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
+    },
+    {
+      "id": "lich",
+      "name": "Lich",
+      "tier": 3,
+      "represents": "A repair process with authority over the others. It is not here to fight you",
+      "shape": "rune",
+      "color": "#7a5fb0",
+      "hp": 96,
+      "weight": 2.0,
+      "damage": 9,
+      "speed": 58,
+      "noticeRadius": 126,
+      "loseRadius": 300,
+      "forgetSeconds": 6.0,
+      "attackRange": 38,
+      "wanderSpeed": 24,
+      "roamRadius": 900,
+      "pauseSeconds": [
+        0.9,
+        2.6
+      ],
+      "keepDistance": 150,
+      "mends": {
+        "radius": 260,
+        "perSecond": 5
+      },
+      "attackCooldownSeconds": 2.0,
+      "description": "It hangs back and puts the others back together faster than you are taking them apart. Everything else in the clearing is a distraction from it."
     }
   ],
   "$ai_comment": "Enemies wander; they do not home in. Canon gives the player the informational advantage - the program does not know where the intruder is - so noticeRadius is an encounter distance rather than a detection sweep: roughly a body length or two, not most of a screen. They amble between roam targets at wanderSpeed, notice the player only on getting close (or on being hit), pursue at speed, and forget after forgetSeconds once the player is past loseRadius. The player sees them coming; they do not see the player coming.",
-  "$weight_comment": "How much of a shove an enemy absorbs: knockback is divided by it. A Scythe-bearer taking the same 46-unit slide as a goblin would make tier meaningless at exactly the moment it should be most legible."
+  "$weight_comment": "How much of a shove an enemy absorbs: knockback is divided by it. A Scythe-bearer taking the same 46-unit slide as a goblin would make tier meaningless at exactly the moment it should be most legible.",
+  "$tiers_comment": "The tier is the THREAT SCALE and stays canon's three. What changed is that a tier is no longer one creature: the author asked for seven kinds, and seven flat kinds would have thrown away the one thing the tiers are for. So tier still answers 'how bad is this' and the kind answers 'what does it do'. Goblin, Minotaur and Scythe-bearer are canon and untouched; the other four are INVENTED and flagged below.",
+  "$inferred": "Imp, Wisp, Golem and Lich are invented, and so is every number attached to them. Each exists to add a DECISION rather than a stat line, because the three canon tiers all resolve the same way - walk at the player and hit them - so a fight was only ever a question of how long it took. Imp punishes ignoring trash. Wisp is the first thing in the game that can hurt you from across a clearing, which is what finally makes cover, positioning and the Wetland's concealment worth anything. Golem's armour makes the basic attack a poor answer and a combination a good one, which is what makes the alchemy tree matter in a fight rather than only in a menu. Lich repairs the others, which turns a crowd from a queue into a question about what to kill first. Replace any of them; the canon three are the part that is not ours.",
+  "$behaviour_comment": "Three fields carry the new behaviour, and all three are OPTIONAL so the canon three are untouched by them: `ranged` makes a kind fire a projectile from attackRange instead of swinging, `armour` subtracts flat damage from every hit it takes, and `mends` repairs nearby living enemies. `keepDistance` is what stops a ranged or supporting kind walking into your fists: it closes to that distance and no further. `attackCooldownSeconds` was a hard-coded 1.2 in world.ts and is now per kind, because a swarm that attacks at the pace of a Minotaur is not a swarm."
 }

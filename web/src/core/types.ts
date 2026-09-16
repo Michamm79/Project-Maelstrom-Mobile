@@ -232,6 +232,36 @@ export interface EnemyDef {
   roamRadius: number;
   /** Min and max seconds spent standing still before choosing the next target. */
   pauseSeconds: readonly number[];
+
+  /*
+   * What this kind does that the others do not.
+   *
+   * All optional, so canon's three are untouched by any of it. The tier is the
+   * threat scale and answers "how bad is this"; these answer "what does it do",
+   * which is the axis seven kinds needed and three did not have.
+   */
+
+  /** Seconds between blows. Was a hard-coded 1.2 for everything. */
+  attackCooldownSeconds?: number;
+  /**
+   * Closes to here and no further.
+   *
+   * Without it a kind that fights at range walks into the player's fists
+   * anyway, which deletes the whole reason it fights at range.
+   */
+  keepDistance?: number;
+  /** Fires from attackRange instead of swinging at it. */
+  ranged?: {
+    /** World units per second. Slow enough to walk out of, which is the point. */
+    speed: number;
+    radius: number;
+    /** The tell, before it fires. A shot with no wind-up cannot be read. */
+    windUpSeconds: number;
+  };
+  /** Flat damage subtracted from every hit it takes. */
+  armour?: number;
+  /** Repairs other living enemies inside `radius`, at `perSecond`. */
+  mends?: { radius: number; perSecond: number };
 }
 
 export interface WavePacing {

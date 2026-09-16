@@ -62,12 +62,53 @@ leave the centre, so the build asserts it rather than trusting it.
 
 ## Enemies
 
-Three tiers, and they are renderings of hostile code rather than creatures —
-which is what keeps the setting a corporate dystopia instead of a fantasy world.
-Scarcity is the tuning knob; they drop nothing, because drop tables would make
-fighting a gathering strategy and invert the loop.
+**Seven kinds over canon's three tiers**, and they are renderings of hostile
+code rather than creatures — which is what keeps the setting a corporate
+dystopia instead of a fantasy world. Scarcity is the tuning knob; they drop
+nothing, because drop tables would make fighting a gathering strategy and invert
+the loop.
 
-**They wander.** They do not home in. Noticing is an encounter at 90–140 world
+Canon names three — goblin, Minotaur, Scythe-bearer — and those three are
+untouched, stats included. The other four are **inferred**, flagged as such in
+`content/enemies.json`. Canon's three all resolve the same way, by walking at
+you and swinging, so a fight was only ever a question of how long it took. The
+rule for adding a kind is that it has to make some approach that was working
+stop working:
+
+| Kind | Tier | The question it asks |
+| --- | --- | --- |
+| Goblin | 1 | None. It closes and it swings — 16 HP, the combat tutorial. |
+| Imp | 1 | Can you land a hit at all? 96 speed against your 84 sprint, 7 HP. |
+| Wisp | 1 | Can you reach it? It holds at 190 units and shoots from 300. |
+| Minotaur | 2 | Can you take one? 12 damage a swing, 58 HP. |
+| Golem | 2 | Can you hit *hard*? 6 armour turns a 9-damage swing into 3. |
+| Scythe-bearer | 3 | Canon's rare one, unchanged: 140 HP and 26 a hit. |
+| Lich | 3 | Can you choose a target? It repairs everything else at 5/s. |
+
+Three of those break an assumption the player has been allowed to build for an
+hour: that enemies come to you, that damage is damage, and that the field only
+ever gets smaller. Each needs one new behaviour, and each behaviour is a rule in
+the build because each fails silently:
+
+- **Armour** subtracts before the hit lands, with a floor at 25% of the swing so
+  nothing is ever immune. A Golem takes 3 from a basic swing and 20
+  from a 26-damage one, which is the point: chip damage stops paying
+  and the alchemy menu starts. Applied in one damage path and not the other it
+  would have looked like a damage roll, so the tests drive both.
+- **Ranged** kinds stop at `keepDistance` and fire instead of closing. The build
+  caps bolt speed at four times sprint, so walking out of one is always
+  possible, and it rejects a ranged kind whose attack reaches past the distance
+  at which it forgets you — an enemy that shoots from outside its own leash.
+- **Mending** repairs everything in radius except the mender, never past full and
+  never the dead. A bowed line is drawn from the Lich to each thing it is
+  holding up, because a mender you cannot see is just an enemy that will not die.
+
+The Lich keeps 150 units and swings at 38, which on paper is a kind that retreats
+from its own attack. It backs off at 58 and you sprint at 84, so it can be run
+down — asserted in a test, because "its melee never fires" is not something the
+game would report.
+
+**They wander.** They do not home in. Noticing is an encounter at 90–150 world
 units, not a detection sweep — the build rejects anything above 200 — and they
 forget and go back to roaming once you are past `loseRadius`. The player, in
 exchange, senses everything within 1400 units. That asymmetry has a direction:
@@ -91,9 +132,10 @@ the absence of a cycle.
   topped back up during the gaps. The scaling is also what makes canon's *"only
   a few"* Scythe-bearers mean scarcity rather than a hard limit of one.
 
-`maxLiveEnemies` caps the whole thing at 30. That is a phone, not a design
+`maxLiveEnemies` caps the whole thing at 36 — the heaviest authored bundle is
+16, and the escalation multiplies by up to 2.2. That is a phone, not a design
 opinion, and it is measured: a field held at the cap while a third of it is
-deleted every half second runs at a p50 of 16.6ms and a p95 of 17.5ms in
+deleted every half second runs at a p50 of 16.9ms and a p95 of 19.9ms in
 headless software rasterisation, which is a pessimistic floor.
 
 XP is **novelty only**: first note, first material, first craft, first cast,
@@ -187,6 +229,9 @@ nothing had reported it. The ones added with the late game are all of that kind:
   live cap below a single wave.
 - **an ending gated on a recipe that no longer exists**, a breach meter that
   decays faster than it fills, or an epilogue table with a hole in it.
+- **a tier with one kind in it**, a ranged enemy that shoots past the distance at
+  which it forgets you, a bolt faster than the player can ever outrun, armour
+  that outweighs every attack in the game, or a mender that repairs itself.
 
 ## Everything is generated
 
@@ -195,8 +240,10 @@ sound are produced by code:
 
 - **Material icons** — 38 procedural shapes with a dilated keyline, banded
   shading and a baked drop shadow, all applied to every shape at once.
-- **Enemies** — original creatures, one drawing each, posed by wind-up and
-  stagger rather than by separate frames.
+- **Enemies** — original creatures, one drawing each for all seven, posed by
+  wind-up and stagger rather than by separate frames. The silhouettes are
+  deliberately unlike each other, because the deletion effect samples the real
+  drawing: a kind without one does not come apart into binary, it vanishes.
 - **Deletion** — a killed enemy does not fall over and does not fade like a
   body. Canon says the tiers are renderings of hostile code, so the rendering
   comes apart: a white flash, a conversion sweeping up from the feet, and the
@@ -344,8 +391,9 @@ player looking at it will go looking for the menu that let them pick it.
 One thing that is built but is the author's to replace:
 
 - **Everything past canon.** Eight of the eleven alchemy combinations, nine of
-  the thirteen recipes, all nineteen notes, the ending, every level above 2, and
-  every number in the archetype read are inferred. Each is flagged in its own
+  the thirteen recipes, four of the seven enemy kinds, all nineteen notes, the
+  ending, every level above 2, and every number in the archetype read are
+  inferred. Each is flagged in its own
   content file with what canon does support and what was invented on top of it —
   so replacing any of them is an edit to one JSON file, not an archaeology
   exercise.
