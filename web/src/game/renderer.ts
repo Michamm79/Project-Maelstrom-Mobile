@@ -123,8 +123,37 @@ function bakeFog(tint: string, strength: number): HTMLCanvasElement | null {
  */
 const MAX_DELETIONS = 8;
 
+/**
+ * Device pixels per art pixel.
+ *
+ * The whole world layer is drawn into a buffer this many times smaller than the
+ * canvas and then blown up with smoothing off, which is what makes every mark
+ * in the game - terrain, props, icons, creatures, effects - land on one grid.
+ * Doing it here rather than in each drawing function is the difference between
+ * a pixel-art game and thirty functions that each have their own idea of how
+ * big a pixel is.
+ *
+ * It also costs less rather than more: at 4, a 1678x824 canvas fills 420x206
+ * pixels a frame instead of 1.4 million, and the blit is one hardware-scaled
+ * copy. The fog - one full-screen alpha blend, and the single most expensive
+ * thing this renderer does - gets sixteen times cheaper with it.
+ */
+const ART_PIXEL = 4;
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
+  /**
+   * The world, at art resolution.
+   *
+   * Everything below the HUD is drawn here and blitted up. The HUD is DOM and
+   * the floaters are text, so both stay on the crisp layer: a damage number
+   * three art-pixels tall is not a style, it is unreadable.
+   */
+  private readonly pixels: HTMLCanvasElement = document.createElement('canvas');
+  private readonly pctx: CanvasRenderingContext2D;
+  /** Buffer size in art pixels, recomputed on resize. */
+  private bufferW = 1;
+  private bufferH = 1;
   private readonly floaters: Floater[] = [];
   private readonly deletions: Deletion[] = [];
   private width = 0;
@@ -159,6 +188,10 @@ export class Renderer {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('2D canvas context unavailable');
     this.ctx = ctx;
+
+    const pctx = this.pixels.getContext('2d', { alpha: false });
+    if (!pctx) throw new Error('2D canvas context unavailable for the art buffer');
+    this.pctx = pctx;
 
     this.sheet.onload = () => {
       this.sheetReady = true;
@@ -217,6 +250,20 @@ export class Renderer {
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
     this.zoom = zoomFor(this.width, this.height, this.screen.span);
+
+    /*
+     * Round UP, so the blit always covers the canvas.
+     *
+     * Rounding down leaves a strip of whatever was in the backing store along
+     * the right and bottom edges - and because the canvas is opaque and never
+     * cleared under the blit, that strip is the previous frame. A one-pixel
+     * smear of last frame down the edge of the screen is the kind of thing
+     * that looks like a driver bug rather than an off-by-one.
+     */
+    this.bufferW = Math.max(1, Math.ceil(this.canvas.width / ART_PIXEL));
+    this.bufferH = Math.max(1, Math.ceil(this.canvas.height / ART_PIXEL));
+    this.pixels.width = this.bufferW;
+    this.pixels.height = this.bufferH;
   }
 
   /**
@@ -264,28 +311,48 @@ export class Renderer {
     }
   }
 
+  /**
+   * Put a context into world space.
+   *
+   * The camera offset is snapped to whole ART pixels rather than to CSS ones.
+   * That is the difference between a world that moves under a fixed grid and
+   * one whose grid crawls: at any sub-pixel offset the terrain's hard edges
+   * land on different art pixels every frame, and a checker that is supposed to
+   * be still shimmers the whole time you walk.
+   */
+  private toWorld(ctx: CanvasRenderingContext2D, camera: { x: number; y: number }, artPerCss: number): void {
+    ctx.scale(this.zoom, this.zoom);
+    const snap = (v: number) => Math.round(v * artPerCss) / artPerCss / this.zoom;
+    ctx.translate(snap(this.width / 2 - camera.x * this.zoom), snap(this.height / 2 - camera.y * this.zoom));
+  }
+
   draw(world: World, state: RenderState, input?: InputController): void {
     const ctx = this.ctx;
-    ctx.save();
-    ctx.scale(this.dpr, this.dpr);
+    const pctx = this.pctx;
 
     const camera = {
       x: clamp(world.player.x, -world.boundaryRadius, world.boundaryRadius),
       y: clamp(world.player.y, -world.boundaryRadius, world.boundaryRadius),
     };
 
-    ctx.fillStyle = BETWEEN.fog;
-    ctx.fillRect(0, 0, this.width, this.height);
+    /*
+     * The art buffer keeps the SAME coordinate system the renderer has always
+     * used - CSS pixels - by scaling down instead of up. Every drawing function
+     * below this line is unchanged and none of them knows it is being drawn
+     * small, which is the only reason a change this deep is a dozen lines
+     * rather than a rewrite of all thirty of them.
+     */
+    const artPerCss = this.dpr / ART_PIXEL;
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.imageSmoothingEnabled = false;
+    pctx.save();
+    pctx.scale(artPerCss, artPerCss);
 
-    ctx.save();
-    // Rounded in CSS pixels rather than world units: at any zoom but 1 a world
-    // space round lands the camera between device pixels and the ground
-    // checker shimmers as you walk.
-    ctx.scale(this.zoom, this.zoom);
-    ctx.translate(
-      Math.round(this.width / 2 - camera.x * this.zoom) / this.zoom,
-      Math.round(this.height / 2 - camera.y * this.zoom) / this.zoom,
-    );
+    pctx.fillStyle = BETWEEN.fog;
+    pctx.fillRect(0, 0, this.width, this.height);
+
+    pctx.save();
+    this.toWorld(pctx, camera, artPerCss);
 
     this.drawGround(world, camera);
     this.drawProps(world, camera);
@@ -299,10 +366,34 @@ export class Renderer {
     this.drawSwing(world);
     this.drawPlayer(world);
     this.drawFog(world, camera);
+
+    pctx.restore();
+    pctx.restore();
+
+    // One hardware-scaled copy, smoothing off. This is the whole effect.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      this.pixels,
+      0,
+      0,
+      this.bufferW,
+      this.bufferH,
+      0,
+      0,
+      this.bufferW * ART_PIXEL,
+      this.bufferH * ART_PIXEL,
+    );
+    ctx.imageSmoothingEnabled = true;
+
+    // The crisp layer: damage numbers and the stick. Text three art-pixels tall
+    // is not a style, and the stick belongs with the HUD, which is DOM.
+    ctx.save();
+    ctx.scale(this.dpr, this.dpr);
+    ctx.save();
+    this.toWorld(ctx, camera, artPerCss);
     this.drawFloaters();
-
     ctx.restore();
-
     if (input) this.drawJoystick(input);
     ctx.restore();
   }
@@ -327,7 +418,7 @@ export class Renderer {
   }
 
   private drawGround(world: World, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 80);
 
     ctx.fillStyle = BETWEEN.ground;
@@ -366,7 +457,7 @@ export class Renderer {
 
   /** Feathered so a region blends into the forest rather than snapping on. */
   private drawBiome(disc: BiomeDisc): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const gradient = ctx.createRadialGradient(disc.x, disc.y, disc.radius * 0.55, disc.x, disc.y, disc.radius);
     gradient.addColorStop(0, disc.palette.ground);
     gradient.addColorStop(0.82, disc.palette.ground);
@@ -391,7 +482,7 @@ export class Renderer {
    * kinds are what actually distinguish a snowfield from a server floor.
    */
   private drawProps(world: World, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 40);
 
     for (const prop of world.propsIn(bounds.left, bounds.top, bounds.right, bounds.bottom)) {
@@ -545,7 +636,7 @@ export class Renderer {
    * is warmer than the bulletins because it was written by hand.
    */
   private drawNotes(world: World, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 60);
 
     for (const note of world.notes) {
@@ -601,7 +692,7 @@ export class Renderer {
   }
 
   private drawNodes(world: World, state: RenderState, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 70);
 
     for (const node of world.nodes) {
@@ -652,7 +743,7 @@ export class Renderer {
    */
   private drawPullRing(world: World, state: RenderState): void {
     if (!state.pulling) return;
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const { player } = world;
     const pulse = 0.5 + Math.sin(world.time * 9) * 0.18;
 
@@ -676,7 +767,7 @@ export class Renderer {
   // ---------------------------------------------------------------- enemies
 
   private drawEnemies(world: World, state: RenderState, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 90);
 
     for (const enemy of world.enemies) {
@@ -781,7 +872,7 @@ export class Renderer {
    *   than as a precise fix on something the player cannot actually see.
    */
   private drawOffscreenMarker(enemy: World['enemies'][number], world: World, nearness: number): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const dx = enemy.x - world.player.x;
     const dy = enemy.y - world.player.y;
     const angle = Math.atan2(dy, dx);
@@ -825,7 +916,7 @@ export class Renderer {
     if (strength <= 0.01) return;
 
     const disc = world.biomeAt(world.player.x, world.player.y);
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const reach = Math.max(this.width, this.height) / this.zoom;
 
     /*
@@ -866,7 +957,7 @@ export class Renderer {
     const { player } = world;
     if (player.attackAnim <= 0) return;
 
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const attack = this.content.progression.combat.basicAttack;
     // 0 at the start of the swing, 1 at the end.
     const t = 1 - player.attackAnim / SWING_SECONDS;
@@ -907,7 +998,7 @@ export class Renderer {
   // ---------------------------------------------------------------- player
 
   private drawPlayer(world: World): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const { player } = world;
     const bob = Math.sin(player.bob) * 2.5;
 
@@ -1052,7 +1143,7 @@ export class Renderer {
    * thing on screen the player has to be able to see coming.
    */
   private drawProjectiles(world: World): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     for (const shot of world.projectiles) {
       // A short tail along its own heading, so a still frame shows a direction
       // rather than a dot. This is most of what makes it readable in motion.
@@ -1091,7 +1182,7 @@ export class Renderer {
    * something you can see rather than something you infer from losing.
    */
   private drawMending(world: World): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     for (const healer of world.enemies) {
       const aura = healer.def.mends;
       if (!aura || healer.dead || healer.mendAnim <= 0) continue;
@@ -1116,7 +1207,7 @@ export class Renderer {
   }
 
   private drawDeletions(): void {
-    for (const effect of this.deletions) drawDeletion(this.ctx, effect);
+    for (const effect of this.deletions) drawDeletion(this.pctx, effect);
   }
 
   /** Outer ring and knob radius, in CSS pixels. Sized to a thumb, not a cursor. */

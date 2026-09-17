@@ -582,7 +582,6 @@ const PAD = 1.25;
 // Offset far enough to clear the keyline. At 0.03 the outline, which is 0.026
 // wide and fully opaque, sat on top of the shadow and hid it entirely.
 const SHADOW_OFFSET = 0.062;
-const SHADOW_BLUR = 0.022;
 const SHADOW_ALPHA = 0.36;
 const BEVEL = 0.022;
 /** Keyline thickness, as a fraction of the rendered box. */
@@ -693,9 +692,19 @@ function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement
     half - artSize * 0.2, half - artSize * 0.26, 0,
     half - artSize * 0.2, half - artSize * 0.26, artSize * 0.46,
   );
-  spec.addColorStop(0, 'rgba(255,255,255,0.3)');
-  spec.addColorStop(0.55, 'rgba(255,255,255,0.07)');
-  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  /*
+   * Two flat steps, like the light pass above it.
+   *
+   * This was a continuous ramp, which is invisible at the size an icon used to
+   * be drawn and obvious now that the world is rendered at art resolution: a
+   * smooth falloff sampled onto a grid four device pixels wide is a smudge on
+   * the shape rather than a highlight on it.
+   */
+  spec.addColorStop(0, 'rgba(255,255,255,0.26)');
+  spec.addColorStop(0.42, 'rgba(255,255,255,0.26)');
+  spec.addColorStop(0.43, 'rgba(255,255,255,0.08)');
+  spec.addColorStop(0.72, 'rgba(255,255,255,0.08)');
+  spec.addColorStop(0.73, 'rgba(255,255,255,0)');
   artCtx.fillStyle = spec;
   artCtx.fillRect(0, 0, px, px);
 
@@ -703,8 +712,15 @@ function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement
   const bevel = Math.max(1, px * BEVEL);
   const rim = edgeBand(mask, px, bevel, bevel, '#fff6e2');
   const occlusion = edgeBand(mask, px, -bevel, -bevel, '#0e0a18');
+  /*
+   * No blur on the bevel.
+   *
+   * It was a 0.6px gaussian, which read as a soft edge when an icon was 96
+   * device pixels across and reads as a grey fringe now that the same icon is
+   * 24. Pixel art gets its roundness from where the steps are, not from
+   * smearing them.
+   */
   const blurs = typeof artCtx.filter === 'string';
-  if (blurs) artCtx.filter = `blur(${bevel * 0.6}px)`;
   if (rim) {
     artCtx.globalAlpha = 0.6;
     artCtx.drawImage(rim, 0, 0);
@@ -713,13 +729,12 @@ function renderIcon(shape: string, color: string, px: number): HTMLCanvasElement
     artCtx.globalAlpha = 0.5;
     artCtx.drawImage(occlusion, 0, 0);
   }
-  if (blurs) artCtx.filter = 'none';
   artCtx.globalAlpha = 1;
 
   // The drop shadow is the silhouette again: `brightness(0)` keeps the alpha and
   // throws the colour away, which beats approximating 38 outlines by hand.
   if (blurs) {
-    outCtx.filter = `blur(${Math.max(0.75, px * SHADOW_BLUR)}px) brightness(0)`;
+    outCtx.filter = 'brightness(0)';
     outCtx.globalAlpha = SHADOW_ALPHA;
     outCtx.drawImage(mask, px * SHADOW_OFFSET, px * SHADOW_OFFSET * 1.3);
     outCtx.filter = 'none';
