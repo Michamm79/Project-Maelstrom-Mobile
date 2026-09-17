@@ -17,7 +17,7 @@ import type { Content } from '../core/content';
 import type { InputController } from './input';
 import type { Screen } from './screen';
 import { DELETION_SECONDS, drawDeletion, makeDeletion, type Deletion } from './deletion';
-import { drawEdge, drawFloor, drawShelf, drawWeather, hasTerrain, shelvesIn } from './terrain';
+import { drawBetween, drawEdge, drawFloor, drawScatter, drawShelf, drawWeather, hasTerrain, shelvesIn } from './terrain';
 
 /** Sprite sheet geometry. Rows match the order make-sprites.mjs emits. */
 const SPRITE_W = 16;
@@ -423,18 +423,21 @@ export class Renderer {
     const ctx = this.pctx;
     const bounds = this.visible(camera, 80);
 
-    ctx.fillStyle = BETWEEN.ground;
-    ctx.fillRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
-
-    // A soft checker so movement reads even on open ground.
-    const cell = 96;
-    ctx.fillStyle = BETWEEN.groundAlt;
-    const x0 = Math.floor(bounds.left / cell) * cell;
-    const y0 = Math.floor(bounds.top / cell) * cell;
-    for (let x = x0; x < bounds.right; x += cell) {
-      for (let y = y0; y < bounds.bottom; y += cell) {
-        if (((x / cell) + (y / cell)) % 2 === 0) ctx.fillRect(x, y, cell, cell);
-      }
+    /*
+     * The ground between the regions is forest, and it wears the forest's tile.
+     *
+     * It used to be a flat fill plus a 96-unit checker, which was a fine
+     * movement cue when the game was smooth and read as enormous flat squares
+     * the moment the world went onto a four-pixel grid. It is also not filler:
+     * 900 of the Coliseum's 1,940 material nodes are scattered out here, which
+     * makes it half the map.
+     */
+    const spawn = world.discs.find((d) => d.id === 'plains_forest');
+    if (spawn) {
+      drawBetween(ctx, spawn, bounds);
+    } else {
+      ctx.fillStyle = BETWEEN.ground;
+      ctx.fillRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
     }
 
     for (const disc of world.discs) {
@@ -457,6 +460,7 @@ export class Renderer {
        */
       if (hasTerrain(disc.id)) {
         drawFloor(ctx, disc);
+        drawScatter(ctx, disc, bounds);
         drawEdge(ctx, disc, bounds);
       } else {
         this.drawBiome(disc);
