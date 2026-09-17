@@ -27,6 +27,16 @@
  *   an opaque orb is a ball, and the one thing this object has to communicate
  *   is that it holds what you have gathered.
  *
+ * ## Pixel art, and why the backdrop is drawn rather than filtered
+ *
+ * Everything behind the character is painted into a 128x128 buffer a pixel at a
+ * time and scaled up with smoothing off. Running a smooth picture through a
+ * pixelate filter would have been a tenth of the work and it produces soft
+ * shapes made of squares - the look of a screenshot that has been through
+ * something, rather than of art that was authored. Drawn, every edge is a
+ * decision: a ridge is a list of integer heights, a snowline is a comparison,
+ * and a tower is four pixels wide because five looked wrong.
+ *
  * ## Why it is stylised rather than rendered
  *
  * The art this reuses is flat, keylined and bold. An earlier pass staged the
@@ -137,424 +147,672 @@ function rng(seed: number): () => number {
   };
 }
 
+/* -------------------------------------------------------------- backdrop -- */
+
+/**
+ * Everything behind the character is drawn as pixel art.
+ *
+ * Not a filter over a smooth picture - a filter gives you soft shapes made of
+ * squares, which is the look of a screenshot that has been through something
+ * rather than of art that was authored. This renders the whole backdrop into a
+ * 128x128 buffer, one pixel at a time, and scales it up with smoothing off. So
+ * every edge is a decision: a ridge is a list of integer heights, a snowline is
+ * a comparison, and a tower is four pixels wide because five looked wrong.
+ *
+ * 128 is chosen against the character. The sprite sheet is 16x24 drawn about
+ * 384 tall, which puts a sprite pixel at roughly 16 screen pixels; the backdrop
+ * lands on 8. Two to one is a deliberate ratio rather than a coincidence - the
+ * figure stays the chunkiest thing in the frame, which is where the eye should
+ * go, and the two grids are still in register.
+ */
+const PX = 128;
+
+/** The horizon, in buffer pixels. */
+const PX_HORIZON = Math.round(HORIZON * PX);
+
+/**
+ * The palette.
+ *
+ * Small on purpose. Pixel art reads by value steps rather than by gradients,
+ * and every colour added is one more step for the eye to resolve at the size a
+ * cover is actually seen. The sky is eight, the rock is four, the snow is
+ * three, the ruin is four.
+ */
+const SKY = [
+  '#3b5280',
+  '#4a5e8b',
+  '#5a6a94',
+  '#626a91',
+  '#787492',
+  '#8e7e91',
+  '#a68992',
+  '#bd9690',
+  '#d0a689',
+  '#e0b886',
+  '#eecb90',
+  '#f8dda6',
+  '#fdeec4',
+];
+const SUN = ['#fffae6', '#ffedbe', '#fcd694'];
+const CLOUD = { dark: '#6e6685', mid: '#a08a8c', lit: '#e6b98e', hot: '#fde3b4' };
+const ROCK = {
+  lit: '#8a7f85',
+  mid: PEAKS.ground,
+  dark: darken(PEAKS.ground, 0.38),
+  far: lighten(PEAKS.groundAlt, 0.16),
+  strata: darken(PEAKS.ground, 0.16),
+};
+const SNOW = {
+  /*
+   * The lit face is warm and the shadowed face is cold.
+   *
+   * Snow under a low sun is the clearest case there is: the faces pointing at
+   * it take the light's colour and the faces pointing away take the sky's.
+   * Drawn from one white with two brightnesses, a range reads as grey card -
+   * which is exactly how the first pass came out.
+   */
+  lit: '#fbe6d2',
+  mid: '#d9cfd8',
+  dark: darken(PEAKS.accent, 0.42),
+};
+/** Rust, for a Data-Center that stopped being maintained a long time ago. */
+const RUST = { lit: '#8a5a3a', mid: '#5f3d2b', dark: '#2f2529', body: '#3d3338', glass: '#23202b' };
+const TREE = { lit: '#2b3d31', dark: '#18231d' };
+const FOG = ['#b9adb4', '#8f8694'] as const;
+
+/**
+ * A 4x4 ordered dither.
+ *
+ * The one technique this whole backdrop depends on. A sunset is a gradient and
+ * a gradient in eight colours is eight stripes; threshold each pixel against
+ * this matrix on the way between two steps and the stripes break up into the
+ * speckled transitions that read as pixel-art sky rather than as banding.
+ */
+const BAYER = [
+  [0, 8, 2, 10],
+  [12, 4, 14, 6],
+  [3, 11, 1, 9],
+  [15, 7, 13, 5],
+];
+
+function dither(x: number, y: number, frac: number): boolean {
+  return (BAYER[y & 3]![x & 3]! + 0.5) / 16 < frac;
+}
+
+/** One pixel. */
+function px(g: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+  if (x < 0 || y < 0 || x >= PX || y >= PX) return;
+  g.fillStyle = color;
+  g.fillRect(x, y, 1, 1);
+}
+
+/** A run of pixels, which is most of what this file draws. */
+function row(g: CanvasRenderingContext2D, x0: number, x1: number, y: number, color: string): void {
+  if (y < 0 || y >= PX) return;
+  const a = Math.max(0, Math.min(x0, x1));
+  const b = Math.min(PX - 1, Math.max(x0, x1));
+  if (b < a) return;
+  g.fillStyle = color;
+  g.fillRect(a, y, b - a + 1, 1);
+}
+
+function column(g: CanvasRenderingContext2D, x: number, y0: number, y1: number, color: string): void {
+  if (x < 0 || x >= PX) return;
+  const a = Math.max(0, Math.min(y0, y1));
+  const b = Math.min(PX - 1, Math.max(y0, y1));
+  if (b < a) return;
+  g.fillStyle = color;
+  g.fillRect(x, a, 1, b - a + 1);
+}
+
 /* ------------------------------------------------------------------ sky -- */
 
-function drawSky(ctx: CanvasRenderingContext2D, S: number): void {
-  const sky = ctx.createLinearGradient(0, 0, 0, S * HORIZON);
-  sky.addColorStop(0, '#070c15');
-  sky.addColorStop(0.45, '#101b28');
-  sky.addColorStop(0.82, '#21333e');
-  sky.addColorStop(1, '#324a52');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, S, S * HORIZON + 2);
-
-  /*
-   * The maelstrom, faint and high.
-   *
-   * The brief did not ask for it and it is deliberately almost not there: the
-   * subject here is the place and the person, and a storm drawn to compete
-   * would take the image off them. But a cover called Project Maelstrom with no
-   * maelstrom anywhere in it has quietly changed the subject, so it sits in the
-   * sky where weather goes.
-   */
-  const cx = S * 0.5;
-  const cy = S * 0.205;
-  const TURNS = 2.6;
-  const R_MIN = 0.06;
-  const R_MAX = 0.62;
-  const k = Math.log(R_MAX / R_MIN) / (TURNS * Math.PI * 2);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(1, 0.3);
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.lineCap = 'round';
-  for (let arm = 0; arm < 5; arm++) {
-    const offset = (arm / 5) * Math.PI * 2;
-    const at = (t: number) => {
-      const theta = t * TURNS * Math.PI * 2;
-      const r = R_MAX * Math.exp(-k * theta);
-      return { x: Math.cos(theta + offset) * r * S, y: Math.sin(theta + offset) * r * S };
-    };
-    const STEPS = 240;
-    for (let i = 0; i < STEPS; i++) {
-      const a = at(i / STEPS);
-      const b = at((i + 1) / STEPS);
-      const fade = Math.pow(i / STEPS, 1.6);
-      ctx.strokeStyle = withAlpha(PULL, 0.06 * (fade * 0.9 + 0.1));
-      ctx.lineWidth = S * 0.006 * (0.3 + fade);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+function paintSky(g: CanvasRenderingContext2D): void {
+  const last = SKY.length - 1;
+  for (let y = 0; y < PX_HORIZON; y++) {
+    // Squared, so the warm end of the ramp is compressed into the few rows
+    // above the horizon the way a real sunset compresses it.
+    const t = Math.pow(y / (PX_HORIZON - 1), 1.12);
+    const f = t * last;
+    const i = Math.min(last - 1, Math.floor(f));
+    const frac = f - i;
+    for (let x = 0; x < PX; x++) {
+      px(g, x, y, dither(x, y, frac) ? SKY[i + 1]! : SKY[i]!);
     }
   }
-  ctx.restore();
+}
 
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const eye = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.17);
-  eye.addColorStop(0, withAlpha(PULL, 0.17));
-  eye.addColorStop(0.22, withAlpha(PULL, 0.06));
-  eye.addColorStop(1, withAlpha(PULL, 0));
-  ctx.fillStyle = eye;
-  ctx.fillRect(cx - S * 0.22, cy - S * 0.22, S * 0.44, S * 0.44);
-  ctx.restore();
+/**
+ * The sun, low and to the right.
+ *
+ * Its glow is drawn as discrete rings rather than a radial gradient, for the
+ * same reason the sky is dithered: a soft falloff sampled onto a 128-pixel grid
+ * is a smudge, and a ring of one colour is a sun.
+ */
+function paintSun(g: CanvasRenderingContext2D): void {
+  const sx = 104;
+  const sy = 33;
+
+  for (const [r, color, chance] of [
+    [20, SKY[8]!, 0.4],
+    [14, SKY[9]!, 0.55],
+    [10, SUN[2]!, 0.9],
+    [7, SUN[1]!, 1],
+    [4, SUN[0]!, 1],
+  ] as const) {
+    for (let y = sy - r; y <= sy + r; y++) {
+      for (let x = sx - r; x <= sx + r; x++) {
+        const d = Math.hypot(x - sx, (y - sy) * 1.05);
+        if (d > r) continue;
+        // Ragged edges on the outer rings, so the glow does not read as a
+        // series of concentric discs.
+        if (chance < 1 && d > r - 3 && !dither(x, y, chance * (1 - (d - (r - 3)) / 3))) continue;
+        px(g, x, y, color);
+      }
+    }
+  }
+
+  // The band of light it throws along the horizon.
+  for (let y = PX_HORIZON - 12; y < PX_HORIZON; y++) {
+    const t = 1 - (PX_HORIZON - y) / 12;
+    for (let x = 40; x < PX; x++) {
+      const across = Math.min(1, (x - 40) / 70);
+      if (dither(x, y, t * across * 0.55)) px(g, x, y, SKY[7]!);
+    }
+  }
+}
+
+/**
+ * Cloud banks.
+ *
+ * Built from rows rather than from a shape: each cloud is a stack of runs whose
+ * width comes from a sine, which gives the soft lozenge a cloud has without
+ * ever leaving the grid. Three values - a shadowed underside, a body, and one
+ * lit row on top facing the sun - is the whole of the shading, and it is enough
+ * because the sun is low and to one side.
+ */
+function paintClouds(g: CanvasRenderingContext2D): void {
+  const random = rng(0xc10d5);
+  const banks: { x: number; y: number; w: number; h: number; lit: boolean }[] = [];
+
+  for (let i = 0; i < 26; i++) {
+    const y = 24 + Math.pow(random(), 0.6) * (PX_HORIZON - 34);
+    banks.push({
+      x: random() * PX,
+      y,
+      w: 6 + random() * 26,
+      h: 2 + random() * 3,
+      // Only the ones near the sun catch the hot edge.
+      lit: random() > 0.45,
+    });
+  }
+  banks.sort((a, b) => a.y - b.y);
+
+  for (const bank of banks) {
+    const cx = Math.round(bank.x);
+    const cy = Math.round(bank.y);
+    const h = Math.round(bank.h);
+    for (let r = 0; r <= h; r++) {
+      const k = r / h;
+      const w = Math.round((bank.w / 2) * Math.sin((1 - k * 0.85) * Math.PI * 0.5));
+      const y = cy + r;
+      const near = Math.max(0, 1 - Math.abs(cx - 104) / 70) * Math.max(0, 1 - Math.abs(cy - 33) / 40);
+      const body = r === h ? CLOUD.dark : k > 0.45 ? CLOUD.mid : CLOUD.lit;
+      row(g, cx - w, cx + w, y, body);
+      if (r === 0 && bank.lit) {
+        row(g, cx - w + 1, cx + w - 1, y, near > 0.25 ? CLOUD.hot : CLOUD.lit);
+      }
+    }
+  }
 }
 
 /* ----------------------------------------------------------------- wall -- */
 
 /**
- * The boundary of the Coliseum, from inside it.
+ * The boundary, still there and now a long way off.
  *
- * The curve is not decoration. A circular wall of constant height, seen from
- * inside, projects with its top edge LOWEST on the far side and rising toward
- * both edges of the frame, where the wall comes closest to you. Drawn straight
- * it is a fence across a field; drawn as a shallow valley it reads as being
- * surrounded, which is the fact canon is most insistent about.
- *
- * It is one of the palest things in the image rather than the darkest. In a
- * flat, layered picture distance is carried by haze, and this is the furthest
- * plane there is - so it sits close to the colour of the sky it stands against,
- * and only its lit crest says where it ends.
+ * A circular wall seen from inside projects with its top edge lowest on the far
+ * side and rising toward both edges of the frame, where it comes closest - so
+ * the crest is a shallow valley, not a line. It sits behind the mountains and
+ * below the peak, which is the only way to say "this encloses a landscape"
+ * rather than "this is a fence".
  */
-function drawWall(ctx: CanvasRenderingContext2D, S: number): void {
-  const far = S * 0.285;
-  const near = S * 0.165;
-  const top = (x: number) => {
-    const d = (x / S - 0.5) * 2;
-    return far - (far - near) * d * d;
+function paintWall(g: CanvasRenderingContext2D): void {
+  const crest = (x: number) => {
+    const d = (x / PX - 0.5) * 2;
+    return Math.round(54 - 13 * d * d);
   };
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(0, top(0));
-  for (let x = 0; x <= S; x += S / 160) ctx.lineTo(x, top(x));
-  ctx.lineTo(S, S * HORIZON);
-  ctx.lineTo(0, S * HORIZON);
-  ctx.closePath();
-
-  const face = ctx.createLinearGradient(0, near, 0, S * HORIZON);
-  face.addColorStop(0, '#3a505f');
-  face.addColorStop(0.5, '#334858');
-  face.addColorStop(1, '#2b3f50');
-  ctx.fillStyle = face;
-  ctx.fill();
-
-  // Buttresses. The wall needs a rhythm or it is a bank of fog; they deepen
-  // toward the edges, which is the part of it that is nearest.
-  ctx.clip();
-  for (let i = 0; i <= 88; i++) {
-    const x = (i / 88) * S;
-    const d = Math.abs(x / S - 0.5) * 2;
-    ctx.fillStyle = withAlpha('#0b1622', 0.05 + d * 0.17);
-    ctx.fillRect(x - S * 0.004, top(x), S * 0.008, S);
-  }
-
-  // Two string courses, which is the cheapest way to say "built".
-  for (const t of [0.3, 0.58]) {
-    ctx.fillStyle = withAlpha('#0b1622', 0.13);
-    ctx.beginPath();
-    ctx.moveTo(0, top(0) + (S * HORIZON - top(0)) * t);
-    for (let x = 0; x <= S; x += S / 160) {
-      ctx.lineTo(x, top(x) + (S * HORIZON - top(x)) * t);
+  for (let x = 0; x < PX; x++) {
+    const top = crest(x);
+    const d = Math.abs(x / PX - 0.5) * 2;
+    for (let y = top; y < PX_HORIZON; y++) {
+      // Haze: the wall fades into the sky it stands against, and more so the
+      // further away that part of it is.
+      const depth = (y - top) / Math.max(1, PX_HORIZON - top);
+      const hazed = dither(x, y, 0.38 - depth * 0.22 - d * 0.12);
+      px(g, x, y, hazed ? '#4b566b' : '#3d4859');
     }
-    for (let x = S; x >= 0; x -= S / 160) {
-      ctx.lineTo(x, top(x) + (S * HORIZON - top(x)) * t + S * 0.005);
+    // Ribs, every fourth pixel, deeper toward the near edges.
+    if (x % 4 === 0) {
+      for (let y = top + 1; y < PX_HORIZON; y++) {
+        if (dither(x, y, 0.35 + d * 0.3)) px(g, x, y, '#333d4d');
+      }
     }
-    ctx.closePath();
-    ctx.fill();
+    // The lit crest.
+    px(g, x, top, dither(x, top, 0.9 - d * 0.35) ? '#a8c6cf' : '#7d9aa8');
+    px(g, x, top + 1, dither(x, top + 1, 0.45 - d * 0.2) ? '#6d8a99' : '#4b566b');
   }
-  ctx.restore();
-
-  // The lit crest.
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.lineWidth = S * 0.0026;
-  ctx.beginPath();
-  ctx.moveTo(0, top(0));
-  for (let x = 0; x <= S; x += S / 160) ctx.lineTo(x, top(x));
-  const rim = ctx.createLinearGradient(0, 0, S, 0);
-  rim.addColorStop(0, withAlpha(PULL, 0.18));
-  rim.addColorStop(0.5, withAlpha(PULL, 0.44));
-  rim.addColorStop(1, withAlpha(PULL, 0.18));
-  ctx.strokeStyle = rim;
-  ctx.stroke();
-  ctx.restore();
 }
 
 /* ------------------------------------------------------------ mountains -- */
 
 /**
- * The Snowy Mountain, in two ranges.
+ * A ridge, as an array of one height per column.
  *
- * Two, so the plane has a depth of its own: the far one paler and lower, the
- * near one darker with the caps actually lit. Peaks come from a seeded walk
- * rather than being placed, because a hand-placed range at this width either
- * repeats or wanders, and both read as a texture rather than a horizon.
+ * Everything about the range is decided here and then read back by the painter:
+ * where the rock is lit, where the snow starts, where the trees can grow. A
+ * ridge drawn straight to the canvas would have to be re-derived for each of
+ * those; a ridge held as numbers is queried.
  */
-function range(
-  ctx: CanvasRenderingContext2D,
-  opts: {
-    seed: number;
-    from: number;
-    to: number;
-    base: number;
-    high: number;
-    low: number;
-    fill: string;
-    snow?: string;
-    step: number;
-  },
-): void {
-  const random = rng(opts.seed);
-  const pts: { x: number; y: number }[] = [];
-  let x = opts.from;
-  let up = true;
-  while (x < opts.to) {
-    const y = up
-      ? opts.high + random() * (opts.low - opts.high) * 0.55
-      : opts.low - random() * (opts.low - opts.high) * 0.28;
-    pts.push({ x, y });
-    x += opts.step * (0.55 + random() * 0.9);
-    up = !up;
-  }
-  pts.push({ x: opts.to, y: opts.low });
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(opts.from, opts.base);
-  for (const p of pts) ctx.lineTo(p.x, p.y);
-  ctx.lineTo(opts.to, opts.base);
-  ctx.closePath();
-  ctx.fillStyle = opts.fill;
-  ctx.fill();
-
-  /*
-   * Snow on the peaks, as a flat wedge rather than a fade.
-   *
-   * A gradient here reads as mist sitting on a hill; a hard edge reads as snow
-   * on rock, which is the same reason the material icons in this project have
-   * a keyline instead of soft shading.
-   */
-  if (opts.snow) {
-    ctx.clip();
-    for (let i = 1; i < pts.length - 1; i++) {
-      const p = pts[i]!;
-      const prev = pts[i - 1]!;
-      const next = pts[i + 1]!;
-      if (!(p.y < prev.y && p.y < next.y)) continue;
-      const drop = Math.min(prev.y, next.y) - p.y;
-      const cap = p.y + drop * (0.3 + (i % 3) * 0.07);
-      ctx.fillStyle = opts.snow;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - (p.x - prev.x) * ((cap - p.y) / (prev.y - p.y)), cap);
-      ctx.lineTo(p.x + (next.x - p.x) * ((cap - p.y) / (next.y - p.y)), cap);
-      ctx.closePath();
-      ctx.fill();
+function ridgeline(seed: number, from: number, to: number, peaks: { at: number; top: number }[], base: number): number[] {
+  const random = rng(seed);
+  const line: number[] = new Array(PX).fill(base);
+  for (let x = from; x <= to; x++) {
+    let y = base;
+    for (const peak of peaks) {
+      const d = Math.abs(x - peak.at);
+      const reach = 26 + peak.top * 0.35;
+      if (d > reach) continue;
+      // A peak is two straight faces, not a bell: a curve reads as a hill and
+      // the reference is granite.
+      y = Math.min(y, peak.top + d * ((base - peak.top) / reach));
     }
+    // Break the faces up so they are not two clean diagonals.
+    y += Math.round((random() - 0.5) * 2.4);
+    line[x] = Math.round(y);
   }
-  ctx.restore();
+  // One smoothing pass, which keeps the jitter but removes single-pixel spikes.
+  const out = line.slice();
+  for (let x = from + 1; x < to; x++) {
+    out[x] = Math.round((line[x - 1]! + line[x]! * 2 + line[x + 1]!) / 4);
+  }
+  return out;
 }
 
-function drawMountains(ctx: CanvasRenderingContext2D, S: number): void {
-  range(ctx, {
-    seed: 0x51a7e,
-    from: -S * 0.05,
-    to: S * 0.66,
-    base: S * HORIZON,
-    high: S * 0.325,
-    low: S * 0.5,
-    fill: lighten(PEAKS.ground, 0.14),
-    step: S * 0.08,
-  });
-  range(ctx, {
-    seed: 0x2bb14,
-    from: -S * 0.05,
-    to: S * 0.54,
-    base: S * HORIZON,
-    high: S * 0.375,
-    low: S * 0.535,
-    fill: darken(PEAKS.ground, 0.18),
-    snow: withAlpha(PEAKS.accent, 0.6),
-    step: S * 0.095,
-  });
-  /*
-   * A third range, nearest and darkest.
-   *
-   * Two ranges came out as two grey cards leaning on each other - the eye reads
-   * a plane as flat until something in front of it is a different value. The
-   * near one is low and dark enough to be a foothill rather than a peak, which
-   * is what gives the other two somewhere to be.
-   */
-  range(ctx, {
-    seed: 0x7c0a1,
-    from: -S * 0.05,
-    to: S * 0.46,
-    base: S * HORIZON,
-    high: S * 0.462,
-    low: S * 0.552,
-    fill: darken(PEAKS.ground, 0.52),
-    step: S * 0.07,
-  });
+function paintRange(
+  g: CanvasRenderingContext2D,
+  line: number[],
+  from: number,
+  to: number,
+  opts: { rock: [string, string]; snowline: number; snow?: [string, string]; base: number },
+): void {
+  const random = rng(0x5170e + from);
+  for (let x = from; x <= to; x++) {
+    const y0 = line[x]!;
+    const slope = (line[Math.min(to, x + 1)]! - line[Math.max(from, x - 1)]!) / 2;
+    // The sun is on the right, so a face descending to the right catches it.
+    const lit = slope > 0.15;
+    column(g, x, y0, opts.base, lit ? opts.rock[0]! : opts.rock[1]!);
+
+    /*
+     * Strata.
+     *
+     * Without them a face is one flat column and the range reads as cut paper.
+     * Bands that follow the ridge rather than the horizon, broken by the same
+     * noise that made the ridge, are what turn a silhouette into rock.
+     */
+    for (let band = 1; band <= 3; band++) {
+      const y = y0 + band * 5 + Math.round(Math.sin(x * 0.35 + band) * 2);
+      if (y < opts.base && random() > 0.25) {
+        px(g, x, y, ROCK.strata);
+        if (random() > 0.6) px(g, x, y + 1, opts.rock[1]!);
+      }
+    }
+
+    if (opts.snow && y0 < opts.snowline) {
+      // Deeper snow the higher the ground, with a ragged lower edge so the
+      // snowline is not a contour drawn on the hill.
+      const depth = Math.round((opts.snowline - y0) * (lit ? 0.62 : 0.4) + random() * 2.2);
+      for (let y = y0; y < y0 + depth; y++) {
+        px(g, x, y, lit ? opts.snow[0]! : opts.snow[1]!);
+      }
+      // A hard bright pixel right on the ridge: the light edge is what makes a
+      // flat shape read as a solid with a top.
+      if (lit) px(g, x, y0, SNOW.lit);
+    } else if (lit) {
+      px(g, x, y0, opts.rock[0]!);
+    }
+  }
+}
+
+/**
+ * Conifers.
+ *
+ * A tree is six rows of widths 0,0,1,1,2,2 and a one-pixel trunk. The first
+ * version scaled the width by height and produced 0,0,1,1 at every size, which
+ * is a blob with a point on it; a conifer is only legible at this scale if the
+ * steps are authored rather than derived.
+ */
+function paintTrees(g: CanvasRenderingContext2D, line: number[], from: number, to: number, seed: number, density: number): void {
+  const random = rng(seed);
+  for (let x = from; x <= to; x++) {
+    if (random() > density) continue;
+    const base = line[x]! + 1;
+    const tall = random() > 0.6;
+    const widths = tall ? [0, 0, 1, 1, 1, 2, 2] : [0, 0, 1, 1, 2];
+    const shade = random() > 0.45 ? TREE.lit : TREE.dark;
+    for (let i = 0; i < widths.length; i++) {
+      const y = base - widths.length + i;
+      row(g, x - widths[i]!, x + widths[i]!, y, shade);
+    }
+    px(g, x, base, TREE.dark);
+  }
 }
 
 /* ----------------------------------------------------------- data-centre -- */
 
 /**
- * The Data-Center, abandoned and still running.
+ * The Data-Center, rusted through.
  *
- * Canon's line for the region is "neon light and coolant fog, still running,
- * with growth creeping through it", so the silhouette is a block plant with a
- * handful of windows left on and two stacks venting - lit, but nobody home.
- * Most windows are dark deliberately: a fully lit block is an office at night.
- * The lights are the region's own accent, the same cyan the coolant material is
- * drawn in, so the horizon and the thing in the orb rhyme.
+ * Canon's line for the region is "still running, with growth creeping through
+ * it", and the earlier pass drew that as a lit skyline - which came out as a
+ * city at night rather than as a ruin. Rust reads as abandonment at a glance in
+ * a way that a dark window does not, so the towers are iron oxide, their tops
+ * are broken rather than flat, and exactly four windows in the whole plant are
+ * still lit. That is the "still running" part, and four is enough to be
+ * unsettling where forty would be a commute.
  */
-function drawRuin(ctx: CanvasRenderingContext2D, S: number): void {
-  const base = S * HORIZON;
+function paintRuin(g: CanvasRenderingContext2D, base: number): void {
   const random = rng(0xda7ace);
 
-  const blocks: { x: number; w: number; h: number; lean: number }[] = [
-    { x: 0.6, w: 0.07, h: 0.062, lean: 0 },
-    { x: 0.663, w: 0.105, h: 0.118, lean: 0 },
-    { x: 0.762, w: 0.052, h: 0.168, lean: -0.011 },
-    { x: 0.808, w: 0.125, h: 0.095, lean: 0 },
-    { x: 0.925, w: 0.082, h: 0.138, lean: 0.007 },
-    { x: 1.0, w: 0.08, h: 0.076, lean: 0 },
+  /*
+   * Shapes, not a skyline.
+   *
+   * The first version rolled a row of rust-coloured columns and came out as a
+   * fence: same width, same colour, same top. A plant reads as a plant because
+   * the parts do different jobs - long low halls, a couple of stacks, two
+   * cooling towers that are wider at the bottom, and one tower that used to be
+   * the tall one. Rust is the accent on a dark body rather than the body
+   * itself, which is the difference between corroded steel and timber.
+   */
+  const halls: { x: number; w: number; h: number }[] = [
+    { x: 60, w: 13, h: 7 },
+    { x: 75, w: 18, h: 5 },
+    { x: 96, w: 11, h: 6 },
+    { x: 110, w: 16, h: 8 },
+  ];
+  const blocks: { x: number; w: number; h: number }[] = [
+    { x: 63, w: 5, h: 15 },
+    { x: 70, w: 7, h: 22 },
+    { x: 84, w: 4, h: 13 },
+    { x: 90, w: 6, h: 27 },
+    { x: 100, w: 5, h: 17 },
+    { x: 112, w: 7, h: 20 },
+    { x: 121, w: 5, h: 12 },
   ];
 
-  ctx.save();
-  for (const b of blocks) {
-    const x = b.x * S;
-    const w = b.w * S;
-    const h = b.h * S;
-    const lean = b.lean * S;
+  const solid = (x: number, w: number, h: number, bite: boolean) => {
+    for (let cx = x; cx < x + w; cx++) {
+      const top = base - h + (bite && random() > 0.7 ? 1 + Math.floor(random() * 3) : 0);
+      const face = cx === x + w - 1 ? RUST.mid : cx === x ? RUST.dark : RUST.body;
+      column(g, cx, top, base, face);
+      // Streaking: rust runs DOWN from the top edge, which is the one detail
+      // that says corrosion rather than paint.
+      if (random() > 0.55) {
+        column(g, cx, top, Math.min(base, top + 2 + Math.floor(random() * 6)), RUST.lit);
+      }
+      // Dead glass, in bands.
+      for (let y = top + 3; y < base - 1; y += 3) {
+        if (cx > x && cx < x + w - 1 && random() > 0.45) px(g, cx, y, RUST.glass);
+      }
+    }
+  };
 
-    ctx.fillStyle = darken(RUIN.ground, 0.12);
-    ctx.beginPath();
-    ctx.moveTo(x, base);
-    ctx.lineTo(x + lean, base - h);
-    ctx.lineTo(x + w + lean, base - h);
-    ctx.lineTo(x + w, base);
-    ctx.closePath();
-    ctx.fill();
+  for (const h of halls) solid(h.x, h.w, h.h, false);
+  for (const b of blocks) solid(b.x, b.w, b.h, true);
 
-    // The lit edge, on the side the sky is brightest.
-    ctx.fillStyle = withAlpha(lighten(RUIN.accent, 0.1), 0.18);
-    ctx.fillRect(x + lean, base - h, Math.max(1, S * 0.0035), h);
+  // Two cooling towers: wider at the base, open at the top, and the only
+  // curved thing in the plant.
+  for (const [tx, th] of [
+    [79, 19],
+    [105, 15],
+  ] as const) {
+    for (let i = 0; i < th; i++) {
+      const k = i / th;
+      const w = Math.round(3 + Math.pow(1 - k, 2.2) * 3 + k * 1.4);
+      const y = base - i;
+      row(g, tx - w, tx + w, y, RUST.body);
+      px(g, tx + w, y, RUST.mid);
+      px(g, tx - w, y, RUST.dark);
+      if (random() > 0.72) px(g, tx - w + 1 + Math.floor(random() * (w * 2 - 1)), y, RUST.lit);
+    }
+    const lip = Math.round(3 + 1.4);
+    row(g, tx - lip, tx + lip, base - th, RUST.dark);
+  }
 
-    const cols = Math.max(2, Math.round(b.w * 26));
-    const rows = Math.max(3, Math.round(b.h * 26));
-    for (let cx = 0; cx < cols; cx++) {
-      for (let cy = 0; cy < rows; cy++) {
-        if (random() > 0.2) continue;
-        const wx = x + lean * (1 - cy / rows) + (w * (cx + 0.3)) / cols;
-        const wy = base - h + (h * (cy + 0.35)) / rows;
-        ctx.fillStyle = withAlpha(
-          random() > 0.72 ? RUIN.accent : material('capacitor_core').color,
-          0.3 + random() * 0.5,
-        );
-        ctx.fillRect(wx, wy, (w / cols) * 0.42, (h / rows) * 0.34);
+  // The tall stack, bent. A straight one reads as maintained.
+  const sx = 93;
+  for (let i = 0; i < 30; i++) {
+    const drift = i > 20 ? 1 : 0;
+    px(g, sx + drift, base - 27 - i, i > 24 ? RUST.dark : RUST.body);
+    px(g, sx + 1 + drift, base - 27 - i, RUST.mid);
+  }
+  row(g, sx - 1, sx + 3, base - 27 - 14, RUST.dark);
+
+  /*
+   * Four lights in the whole plant.
+   *
+   * "Still running" is canon's line for this region, and four is the number
+   * that says it: forty is a commute, none is a ruin, four is something that
+   * never got switched off.
+   */
+  for (const [lx, ly, color] of [
+    [72, base - 16, RUIN.accent],
+    [86, base - 9, material('capacitor_core').color],
+    [92, base - 24, RUIN.accent],
+    [115, base - 13, material('capacitor_core').color],
+  ] as const) {
+    px(g, lx, ly, color);
+    px(g, lx + 1, ly, withAlpha(color, 0.45));
+  }
+}
+
+/* ----------------------------------------------------------------- fog -- */
+
+/**
+ * The cloud sitting in the valley, which is the reference photograph's whole
+ * trick: it separates the ranges from each other and hides where each one
+ * meets the ground, so the eye reads depth instead of a stack of cut-outs.
+ */
+function paintFog(g: CanvasRenderingContext2D, y: number, from: number, to: number, seed: number, strength: number): void {
+  const random = rng(seed);
+  for (let i = 0; i < 34; i++) {
+    const fx = Math.round(from + random() * (to - from));
+    const fy = Math.round(y + (random() - 0.5) * 5);
+    const w = Math.round(4 + random() * 14);
+    const rows = 1 + Math.round(random());
+    for (let r = 0; r < rows; r++) {
+      let x = fx - w;
+      while (x <= fx + w) {
+        // Runs with gaps rather than a per-pixel threshold. A dither on a
+        // single colour lands on the grid as a checkerboard, and a
+        // checkerboard is the one texture that never reads as vapour.
+        const run = 1 + Math.round(random() * 3);
+        const edge = 1 - Math.abs(x - fx) / (w + 1);
+        if (random() < edge * strength) {
+          row(g, x, x + run - 1, fy + r, r === 0 && random() > 0.45 ? FOG[0] : FOG[1]);
+        }
+        x += run + Math.round(random() * 2);
       }
     }
   }
-
-  // Two stacks, and what is coming out of them.
-  for (const [sx, sh] of [
-    [0.718, 0.215],
-    [0.888, 0.182],
-  ] as const) {
-    const x = sx * S;
-    const h = sh * S;
-    const w = S * 0.019;
-    ctx.fillStyle = darken(RUIN.groundAlt, 0.2);
-    ctx.fillRect(x, base - h, w, h);
-    ctx.fillStyle = withAlpha(RUIN.accent, 0.14);
-    ctx.fillRect(x, base - h, Math.max(1, S * 0.003), h);
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const vent = ctx.createLinearGradient(0, base - h, 0, base - h - S * 0.12);
-    vent.addColorStop(0, withAlpha(RUIN.accent, 0.17));
-    vent.addColorStop(1, withAlpha(RUIN.accent, 0));
-    ctx.fillStyle = vent;
-    ctx.fillRect(x - w, base - h - S * 0.12, w * 3, S * 0.12);
-    ctx.restore();
-  }
-  ctx.restore();
-
-  // The glow the place sits in.
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const halo = ctx.createRadialGradient(S * 0.8, base - S * 0.03, 0, S * 0.8, base - S * 0.03, S * 0.32);
-  halo.addColorStop(0, withAlpha(RUIN.accent, 0.12));
-  halo.addColorStop(1, withAlpha(RUIN.accent, 0));
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, S, base + S * 0.03);
-  ctx.restore();
 }
 
 /* --------------------------------------------------------------- ground -- */
 
-function drawGround(ctx: CanvasRenderingContext2D, S: number): void {
-  const h = S * HORIZON;
-
-  // The mist the far plane stands in. It is what turns three flat shapes into
-  // three distances, and it is the whole of the atmospheric perspective here.
-  const mist = ctx.createLinearGradient(0, h - S * 0.075, 0, h + S * 0.03);
-  mist.addColorStop(0, withAlpha('#52707c', 0));
-  mist.addColorStop(0.6, withAlpha('#52707c', 0.55));
-  mist.addColorStop(1, withAlpha('#3f5b66', 0));
-  ctx.fillStyle = mist;
-  ctx.fillRect(0, h - S * 0.075, S, S * 0.105);
-
-  const ground = ctx.createLinearGradient(0, h, 0, S);
-  ground.addColorStop(0, lighten(SPAWN.ground, 0.1));
-  ground.addColorStop(0.16, darken(SPAWN.groundAlt, 0.18));
-  ground.addColorStop(0.62, darken(SPAWN.ground, 0.58));
-  ground.addColorStop(1, darken(SPAWN.fog, 0.45));
-  ctx.fillStyle = ground;
-  ctx.fillRect(0, h, S, S - h);
-
-  // Bands thinning toward the horizon, which is the whole of the projection in
-  // this image: at cover size a real camera and a power curve are the same
-  // picture, and one of them is a line of code.
-  const BANDS = 22;
-  for (let i = 0; i < BANDS; i++) {
-    const t0 = Math.pow(i / BANDS, 2.3);
-    const t1 = Math.pow((i + 1) / BANDS, 2.3);
-    ctx.fillStyle = withAlpha(i % 2 ? SPAWN.accent : SPAWN.fog, 0.018 * (1 - t0 * 0.8));
-    ctx.fillRect(0, h + (S - h) * t0, S, (S - h) * (t1 - t0));
+function paintGround(g: CanvasRenderingContext2D): void {
+  /*
+   * Ten steps rather than six.
+   *
+   * The distance a dither has to cover between two colours is what decides
+   * whether it reads as shading or as a checkerboard: six steps across
+   * fifty-six rows left every transition nine rows deep, which is a chequered
+   * field. Ten steps halves that, and the pattern disappears into the grass.
+   */
+  const ramp = [
+    lighten(SPAWN.ground, 0.26),
+    lighten(SPAWN.ground, 0.14),
+    lighten(SPAWN.groundAlt, 0.04),
+    SPAWN.groundAlt,
+    darken(SPAWN.groundAlt, 0.12),
+    darken(SPAWN.ground, 0.22),
+    darken(SPAWN.ground, 0.38),
+    darken(SPAWN.ground, 0.54),
+    darken(SPAWN.fog, 0.2),
+    darken(SPAWN.fog, 0.48),
+  ];
+  const last = ramp.length - 1;
+  for (let y = PX_HORIZON; y < PX; y++) {
+    const t = Math.pow((y - PX_HORIZON) / (PX - PX_HORIZON), 0.92);
+    const f = t * last;
+    const i = Math.min(last - 1, Math.floor(f));
+    const frac = f - i;
+    for (let x = 0; x < PX; x++) {
+      px(g, x, y, dither(x, y, frac) ? ramp[i + 1]! : ramp[i]!);
+    }
   }
 
-  const random = rng(0x5eed10);
-  for (let i = 0; i < 260; i++) {
-    const t = Math.pow(random(), 0.5);
-    const y = h + (S - h) * t;
-    const x = random() * S;
-    const r = (0.5 + random() * 2) * (S / 1024) * (0.3 + t * 2.6);
-    ctx.fillStyle = withAlpha(random() > 0.6 ? SPAWN.accent : SPAWN.groundAlt, 0.1 + random() * 0.2);
-    ctx.beginPath();
-    ctx.ellipse(x, y, r * 2.4, r, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // The warm rim the sunset leaves on the near grass, and a scatter of it in
+  // the field so the plane is not one flat wash.
+  const random = rng(0x6a5510);
+  for (let i = 0; i < 110; i++) {
+    const y = PX_HORIZON + Math.round(Math.pow(random(), 0.7) * (PX - PX_HORIZON));
+    const x = Math.round(random() * PX);
+    px(g, x, y, random() > 0.62 ? SPAWN.accent : darken(SPAWN.fog, 0.25));
+  }
+
+  /*
+   * The near edge of the field catches the low sun.
+   *
+   * Two rows rather than one, and offset, because a single dithered rule along
+   * the horizon is a dashed line - it reads as a border drawn on the picture
+   * instead of as light landing on grass.
+   */
+  for (let r = 0; r < 4; r++) {
+    for (let x = 0; x < PX; x++) {
+      if (dither(x, r, 0.42 - r * 0.1)) px(g, x, PX_HORIZON + r, lighten(SPAWN.accent, 0.22 - r * 0.05));
+    }
   }
 }
 
 /**
+ * One warm pass over the finished picture.
+ *
+ * Every plane here was painted with its own palette - the sky's ramp, the
+ * range's rock, the ruin's rust - and painted separately they stay separate:
+ * correct individually, and together a set of assets rather than a place at a
+ * time of day. This lays the sun's colour back over all of them, thickest near
+ * the sun and thinning with distance, so the whole frame agrees about where the
+ * light is coming from.
+ *
+ * Dithered rather than blended, because the one rule the backdrop cannot break
+ * is that every pixel is one of the palette's colours.
+ */
+function paintSunlight(g: CanvasRenderingContext2D): void {
+  const sx = 104;
+  const sy = 33;
+  for (let y = 0; y < PX; y++) {
+    for (let x = 0; x < PX; x++) {
+      const d = Math.hypot(x - sx, (y - sy) * 0.8) / PX;
+      const warmth = Math.max(0, 0.42 - d * 0.75);
+      if (warmth <= 0) continue;
+      if (dither(x + 2, y + 1, warmth)) {
+        g.fillStyle = withAlpha(SUN[2]!, 0.16 + warmth * 0.3);
+        g.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The whole backdrop, painted once at 128 and blown up.
+ *
+ * `imageSmoothingEnabled = false` is the entire difference between pixel art
+ * and a blurred small picture, and it has to be set on the context doing the
+ * scaling rather than on the one that did the drawing.
+ */
+function drawBackdrop(ctx: CanvasRenderingContext2D, S: number): void {
+  const buf = document.createElement('canvas');
+  buf.width = PX;
+  buf.height = PX;
+  const g = buf.getContext('2d')!;
+  g.imageSmoothingEnabled = false;
+
+  paintSky(g);
+  paintSun(g);
+  paintClouds(g);
+  paintWall(g);
+
+  // Far range: high, pale, mostly snow.
+  const far = ridgeline(0x51a7e, 0, 78, [
+    { at: 20, top: 14 },
+    { at: 36, top: 24 },
+    { at: 52, top: 30 },
+  ], PX_HORIZON - 6);
+  paintRange(g, far, 0, 78, {
+    rock: [ROCK.far, ROCK.mid],
+    snowline: 34,
+    snow: [SNOW.lit, SNOW.mid],
+    base: PX_HORIZON,
+  });
+
+  paintFog(g, PX_HORIZON - 10, 0, PX, 0xf0611, 0.5);
+
+  // The ruin sits in the valley between the two ranges, so the near one crops it.
+  paintRuin(g, PX_HORIZON - 3);
+  paintFog(g, PX_HORIZON - 6, 52, PX, 0xf0622, 0.38);
+
+  // Near range: lower, darker, and wooded rather than white.
+  const near = ridgeline(0x2bb14, 0, 74, [
+    { at: 8, top: 44 },
+    { at: 30, top: 52 },
+    { at: 58, top: 58 },
+  ], PX_HORIZON);
+  paintRange(g, near, 0, 74, {
+    rock: [ROCK.mid, ROCK.dark],
+    snowline: 52,
+    snow: [SNOW.mid, SNOW.dark],
+    base: PX_HORIZON,
+  });
+  paintTrees(g, near, 2, 72, 0x77ee5, 0.34);
+
+  paintFog(g, PX_HORIZON - 3, 0, PX, 0xf0633, 0.3);
+  paintGround(g);
+  paintSunlight(g);
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(buf, 0, 0, PX, PX, 0, 0, S, S);
+  ctx.imageSmoothingEnabled = true;
+  ctx.restore();
+}
+
+/* --------------------------------------------------------------- field -- */
+
+/**
  * Material nodes on the plain, and grass in the very front.
  *
- * Two jobs. The first is that the bottom third was an empty green field: a
- * cover with a character standing alone in the middle of one reads as a
- * placeholder, whatever else is in it. The second is that the orb is full of
- * material and nothing in the image says where any of it came from - these are
- * the same icons, at the same sizes the game spawns them, sitting where they
- * grow. The spawn's own three, because that is the region the ground is.
+ * Two jobs. The first is that the bottom third was an empty field: a cover with
+ * a character standing alone in the middle of one reads as a placeholder,
+ * whatever else is in it. The second is that the orb is full of material and
+ * nothing else in the image says where any of it came from - these are the same
+ * icons, at the sizes the game spawns them, sitting where they grow.
  *
  * Placed rather than scattered: none of them sits on the figure's silhouette,
- * and the two nearest are pushed out to the corners so they frame rather than
- * crowd.
+ * and the nearest are pushed out to the corners so they frame rather than crowd.
  */
 const NODES: { id: string; x: number; y: number; scale: number }[] = [
   { id: 'ironvine', x: 0.155, y: 0.655, scale: 0.55 },
@@ -564,6 +822,25 @@ const NODES: { id: string; x: number; y: number; scale: number }[] = [
   { id: 'riverglass', x: 0.105, y: 0.855, scale: 1.0 },
   { id: 'ashcap_fungus', x: 0.885, y: 0.915, scale: 1.15 },
 ];
+
+/**
+ * A material icon on the same grid as the backdrop.
+ *
+ * `drawIcon` is vector, and a smooth icon sitting on pixel-art ground is the
+ * one thing that would give the whole trick away. Rendering it small and
+ * blowing it up puts it on the grid - and because the icons are bold shapes
+ * with a dilated keyline, they survive being reduced to sixteen pixels far
+ * better than a shaded illustration would.
+ */
+function pixelIcon(shape: string, color: string, size: number): HTMLCanvasElement {
+  const n = Math.max(8, Math.round(size / 8));
+  const c = document.createElement('canvas');
+  c.width = n;
+  c.height = n;
+  const g = c.getContext('2d')!;
+  drawIcon(g, shape, color, n);
+  return c;
+}
 
 function drawField(ctx: CanvasRenderingContext2D, S: number): void {
   for (const node of NODES) {
@@ -577,7 +854,7 @@ function drawField(ctx: CanvasRenderingContext2D, S: number): void {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 2.1);
-    glow.addColorStop(0, withAlpha(def.color, 0.34));
+    glow.addColorStop(0, withAlpha(def.color, 0.3));
     glow.addColorStop(1, withAlpha(def.color, 0));
     ctx.fillStyle = glow;
     ctx.fillRect(x - size * 2.1, y - size * 2.1, size * 4.2, size * 4.2);
@@ -588,8 +865,10 @@ function drawField(ctx: CanvasRenderingContext2D, S: number): void {
     ctx.beginPath();
     ctx.ellipse(x, y + size * 0.52, size * 0.42, size * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.translate(x - size / 2, y - size / 2);
-    drawIcon(ctx, def.shape, def.color, size);
+    ctx.imageSmoothingEnabled = false;
+    const icon = pixelIcon(def.shape, def.color, size);
+    ctx.drawImage(icon, 0, 0, icon.width, icon.height, Math.round(x - size / 2), Math.round(y - size / 2), Math.round(size), Math.round(size));
+    ctx.imageSmoothingEnabled = true;
     ctx.restore();
   }
 }
@@ -599,30 +878,30 @@ function drawField(ctx: CanvasRenderingContext2D, S: number): void {
  *
  * Nothing here is identifiable and that is the point: a band of near-black
  * shapes along the bottom edge gives the eye somewhere to start and puts the
- * character behind something, which is the cheapest depth cue there is. They
- * are drawn after everything except the air, so they crop the frame rather than
- * sit in the scene.
+ * character behind something, which is the cheapest depth cue there is. Drawn
+ * on the backdrop's grid, in whole pixels, so the frame's nearest plane is not
+ * the one smooth thing in it.
  */
 function drawForeground(ctx: CanvasRenderingContext2D, S: number): void {
   const random = rng(0xf01a6e);
+  const unit = S / PX;
   ctx.save();
-  ctx.fillStyle = darken(SPAWN.fog, 0.55);
-  for (let i = 0; i < 64; i++) {
+  ctx.fillStyle = darken(SPAWN.fog, 0.6);
+  for (let i = 0; i < 70; i++) {
     // Cleared out of the middle, where the character and the orb are.
-    const x = random() * S;
-    if (Math.abs(x / S - 0.5) < 0.17) continue;
-    const lift = Math.pow(random(), 1.8);
-    const y = S * (1.01 - lift * 0.075);
-    const h = S * (0.022 + random() * 0.048);
-    const w = S * (0.007 + random() * 0.012);
-    const lean = (random() - 0.5) * S * 0.045;
+    const gx = Math.round(random() * PX);
+    if (Math.abs(gx / PX - 0.5) < 0.17) continue;
+    const gy = PX - Math.round(Math.pow(random(), 1.8) * 8);
+    const h = 3 + Math.round(random() * 8);
+    const lean = Math.round((random() - 0.5) * 4);
 
-    ctx.beginPath();
-    ctx.moveTo(x - w, y);
-    ctx.quadraticCurveTo(x - w * 0.4 + lean * 0.5, y - h * 0.6, x + lean, y - h);
-    ctx.quadraticCurveTo(x + w * 0.4 + lean * 0.5, y - h * 0.6, x + w, y);
-    ctx.closePath();
-    ctx.fill();
+    // A blade is a column that steps sideways as it rises.
+    for (let r = 0; r < h; r++) {
+      const k = r / h;
+      const x = gx + Math.round(lean * k * k);
+      const w = k > 0.65 ? 0 : k > 0.3 ? 0 : 1;
+      ctx.fillRect((x - w) * unit, (gy - r) * unit, (w * 2 + 1) * unit, unit);
+    }
   }
   ctx.restore();
 }
@@ -983,11 +1262,7 @@ export async function drawCover(canvas: HTMLCanvasElement, size: number, withTit
     sheet.src = sheetUrl;
   });
 
-  drawSky(ctx, size);
-  drawWall(ctx, size);
-  drawMountains(ctx, size);
-  drawRuin(ctx, size);
-  drawGround(ctx, size);
+  drawBackdrop(ctx, size);
   drawField(ctx, size);
   drawHero(ctx, size, sheet);
   drawOrb(ctx, size);
