@@ -43,8 +43,10 @@ The whole build is **60KB gzipped**. That is the reason it installs instantly,
 caches completely and plays with no network.
 
 The **cover art** in `docs/cover/` is drawn the same way, by the game's own
-art code — the real sprite sheet, the real creatures, the real item shapes,
-every colour read out of `content/`. `npm run cover` regenerates it at any size.
+art code — the real sprite sheet, the real item shapes, every colour read out of
+`content/`, down to the orb's green being the spawn biome's own accent with the
+olive saturated out of it. Change a palette in `content/biomes.json` and the
+cover changes. `npm run cover` regenerates it at any size.
 
 ## How to play
 
