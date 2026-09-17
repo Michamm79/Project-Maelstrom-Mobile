@@ -1125,7 +1125,16 @@ export class Renderer {
   private drawFloaters(): void {
     const ctx = this.ctx;
     ctx.textAlign = 'center';
-    ctx.font = '600 13px system-ui, sans-serif';
+    /*
+     * The same face the HUD uses, at a whole multiple of the cell.
+     *
+     * 14 rather than 13: the glyphs are seven pixels tall in a ten-pixel em,
+     * so a size that is not a multiple of ten puts a stem on a fraction of a
+     * device pixel and the damage numbers come out with uneven strokes. This
+     * is the one piece of text the renderer owns, and it is the one piece that
+     * would give the typeface away if it were off the grid.
+     */
+    ctx.font = '20px "Maelstrom Pixel", system-ui, sans-serif';
     for (const floater of this.floaters) {
       const t = floater.age / floater.life;
       ctx.globalAlpha = 1 - t;

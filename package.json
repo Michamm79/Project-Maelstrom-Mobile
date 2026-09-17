@@ -7,7 +7,7 @@
   "scripts": {
     "build:content": "node tools/build-content.mjs",
     "dev": "npm run build:content && vite",
-    "build": "npm run build:content && npm run build:icons && tsc --noEmit && vite build && npm run build:sw",
+    "build": "npm run build:content && npm run build:icons && npm run build:font && tsc --noEmit && vite build && npm run build:sw",
     "build:single": "npm run build && node tools/build-artifact.mjs",
     "preview": "vite preview",
     "test": "npm run build:content && vitest run",
@@ -18,7 +18,8 @@
     "smoke": "npm run build && node tools/smoke.mjs",
     "build:sw": "node tools/make-sw.mjs",
     "screenshots": "npm run build && node tools/screenshots.mjs",
-    "cover": "npm run build:content && node tools/make-cover.mjs"
+    "cover": "npm run build:content && node tools/make-cover.mjs",
+    "build:font": "node tools/make-font.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
