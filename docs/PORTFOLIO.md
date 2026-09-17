@@ -54,9 +54,9 @@ The game plays **sideways** by default, so all but the last are landscape.
 | `03-gathering.png` | The core loop | "The pull works at walking pace — no aiming, no stopping." |
 | `04-combat.png` | Swing arc, a spread of the seven kinds | "Every creature is drawn by code at runtime." |
 | `05-crafting.png` | The crafting/alchemy menu | "Two disciplines, one menu." |
-| `06-wetland.png` | Wetland terrain | "Slow going, heavy cover, low visibility — the region plays differently, not just looks different." |
-| `07-data-center.png` | Data-Center terrain | "Coolant fog and neon. Fog is the only thing that adapts to your device's frame rate." |
-| `08-portrait.png` | Held upright instead | "Landscape is a preference, not a lock — the HUD relays rather than squashing." |
+| `07-wetland.png` | Wetland terrain | "Slow going, heavy cover, low visibility — the region plays differently, not just looks different." |
+| `08-data-center.png` | Data-Center terrain | "Coolant fog and neon. Fog is the only thing that adapts to your device's frame rate." |
+| `09-portrait.png` | Held upright instead | "Landscape is a preference, not a lock — the HUD relays rather than squashing." |
 
 **Best single image if only one fits:** `04-combat.png` — it has the character,
 several of the enemy designs, the attack animation and the HUD in one frame.

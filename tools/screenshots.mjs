@@ -165,10 +165,14 @@ const shots = [];
   await page.close();
 }
 
-// 6 & 7. Two regions that play differently, not just look different
+// 6, 7 & 8. Three regions that play differently, not just look different.
+// The mountain and the ruin are the two with a floor of their own, and they are
+// the two the spawn withholds - so they are what a player travels for, and what
+// a screenshot of this game should be showing.
 for (const [file, biome, note] of [
-  ['06-wetland.png', 'wetland', 'the Wetland: slow going, cover, low visibility'],
-  ['07-data-center.png', 'data_center', 'the Abandoned Data-Center: coolant fog and neon'],
+  ['06-snowy-mountain.png', 'snowy_mountain', 'the Snowy Mountain: packed snow, rock shelves, blowing drift'],
+  ['07-wetland.png', 'wetland', 'the Wetland: slow going, cover, low visibility'],
+  ['08-data-center.png', 'data_center', 'the Abandoned Data-Center: a raised server floor, still being scanned'],
 ]) {
   const page = await phone();
   await page.locator('.title .tbtn.primary').click();
@@ -208,8 +212,8 @@ for (const [file, biome, note] of [
   });
   await settle(page);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(OUT, '08-portrait.png') });
-  shots.push('08-portrait.png — upright, with the sideways setting turned off');
+  await page.screenshot({ path: join(OUT, '09-portrait.png') });
+  shots.push('09-portrait.png — upright, with the sideways setting turned off');
   await page.close();
 }
 

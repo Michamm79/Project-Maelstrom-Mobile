@@ -17,6 +17,7 @@ import type { Content } from '../core/content';
 import type { InputController } from './input';
 import type { Screen } from './screen';
 import { DELETION_SECONDS, drawDeletion, makeDeletion, type Deletion } from './deletion';
+import { drawEdge, drawFloor, drawShelf, drawWeather, hasTerrain, shelvesIn } from './terrain';
 
 /** Sprite sheet geometry. Rows match the order make-sprites.mjs emits. */
 const SPRITE_W = 16;
@@ -358,6 +359,7 @@ export class Renderer {
     this.drawProps(world, camera);
     this.drawNodes(world, state, camera);
     this.drawNotes(world, camera);
+    this.drawWeather(world, camera);
     this.drawMending(world);
     this.drawEnemies(world, state, camera);
     this.drawProjectiles(world);
@@ -444,7 +446,39 @@ export class Renderer {
       ) {
         continue;
       }
-      this.drawBiome(disc);
+      /*
+       * Two of the five have a floor of their own now.
+       *
+       * They are the two the spawn withholds - the only sources of Glacite and
+       * Umbrel - which makes them the two regions anyone crosses the Coliseum
+       * FOR. The other three keep the tinted disc until they get the same
+       * treatment, and `hasTerrain` is the switch rather than a comment,
+       * so there is never a build where half a region is converted.
+       */
+      if (hasTerrain(disc.id)) {
+        drawFloor(ctx, disc);
+        drawEdge(ctx, disc, bounds);
+      } else {
+        this.drawBiome(disc);
+      }
+    }
+
+    // Elevation after every floor is down, so a shelf on one region is never
+    // painted over by the region next to it.
+    for (const disc of world.discs) {
+      if (!hasTerrain(disc.id)) continue;
+      if (
+        disc.x + disc.radius < bounds.left ||
+        disc.x - disc.radius > bounds.right ||
+        disc.y + disc.radius < bounds.top ||
+        disc.y - disc.radius > bounds.bottom
+      ) {
+        continue;
+      }
+      // Back to front, so a nearer block overlaps the one behind it.
+      for (const shelf of shelvesIn(disc, bounds).sort((a, b) => a.y - b.y)) {
+        drawShelf(ctx, disc, shelf);
+      }
     }
 
     // The boundary itself, so the edge of the world is legible before you hit it.
@@ -456,6 +490,29 @@ export class Renderer {
   }
 
   /** Feathered so a region blends into the forest rather than snapping on. */
+  /**
+   * What each region is doing while you are in it.
+   *
+   * Over the scenery and under the creatures: snow blowing across a goblin is
+   * atmosphere, and snow blowing over the top of one is a goblin you cannot
+   * see coming.
+   */
+  private drawWeather(world: World, camera: { x: number; y: number }): void {
+    const bounds = this.visible(camera, 80);
+    for (const disc of world.discs) {
+      if (!hasTerrain(disc.id)) continue;
+      if (
+        disc.x + disc.radius < bounds.left ||
+        disc.x - disc.radius > bounds.right ||
+        disc.y + disc.radius < bounds.top ||
+        disc.y - disc.radius > bounds.bottom
+      ) {
+        continue;
+      }
+      drawWeather(this.pctx, disc, bounds, this.time);
+    }
+  }
+
   private drawBiome(disc: BiomeDisc): void {
     const ctx = this.pctx;
     const gradient = ctx.createRadialGradient(disc.x, disc.y, disc.radius * 0.55, disc.x, disc.y, disc.radius);
