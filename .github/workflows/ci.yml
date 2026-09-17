@@ -22,9 +22,9 @@ jobs:
         run: npm run build:content
 
       - name: Generated content is committed and up to date
-        # The bundle is checked in so Unity can read it without running Node.
-        # If it drifts from content/*.json, the two runtimes stop agreeing.
-        run: git diff --exit-code -- content/generated unity/Assets/Resources
+        # The bundle is checked in so it can be read without running Node. If
+        # it drifts from content/*.json, the build and the repo stop agreeing.
+        run: git diff --exit-code -- content/generated
 
       - name: Typecheck
         run: npm run typecheck

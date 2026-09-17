@@ -238,8 +238,8 @@ Accuracy matters more than impressiveness here. Specifically:
 - ❌ **Do not call the art "AI-generated images".** It is procedural code —
   drawing instructions, not image generation. The distinction is real and a
   technical reader will notice.
-- ⚠️ **The `unity/` directory in the repo targets the wrong engine** and is
-  documented as such. Do not present it as a shipped Unity port.
+- ⚠️ **There is no engine-side port in this repo.** The web build is the
+  deliverable; the content bundle is what an engine build would read.
 
 ## Credits and provenance
 

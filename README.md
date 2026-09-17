@@ -20,8 +20,8 @@ store account.
 > turned out to be a separate, much earlier Unity orb prototype that happens to
 > share the name — the GDD's project is Unreal Engine 5.8. Everything built from
 > it (a 69-material transmutation tree, level-gated zones, weapon items) was a
-> faithful port of a different game and has been replaced. `unity/` is what
-> remains of it; see the caveat at the bottom.
+> faithful port of a different game and has been replaced. The C# that remained
+> of it has been deleted; the engine-side build is being written separately.
 
 ---
 
@@ -177,7 +177,6 @@ content/*.json            <- hand-authored
 tools/build-content.mjs   <- validates against the design's own rules
         |
         +--> content/generated/maelstrom-content.json       -> the web build
-        +--> unity/Assets/Resources/maelstrom-content.json  -> read by ContentDatabase.cs
 ```
 
 The builder enforces canon rather than style. It refuses to emit a bundle where
@@ -245,21 +244,17 @@ docs/
 
 ---
 
-## ⚠️ The Unity side
+## Taking the content to another engine
 
-**The C# in `unity/` targets the wrong engine.** The GDD's project is Unreal
-Engine 5.8; this directory exists only because of the mix-up described at the
-top.
+`content/generated/maelstrom-content.json` is the whole game as data — every
+element, material, recipe, combination, enemy, wave, note and number, validated
+by `tools/build-content.mjs` before it is written. An engine-side build reads
+that file rather than re-authoring any of it, which is the only way the two
+stay in agreement.
 
-`Content/ContentSchema.cs` and `ContentDatabase.cs` are current — they mirror the
-generated bundle and read it, so the one guarantee the directory was built for
-still holds. **Everything else under `Assets/Scripts` is stale**: it implements
-the earlier prototype's orb slots, pair-combination recipes and level-gated
-zones. None of it has been compiled or run.
-
-The recommendation is to delete the directory; if a bridge to the PC build is
-wanted, the useful form is an Unreal-friendly export of the same content bundle.
-It is left in place because that is the author's call.
+There used to be a `unity/` directory here, left over from the mix-up described
+at the top. It targeted the wrong engine — the GDD's project is Unreal Engine
+5.8 — and it has been deleted.
 
 The web build is the part that is verified. It is what to trust today.
 

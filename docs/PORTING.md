@@ -2,20 +2,28 @@
 
 File-by-file mapping from the desktop prototype, and why anything changed.
 
+> **Historical.** `Project_Maelstrom` is an earlier Unity orb prototype that
+> shares the name; the GDD's project is Unreal Engine 5.8, and everything
+> ported from the prototype has since been replaced by canon. This is kept
+> because the decisions it records — why a transmutation result is a material
+> and not a prefab, why content moved out of `Resources` — still hold in the
+> build that replaced it. A C# mirror of these systems used to live in
+> `unity/`; it targeted the wrong engine and has been deleted.
+
 ## Mapping
 
-| Original (`Project_Maelstrom`) | Web (`web/src/core`) | Unity (`unity/Assets/Scripts`) |
-|---|---|---|
-| `ElementSO.cs` | `types.ts` → `ElementDef` | `Core/ElementSO.cs` |
-| `MaterialSO.cs` | `types.ts` → `MaterialDef` | `Core/MaterialSO.cs` |
-| `TransmutationRecipe.cs` | `types.ts` → `TransmutationRecipe` | `Core/TransmutationRecipe.cs` |
-| `AlchemyRecipe.cs` | `types.ts` → `AlchemyRecipe` | `Core/AlchemyRecipe.cs` |
-| `TransmutationSystem.cs` | `transmutation.ts` | `Core/TransmutationSystem.cs` |
-| `AlchemySystem.cs` | `alchemy.ts` | `Core/AlchemySystem.cs` |
-| `OrbContainer.cs` | `orbContainer.ts` | `Core/OrbContainer.cs` |
-| — (`Resources.LoadAll`) | `content.ts` | `Content/ContentDatabase.cs` |
-| — (`UnityEvent`) | `events.ts` | still `UnityEvent` |
-| — | `progression.ts`, `save.ts`, `rng.ts` | `Core/PlayerProgression.cs` |
+| Original (`Project_Maelstrom`) | Web (`web/src/core`) |
+|---|---|
+| `ElementSO.cs` | `types.ts` → `ElementDef` |
+| `MaterialSO.cs` | `types.ts` → `MaterialDef` |
+| `TransmutationRecipe.cs` | `types.ts` → `TransmutationRecipe` |
+| `AlchemyRecipe.cs` | `types.ts` → `AlchemyRecipe` |
+| `TransmutationSystem.cs` | `transmutation.ts` |
+| `AlchemySystem.cs` | `alchemy.ts` |
+| `OrbContainer.cs` | `orbContainer.ts` |
+| — (`Resources.LoadAll`) | `content.ts` |
+| — (`UnityEvent`) | `events.ts` |
+| — | `progression.ts`, `save.ts`, `rng.ts` |
 
 Method names were kept deliberately: `AddMaterialToOrb` → `addMaterialToOrb`,
 `PeekTransmutation` → `peekTransmutation`, `DecomposeMaterialAt` →
@@ -48,8 +56,8 @@ can't go back into an orb, so nothing can be an ingredient, so the tech tree is
 one tier deep. There are 40 transmutation recipes here and the deepest chain is
 nine tiers, so the result had to become a material.
 
-`resultPrefab` still exists in the Unity version and is still honoured — set
-`OrbContainer.spawnResultPrefabs` to also drop the object into the world.
+`resultPrefab` has no meaning in a build with no GameObjects; an engine-side
+port that wants the spawned object back can read the same recipe and do both.
 
 ### 2. There is a pack
 
@@ -80,11 +88,10 @@ stops the loop being farmable. There's a test for it
 
 The original scanned the recipe list on every `FindRecipe`. The UI calls it every
 time the orbs change, so with 40 recipes it is 40 comparisons per frame that the
-orbs are touched. Both ports build a `Map`/`Dictionary` keyed by the sorted input
-pair at registration time. Same behaviour, constant-time.
-
-The Unity version now also warns when two recipes claim the same pair — under a
-linear scan the second was silently unreachable.
+orbs are touched. The web build indexes a `Map` keyed by the sorted input pair
+at registration time. Same behaviour, constant-time — and it reports two recipes
+claiming the same pair, which under a linear scan left the second silently
+unreachable.
 
 ### 5. Locked-recipe feedback
 
@@ -97,16 +104,13 @@ game can do.
 ### 6. Content moved out of Resources and into JSON
 
 `Resources.LoadAll<T>("Recipes/Transmutation")` means 50 recipe assets and 69
-material assets authored by hand, per runtime. One JSON, read by both, with a
-build step that validates the graph, is cheaper to author and impossible to get
-out of sync.
-
-`Initialize()` still exists on both systems and still does the `Resources.LoadAll`
-thing, so the original workflow is intact if you prefer it.
+material assets authored by hand, per runtime. One JSON, validated by a build
+step, is cheaper to author and cannot fall out of sync with itself — and it is
+what any second runtime should read rather than re-authoring the graph.
 
 ## Deliberately not ported
 
-- `Instantiate`/`Transform`/`spawnPoint` — meaningless in the web build, kept in Unity.
+- `Instantiate`/`Transform`/`spawnPoint` — meaningless without GameObjects.
 - `Sprite icon` — the web build draws 38 shapes procedurally instead
-  (`web/src/game/icons.ts`), which is why the repo ships no art. `MaterialSO.shape`
-  carries the key in both.
+  (`web/src/game/icons.ts`), which is why the repo ships no art. The bundle
+  carries `shape` as the key.

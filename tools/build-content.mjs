@@ -3,10 +3,9 @@
  * Content build step for Project Maelstrom Mobile.
  *
  * Reads the hand-authored JSON in content/, validates it against the GDD's
- * non-negotiable rules, and emits one bundle consumed by BOTH runtimes:
+ * non-negotiable rules, and emits the one bundle the game imports:
  *
  *   content/generated/maelstrom-content.json      -> imported by the web game
- *   unity/Assets/Resources/maelstrom-content.json -> loaded by ContentDatabase.cs
  *
  * The validations here are not style checks. Three of them protect design
  * decisions canon states cannot be broken:
@@ -970,28 +969,17 @@ const bundle = {
   archetypes,
 };
 
-/**
- * Unity's JsonUtility cannot deserialize a dictionary-shaped object, so the
- * Unity copy flattens every id-to-quantity map into an array of pairs. Same
- * data, same build step, no second source of truth.
+/*
+ * One bundle, one consumer.
+ *
+ * There used to be a second output here: the same data with every
+ * id-to-quantity map flattened into an array of pairs, because Unity's
+ * JsonUtility cannot deserialize a dictionary-shaped object. The C# that read
+ * it targeted the wrong engine and has been removed, so the shim went with it.
+ * Any future port reads this file and reshapes it on its own side rather than
+ * asking this build to hold an opinion about a runtime that is not here.
  */
-const toPairs = (record, keyName) =>
-  Object.entries(record ?? {}).map(([key, quantity]) => ({ [keyName]: key, quantity }));
-
-const unityBundle = {
-  ...bundle,
-  note: bundle.note + ' Unity variant: id-to-quantity maps are flattened to arrays for JsonUtility.',
-  crafting: {
-    ...crafting,
-    recipes: crafting.recipes.map(({ cost, ...rest }) => ({ ...rest, cost: toPairs(cost, 'material') })),
-  },
-  alchemy: alchemy.map(({ elements: required, ...rest }) => ({ ...rest, elements: toPairs(required, 'element') })),
-};
-
-const outputs = [
-  ['content/generated/maelstrom-content.json', bundle],
-  ['unity/Assets/Resources/maelstrom-content.json', unityBundle],
-];
+const outputs = [['content/generated/maelstrom-content.json', bundle]];
 for (const [rel, payload] of outputs) {
   const abs = join(ROOT, rel);
   mkdirSync(dirname(abs), { recursive: true });

@@ -194,8 +194,7 @@ Both deliberate, both flagged in content rather than buried:
 ## How content works
 
 ```
-content/*.json  ->  tools/build-content.mjs  -+-> content/generated/…json   (web)
-                                              +-> unity/…/Resources/…json   (reader only)
+content/*.json  ->  tools/build-content.mjs  ---> content/generated/…json   (web)
 ```
 
 The builder enforces canon rather than style. Among the rules that fail a build:
