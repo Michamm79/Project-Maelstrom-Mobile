@@ -2494,7 +2494,8 @@ button.ghost.wide {
 /* The two top-bar icon buttons: sound and pause, top right, next to the level
    and findable without opening anything. */
 .mute-btn,
-.pause-btn {
+.pause-btn,
+.quest-btn {
   flex: 0 0 auto;
   min-width: 38px;
   min-height: 38px;
@@ -2506,12 +2507,14 @@ button.ghost.wide {
   border: 1px solid var(--line);
 }
 
-.mute-btn.off {
+.mute-btn.off,
+.quest-btn.off {
   opacity: 0.55;
 }
 
 :root[data-squat] .mute-btn,
-:root[data-squat] .pause-btn {
+:root[data-squat] .pause-btn,
+:root[data-squat] .quest-btn {
   min-width: 32px;
   min-height: 32px;
   font-size: 15px;
@@ -2915,7 +2918,8 @@ button.ghost.wide {
 /* ------------------------------------------------------- the round chrome */
 
 .mute-btn,
-.pause-btn {
+.pause-btn,
+.quest-btn {
   min-width: 42px;
   min-height: 42px;
   border-radius: 50%;
@@ -2926,8 +2930,22 @@ button.ghost.wide {
 }
 
 .mute-btn:active,
-.pause-btn:active {
+.pause-btn:active,
+.quest-btn:active {
   background: rgba(70, 56, 104, 0.9);
+}
+
+/*
+ * The quest glyph is a letter, not an emoji.
+ *
+ * The other two chrome buttons carry emoji, which the system renders in its
+ * own colour font at whatever size it likes; this one is a character in the
+ * game's typeface, so it needs the typeface's size rather than theirs - two
+ * points larger reads as the same optical weight next to a glyph the OS has
+ * drawn with its own padding.
+ */
+.quest-btn {
+  font-size: 19px;
 }
 
 /* ------------------------------------------------------------ the banner */

@@ -180,6 +180,46 @@ check(
   (await page.locator('.objective b').textContent()) ?? '',
 );
 
+/*
+ * The objective toggle.
+ *
+ * Checked here rather than left to a screenshot because the failure it guards
+ * is invisible in a still: hiding the banner without clearing
+ * `--banner-bottom` leaves the announcements stacking below a banner that is
+ * not there, which is a gap of dead space at the top of the screen and looks
+ * like nothing at all until a toast arrives.
+ */
+{
+  const state = () =>
+    peek(() => ({
+      shown: !document.querySelector('.objective')?.hidden,
+      flagged: document.querySelector('#ui')?.classList.contains('banner') ?? false,
+      offset: document.querySelector('#ui')?.style.getPropertyValue('--banner-bottom') ?? '',
+      off: document.querySelector('.quest-btn')?.classList.contains('off') ?? false,
+    }));
+
+  const open = await state();
+  check('the objective starts open', open.shown && open.flagged && open.offset !== '', JSON.stringify(open));
+
+  await page.locator('.quest-btn').click();
+  const closed = await state();
+  check('the quest button closes the objective', !closed.shown, JSON.stringify(closed));
+  check('and clears the offset the toasts stack from', closed.offset === '' && !closed.flagged);
+  check('and the button shows it is off', closed.off);
+
+  await page.locator('.quest-btn').click();
+  const reopened = await state();
+  check(
+    'and opening it puts the same step back',
+    reopened.shown && reopened.offset !== '' && !reopened.off,
+    JSON.stringify(reopened),
+  );
+  check(
+    'with the step it had before, not a later one',
+    /find your feet/i.test((await page.locator('.objective').textContent()) ?? ''),
+  );
+}
+
 // ---------------------------------------------------------------- the world
 
 const world = await peek(() => {

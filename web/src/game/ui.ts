@@ -57,6 +57,9 @@ export interface UiHooks {
   onPause(): void;
 }
 
+/** Where the objective toggle remembers itself. */
+const QUEST_KEY = 'maelstrom.quest.v1';
+
 type Tone = 'info' | 'good' | 'bad' | 'big';
 type Tab = 'craft' | 'alchemy' | 'log' | 'screen';
 
@@ -124,6 +127,21 @@ export class Ui {
   private readonly carry = el('div', 'carry');
   private readonly menuBtn = el('button', 'nav-btn');
   private readonly muteBtn = el('button', 'mute-btn');
+  /**
+   * Show or hide the objective banner.
+   *
+   * The tutorial line sat on screen permanently, and on a landscape phone it
+   * covers the top third of the play area - which is where anything walking at
+   * you comes from. The step it names does not go away when the banner does:
+   * this hides the text, not the tutorial.
+   *
+   * \ue000 is the quest-log glyph in the game's own typeface rather than an
+   * emoji, so it is the one chrome button that is actually on the pixel grid.
+   */
+  private readonly questBtn = el('button', 'quest-btn', '\ue000');
+  /** The step currently being shown, kept so the banner can be put back. */
+  private step: TutorialStep | null = null;
+  private questOpen = true;
   private readonly pauseBtn = el('button', 'pause-btn', '⏸');
   /** Counts what can be made or cast right now, so the menu is worth opening. */
   private readonly menuBadge = el('i', 'badge');
@@ -196,9 +214,16 @@ export class Ui {
     this.pauseBtn.setAttribute('aria-label', 'Pause');
     onPress(this.pauseBtn, () => this.hooks.onPause());
     const chrome = el('div', 'chrome');
-    chrome.append(this.pauseBtn, this.muteBtn);
+    this.questBtn.setAttribute('aria-label', 'Hide the objective');
+    onPress(this.questBtn, () => this.setQuestOpen(!this.questOpen));
+    chrome.append(this.pauseBtn, this.muteBtn, this.questBtn);
 
     bar.append(gauges, this.levelChip, chrome, this.place);
+    try {
+      this.setQuestOpen(localStorage.getItem(QUEST_KEY) !== 'closed');
+    } catch {
+      this.setQuestOpen(true);
+    }
 
     this.breach.append(this.breachText, this.breachFill);
     this.breach.hidden = true;
@@ -460,7 +485,44 @@ export class Ui {
     this.placeMood.textContent = mood;
   }
 
+  /**
+   * Open or close the objective, and remember which.
+   *
+   * Stored rather than reset per run: a player who has turned the banner off
+   * has told you they do not want it, and handing it back on the next load is
+   * the setting not working. It is written through a try/catch because
+   * localStorage throws outright in a private window, and losing a preference
+   * is not worth losing a frame over.
+   */
+  setQuestOpen(open: boolean): void {
+    this.questOpen = open;
+    this.questBtn.classList.toggle('off', !open);
+    this.questBtn.setAttribute('aria-label', open ? 'Hide the objective' : 'Show the objective');
+    this.questBtn.setAttribute('aria-pressed', String(open));
+    try {
+      localStorage.setItem(QUEST_KEY, open ? 'open' : 'closed');
+    } catch {
+      // No storage: the toggle still works for this run.
+    }
+    this.setObjective(this.step);
+  }
+
   setObjective(step: TutorialStep | null): void {
+    this.step = step;
+    /*
+     * Closed hides the banner without ending the step.
+     *
+     * The early return matters: with the banner down there is no element to
+     * measure, so `--banner-bottom` has to be cleared or the announcements go
+     * on stacking below a banner that is not there any more - a gap of dead
+     * space at the top of the screen with nothing above it.
+     */
+    if (!this.questOpen) {
+      this.objective.hidden = true;
+      this.root.classList.remove('banner');
+      this.root.style.removeProperty('--banner-bottom');
+      return;
+    }
     this.objective.hidden = step === null;
     /*
      * The banner and the announcements both want the top-centre.

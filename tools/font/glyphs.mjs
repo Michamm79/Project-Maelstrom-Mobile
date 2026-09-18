@@ -116,6 +116,20 @@ const G = {
   '|': '..#../..#../..#../..#../..#../..#../..#..',
   '}': '##.../..#../..#../...#./..#../..#../##...',
   '~': '...../...../.#..#/#.#.#/#..#./...../.....',
+  /*
+   * One icon, in the private use area.
+   *
+   * The HUD's other two chrome buttons are emoji, which fall back to the
+   * system's colour emoji font - smooth, rounded, and the one thing in the
+   * interface that is still not on the grid. A game that generates its own
+   * typeface can generate its own icons in it instead, and then an icon is
+   * just a character: it inherits the button's colour, its size, and its
+   * pixel snapping, with no image to load and nothing to keep in sync.
+   *
+   * U+E000 is the quest log - a page with lines of writing on it, and a
+   * folded corner so it reads as paper rather than as a window.
+   */
+  '\ue000': '####./#...#/#.##./#...#/#.###/#..../#####',
   // The five beyond ASCII that the game's own copy actually uses.
   '—': '...../...../...../#####/...../...../.....',
   '·': '...../...../...../..#../...../...../.....',
