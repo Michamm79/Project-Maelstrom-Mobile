@@ -1,0 +1,96 @@
+{
+  "$comment": "GDD section 10: the player is read continuously by telemetry, and what it reads grants a rune at Level 2 and a class at Level 5. Neither is ever chosen from a menu - canon is specific that the player is assessed rather than asked. Section 9 names three archetypes and gives each a mechanical identity: Nahaste pays 'near-zero unarmed capability' as its cost, Amorratua scales damage with 'consecutive hits without disengaging', and Dotore builds charge 'released into the next attack'. Those three names, those three hooks, and the two levels are canon.",
+  "$inferred": "Everything else here is INVENTED and this note is the flag. Canon does not list which seven signals are read, what the rune grants as distinct from the class, or any number. What is built: seven counters that the game was already in a position to collect, a normalised profile, and a dot product against a leaning per archetype. The three grants are written from each archetype's canon hook and nothing else - Amorratua's is the combo, Nahaste's is alchemy bought with the unarmed cost canon states outright, Dotore's is a charge that builds while you are not swinging.",
+  "$retrofit_comment": "Canon warns this system cannot be retrofitted, because the rune reads the tutorial period as roughly half its evidence. That warning is about WHEN the data starts being collected, not about the grant - so the reading starts on the first frame of a run, the tutorial period is banked separately the moment Level 2 is reached, and the class read at Level 5 weights that banked period at exactly half against everything since. See tutorialWeight below, and core/telemetry.ts.",
+  "runeLevel": 2,
+  "tutorialWeight": 0.5,
+  "$scales_comment": "INFERRED, and MEASURED rather than guessed. What one unit of each signal is worth, so the seven raw counters can be compared at all: 34,000 world units walked is one unit of evidence, and so are seven casts. The first set was guessed and it was wrong in a way nothing would have shown - patience at 240 seconds a unit meant the clock running during an eight-minute opening outweighed everything the player actually did, and a run through the tutorial came out as Dotore whether the player fought, cast, explored or only gathered. These are set against a realistic level 0 to 2 run, and there is a test that plays that run four ways and asserts it is read more than one way.",
+  "scales": {
+    "gathering": 22,
+    "roaming": 34000,
+    "aggression": 34,
+    "alchemy": 7,
+    "patience": 900,
+    "curiosity": 6,
+    "risk": 70
+  },
+  "$signals_comment": "Seven, as canon says, though canon does not say which seven. Each is a raw counter the game already had a reason to know, normalised against the others so that a long run and a short one read the same way. risk is damage TAKEN rather than dealt, which is what makes it a description of how somebody plays rather than a second aggression.",
+  "signals": [
+    "gathering",
+    "roaming",
+    "aggression",
+    "alchemy",
+    "patience",
+    "curiosity",
+    "risk"
+  ],
+  "archetypes": [
+    {
+      "id": "amorratua",
+      "name": "Amorratua",
+      "rune": "The Held Line",
+      "$canon": "Section 9: damage scales with consecutive hits without disengaging.",
+      "leans": {
+        "aggression": 1,
+        "risk": 0.6,
+        "alchemy": -0.5,
+        "patience": -0.4
+      },
+      "runeGrants": {
+        "comboMax": 2
+      },
+      "classGrants": {
+        "comboMax": 3,
+        "comboBonus": 2,
+        "strikeScale": 1.15
+      },
+      "runeDescription": "You stay on things. The line holds two hits longer than it did.",
+      "description": "Consecutive hits without disengaging, which is the whole of it. Backing off is what costs you, and nothing else does."
+    },
+    {
+      "id": "nahaste",
+      "name": "Nahaste",
+      "rune": "The Empty Hand",
+      "$canon": "Section 9: near-zero unarmed capability, given as this archetype's COST - which is the one place canon states a drawback outright.",
+      "leans": {
+        "alchemy": 1,
+        "gathering": 0.7,
+        "curiosity": 0.4,
+        "aggression": -0.8
+      },
+      "runeGrants": {
+        "cooldownScale": 0.85
+      },
+      "classGrants": {
+        "cooldownScale": 0.7,
+        "castScale": 1.45,
+        "strikeScale": 0.4
+      },
+      "runeDescription": "Your hands recover faster than they should between castings.",
+      "description": "Canon's own words are near-zero unarmed capability, and it is a cost rather than an oversight. Your hands are for the work, not for hitting. Everything else is."
+    },
+    {
+      "id": "dotore",
+      "name": "Dotore",
+      "rune": "The Drawn Breath",
+      "$canon": "Section 9: builds charge, released into the next attack.",
+      "leans": {
+        "patience": 1,
+        "roaming": 0.6,
+        "gathering": 0.4,
+        "risk": -0.6
+      },
+      "runeGrants": {
+        "chargeSeconds": 2.4,
+        "chargeBonus": 0.35
+      },
+      "classGrants": {
+        "chargeSeconds": 1.8,
+        "chargeBonus": 1.1,
+        "strikeScale": 1.05
+      },
+      "runeDescription": "Stand off for a moment and the next one lands harder.",
+      "description": "Charge builds while you are not swinging and goes into the next blow whole. Patience is not a virtue here, it is the damage number."
+    }
+  ]
+}

@@ -11,6 +11,7 @@
  * show what is in the inventory, and `orbView` is the only thing that knows
  * about hands at all.
  */
+import { GAUNTLET_STATS } from './types';
 import type { ContentBundle, GauntletStat, Hand, MaterialId, Quantities } from './types';
 
 export interface CarriedStack {
@@ -23,11 +24,15 @@ export type GauntletUpgrades = Readonly<Record<GauntletStat, number>>;
 
 export class Inventory {
   private readonly counts = new Map<MaterialId, number>();
-  private readonly upgrades: Record<GauntletStat, number> = {
-    carryCapacity: 0,
-    pullRadius: 0,
-    pullSpeed: 0,
-  };
+  /**
+   * Built from the stat list rather than written out, so adding a stat to
+   * content does not need three separate edits here - one to declare it, one
+   * to read it, and one in load() to reset it. The third was the one that
+   * would have been forgotten.
+   */
+  private readonly upgrades: Record<GauntletStat, number> = Object.fromEntries(
+    GAUNTLET_STATS.map((stat) => [stat, 0]),
+  ) as Record<GauntletStat, number>;
 
   constructor(private readonly content: ContentBundle) {}
 
@@ -44,6 +49,32 @@ export class Inventory {
 
   get pullSpeed(): number {
     return this.content.crafting.baseStats.pullSpeed + this.upgrades.pullSpeed;
+  }
+
+  /** Added to the basic attack. The gauntlets are the weapon; see GAUNTLET_STATS. */
+  get strikeDamage(): number {
+    return this.content.crafting.baseStats.strikeDamage + this.upgrades.strikeDamage;
+  }
+
+  /** Added to the basic attack's reach, in world units. */
+  get strikeReach(): number {
+    return this.content.crafting.baseStats.strikeReach + this.upgrades.strikeReach;
+  }
+
+  /** Percentage points of cooldown recovery. See cooldownScale. */
+  get channelRate(): number {
+    return this.content.crafting.baseStats.channelRate + this.upgrades.channelRate;
+  }
+
+  /**
+   * What to multiply a combination's cooldown by.
+   *
+   * Diminishing on purpose: 100/(100+rate) means the first upgrade is worth
+   * more than the fourth and no amount of stacking ever reaches zero, which is
+   * what stops a late-game gauntlet turning every cooldown into a tap.
+   */
+  get cooldownScale(): number {
+    return 100 / (100 + Math.max(0, this.channelRate));
   }
 
   /** One material is one unit; canon gives no per-material weights. */
@@ -170,6 +201,6 @@ export class Inventory {
     for (const [id, n] of data.counts ?? []) {
       if (this.content.materials.some((m) => m.id === id) && n > 0) this.counts.set(id, n);
     }
-    for (const stat of ['carryCapacity', 'pullRadius', 'pullSpeed'] as const) this.upgrades[stat] = 0;
+    for (const stat of GAUNTLET_STATS) this.upgrades[stat] = 0;
   }
 }

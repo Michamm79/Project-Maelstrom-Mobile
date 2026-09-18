@@ -5,12 +5,11 @@
  * there is no separate inventory screen, because the orbs already give the
  * at-a-glance view. Crafting and alchemy are two tabs of that one menu.
  *
- * The menu does not pause the world. Enemies keep moving and waves keep
- * arriving while it is open, which makes opening it a risk decision rather than
- * a free action - and puts a hard requirement on this file: every row has to be
- * readable and actionable at a glance, because a menu that demands sustained
- * attention while the world is trying to kill you is a menu that never gets
- * opened when it matters.
+ * The menu pauses the world, which is a deliberate departure from canon at the
+ * author's request - GDD 6.1 wanted wave pressure to keep biting. The
+ * requirement it puts on this file survives the pause either way: every row has
+ * to be readable and actionable at a glance, because a menu that demands
+ * sustained attention is a menu that gets closed rather than used.
  *
  * Kept apart from the canvas renderer on purpose: text, scrolling lists and tap
  * targets are things the browser is already good at.
@@ -22,25 +21,47 @@ import type { Crafting } from '../core/crafting';
 import type { Alchemy } from '../core/alchemy';
 import type { Progression } from '../core/progression';
 import type { CombinationId, ElementId, Hand, MaterialId, RecipeId, TutorialStep } from '../core/types';
+import type { Screen } from './screen';
+import type { Install } from './install';
+import type { Sound } from './sound';
+import { renderSettings } from './pages';
+import { accuracyHeld, channel, pairings } from '../core/notes';
+import type { ArchetypeDef } from '../core/telemetry';
 
 export interface HudState {
   inventory: Inventory;
   crafting: Crafting;
   alchemy: Alchemy;
   progression: Progression;
-  selected: CombinationId | null;
+  /** Which notes, from either channel, the player is holding. */
+  notesHeld: ReadonlySet<string>;
+  /** What the telemetry has decided so far, or null before it has decided it. */
+  rune: ArchetypeDef | null;
+  archetype: ArchetypeDef | null;
+  /** The combinations on the arc, in the order they sit there. */
+  carried: readonly CombinationId[];
+  /** How many fit, so the menu can say "full" rather than just refusing. */
+  slots: number;
 }
 
 export interface UiHooks {
   onCraft(id: RecipeId): void;
-  onSelectCombination(id: CombinationId): void;
+  /** Put a combination on the arc, or take it off. */
+  onToggleCarry(id: CombinationId): void;
   onAttack(): void;
   onSkill(id: CombinationId): void;
   onTogglePull(): void;
+  /** Returns the new muted state, so the button can label itself from truth. */
+  onToggleMute(): boolean;
+  /** Stop the world and open the pause menu. */
+  onPause(): void;
 }
 
+/** Where the objective toggle remembers itself. */
+const QUEST_KEY = 'maelstrom.quest.v1';
+
 type Tone = 'info' | 'good' | 'bad' | 'big';
-type Tab = 'craft' | 'alchemy';
+type Tab = 'craft' | 'alchemy' | 'log' | 'screen';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -82,12 +103,19 @@ function onPress(target: HTMLElement, handler: () => void): void {
 
 export class Ui {
   private readonly toasts = el('div', 'toasts');
+  private readonly fragment = el('div', 'fragment');
+  private fragmentTimer = 0;
   private readonly objective = el('div', 'objective');
+  private readonly breach = el('div', 'breachbar');
+  private readonly breachFill = el('i');
+  private readonly breachText = el('b');
   private readonly place = el('div', 'place');
   private readonly placeName = el('b');
   private readonly placeMood = el('span');
   private readonly vitals = el('div', 'vitals');
   private readonly hpFill = el('i');
+  /** The number, written over the bar rather than beside it. */
+  private readonly hpText = el('b', 'hpnum');
   private readonly levelChip = el('div', 'level');
   private readonly levelText = el('b');
   private readonly xpFill = el('i');
@@ -98,6 +126,23 @@ export class Ui {
   };
   private readonly carry = el('div', 'carry');
   private readonly menuBtn = el('button', 'nav-btn');
+  private readonly muteBtn = el('button', 'mute-btn');
+  /**
+   * Show or hide the objective banner.
+   *
+   * The tutorial line sat on screen permanently, and on a landscape phone it
+   * covers the top third of the play area - which is where anything walking at
+   * you comes from. The step it names does not go away when the banner does:
+   * this hides the text, not the tutorial.
+   *
+   * \ue000 is the quest-log glyph in the game's own typeface rather than an
+   * emoji, so it is the one chrome button that is actually on the pixel grid.
+   */
+  private readonly questBtn = el('button', 'quest-btn', '\ue000');
+  /** The step currently being shown, kept so the banner can be put back. */
+  private step: TutorialStep | null = null;
+  private questOpen = true;
+  private readonly pauseBtn = el('button', 'pause-btn', '⏸');
   /** Counts what can be made or cast right now, so the menu is worth opening. */
   private readonly menuBadge = el('i', 'badge');
   private readonly sheet = el('div', 'sheet');
@@ -119,34 +164,73 @@ export class Ui {
   constructor(
     private readonly root: HTMLElement,
     private readonly content: Content,
+    private readonly screen: Screen,
+    private readonly install: Install,
+    private readonly sound: Sound,
     private readonly hooks: UiHooks,
   ) {
     this.buildTopBar();
     this.buildOrbs();
     this.buildCluster();
     this.buildSheet();
+    this.buildFragment();
     this.root.append(this.toasts);
   }
 
   // ---------------------------------------------------------------- chrome
 
+  /**
+   * Health and level along the top, the way an action game does it.
+   *
+   * Two long bars stacked in the top-left corner with the health value written
+   * over the bar rather than beside it, the level in the top-right, and the two
+   * chrome buttons as circles underneath. Laid out on a grid rather than a flex
+   * row so the DOM order - which is the reading order, and is health first -
+   * does not have to match the corner each piece sits in.
+   */
   private buildTopBar(): void {
     const bar = el('div', 'topbar');
 
     this.place.append(this.placeName, this.placeMood);
 
+    const gauges = el('div', 'gauges');
     const hp = el('div', 'hpbar');
-    hp.append(this.hpFill);
+    // The number sits inside the bar: a value in its own column costs width
+    // that the bar wants, and reads as a separate thing to check.
+    hp.append(this.hpFill, this.hpText);
     this.vitals.append(hp);
 
     const xp = el('div', 'xpbar');
     xp.append(this.xpFill);
-    const levelRow = el('div', 'row');
-    levelRow.append(this.levelText);
-    this.levelChip.append(levelRow, xp);
+    gauges.append(this.vitals, xp);
 
-    bar.append(this.place, this.vitals, this.levelChip);
-    this.root.append(bar, this.objective);
+    this.levelChip.append(this.levelText);
+
+    // Under the bars rather than beside the level: these are the two controls
+    // a player reaches for in a hurry - one to stop, one when the room they
+    // are in turns out not to be theirs - and the top-left corner is the one
+    // place nothing else is competing for.
+    onPress(this.muteBtn, () => this.setMuteLabel(this.hooks.onToggleMute()));
+    this.pauseBtn.setAttribute('aria-label', 'Pause');
+    onPress(this.pauseBtn, () => this.hooks.onPause());
+    const chrome = el('div', 'chrome');
+    this.questBtn.setAttribute('aria-label', 'Hide the objective');
+    onPress(this.questBtn, () => this.setQuestOpen(!this.questOpen));
+    chrome.append(this.pauseBtn, this.muteBtn, this.questBtn);
+
+    bar.append(gauges, this.levelChip, chrome, this.place);
+    try {
+      this.setQuestOpen(localStorage.getItem(QUEST_KEY) !== 'closed');
+    } catch {
+      this.setQuestOpen(true);
+    }
+
+    this.breach.append(this.breachText, this.breachFill);
+    this.breach.hidden = true;
+
+    // Under the top bar and above the objective, so a breach in progress never
+    // covers the health bar it is the reason you are watching.
+    this.root.append(bar, this.breach, this.objective);
     this.objective.hidden = true;
   }
 
@@ -194,6 +278,13 @@ export class Ui {
     this.root.append(wrap);
   }
 
+  /** Draws the speaker from the real muted state rather than a local guess. */
+  setMuteLabel(muted: boolean): void {
+    this.muteBtn.textContent = muted ? '🔇' : '🔊';
+    this.muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+    this.muteBtn.classList.toggle('off', muted);
+  }
+
   /** True while the attack button is down, so the game can chain swings. */
   get attacking(): boolean {
     return this.attackHeld;
@@ -232,6 +323,8 @@ export class Ui {
     for (const [id, label] of [
       ['craft', 'Craft'],
       ['alchemy', 'Alchemy'],
+      ['log', 'Log'],
+      ['screen', 'Screen'],
     ] as const) {
       const button = el('button', undefined, label);
       button.dataset.tab = id;
@@ -250,6 +343,99 @@ export class Ui {
     this.sheet.append(header, this.tabs, warn, this.sheetBody);
     this.sheet.hidden = true;
     this.root.append(this.sheet);
+  }
+
+  /**
+   * The world saying something about itself.
+   *
+   * Not a toast: a toast is a receipt for something the player just did and is
+   * gone in two seconds. This is a sentence worth finishing, so it holds until
+   * it is dismissed or until long enough has passed that it has been read, and
+   * it is styled as a reading rather than as feedback.
+   *
+   * It never blocks. Nothing here pauses the world, because a wave clearing is
+   * one of the moments it fires on and stopping the game to narrate that would
+   * take the beat away from the thing it is narrating.
+   */
+  private buildFragment(): void {
+    this.fragment.dataset.ui = '';
+    this.fragment.hidden = true;
+    onPress(this.fragment, () => this.hideFragment());
+    /*
+     * In the flow, directly under the objective banner.
+     *
+     * Floated at a fixed offset it landed on that banner - measured at 367x68
+     * of overlap in portrait and 187px wide in landscape - because the banner
+     * is three lines sometimes and one line others, and no constant is right
+     * for both. Stacked, it cannot overlap whatever the banner turned out to
+     * be. Landscape overrides this back to absolute, because there the banner
+     * is overlaid and the right half of the screen is empty.
+     */
+    this.objective.after(this.fragment);
+  }
+
+  /**
+   * @param channel marks the card as coming from one of the two note channels,
+   *   so a bulletin never looks like something handwritten. Omitted for the
+   *   opening fragments, which claim to be neither.
+   */
+  showFragment(title: string, text: string, channel?: string): void {
+    this.fragment.replaceChildren(
+      el('b', undefined, title),
+      el('p', undefined, text),
+      el('span', 'fdismiss', 'tap to dismiss'),
+    );
+    this.fragment.className = channel ? `fragment ${channel}` : 'fragment';
+    this.fragment.hidden = false;
+    this.fragment.classList.remove('going');
+    // Long enough to read twice at a walking pace, since it arrives while the
+    // player is doing something else.
+    this.fragmentTimer = 9;
+  }
+
+  hideFragment(): void {
+    if (this.fragment.hidden) return;
+    this.fragmentTimer = 0;
+    this.fragment.classList.add('going');
+    this.fragment.hidden = true;
+  }
+
+  /**
+   * The boundary, coming apart.
+   *
+   * Shown as soon as the player is standing somewhere it could happen, not
+   * only once it has started - the whole reason the bar exists is that "walk
+   * to the edge of the world and hold the pull" is not a thing anybody guesses
+   * without being told. `blocked` says which of the three conditions is not
+   * met, because nothing happening at the edge of the world with no
+   * explanation is indistinguishable from a bug.
+   */
+  setBreach(progress: number | null, blocked: string | null): void {
+    const show = progress !== null || blocked === 'recipe' || blocked === 'level';
+    this.breach.hidden = !show;
+    if (!show) return;
+
+    this.breach.classList.toggle('waiting', blocked !== null);
+    this.breachFill.style.width = `${Math.round((progress ?? 0) * 100)}%`;
+
+    if (blocked === 'level') {
+      this.breachText.textContent = `The boundary is code. Level ${this.content.ending.requires.level} first.`;
+    } else if (blocked === 'recipe') {
+      const recipe = this.content.crafting.recipes.find((r) => r.id === this.content.ending.requires.recipe);
+      this.breachText.textContent = `The boundary is code. You need the ${recipe?.name ?? 'last gauntlet'}.`;
+    } else if (blocked === 'distance') {
+      this.breachText.textContent = 'Held. Go back to the edge.';
+    } else {
+      this.breachText.textContent =
+        progress && progress > 0 ? `Breaching - ${Math.round(progress * 100)}%` : 'Hold the pull here.';
+    }
+  }
+
+  /** Ticked from the game loop, so it does not expire while the game is paused. */
+  tickFragment(dt: number): void {
+    if (this.fragment.hidden || this.fragmentTimer <= 0) return;
+    this.fragmentTimer -= dt;
+    if (this.fragmentTimer <= 0) this.hideFragment();
   }
 
   // ---------------------------------------------------------------- state in
@@ -289,6 +475,7 @@ export class Ui {
     if (rounded === this.lastHp) return;
     this.lastHp = rounded;
     this.hpFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`;
+    this.hpText.textContent = `${rounded}/${Math.round(maxHp)}`;
     this.vitals.classList.toggle('hurt', hp / maxHp < 0.35);
   }
 
@@ -298,10 +485,73 @@ export class Ui {
     this.placeMood.textContent = mood;
   }
 
+  /**
+   * Open or close the objective, and remember which.
+   *
+   * Stored rather than reset per run: a player who has turned the banner off
+   * has told you they do not want it, and handing it back on the next load is
+   * the setting not working. It is written through a try/catch because
+   * localStorage throws outright in a private window, and losing a preference
+   * is not worth losing a frame over.
+   */
+  setQuestOpen(open: boolean): void {
+    this.questOpen = open;
+    this.questBtn.classList.toggle('off', !open);
+    this.questBtn.setAttribute('aria-label', open ? 'Hide the objective' : 'Show the objective');
+    this.questBtn.setAttribute('aria-pressed', String(open));
+    try {
+      localStorage.setItem(QUEST_KEY, open ? 'open' : 'closed');
+    } catch {
+      // No storage: the toggle still works for this run.
+    }
+    this.setObjective(this.step);
+  }
+
   setObjective(step: TutorialStep | null): void {
+    this.step = step;
+    /*
+     * Closed hides the banner without ending the step.
+     *
+     * The early return matters: with the banner down there is no element to
+     * measure, so `--banner-bottom` has to be cleared or the announcements go
+     * on stacking below a banner that is not there any more - a gap of dead
+     * space at the top of the screen with nothing above it.
+     */
+    if (!this.questOpen) {
+      this.objective.hidden = true;
+      this.root.classList.remove('banner');
+      this.root.style.removeProperty('--banner-bottom');
+      return;
+    }
     this.objective.hidden = step === null;
-    if (!step) return;
+    /*
+     * The banner and the announcements both want the top-centre.
+     *
+     * The banner sits there because that is where a tutorial line belongs and
+     * where the reference puts it; the toasts stack from there because there
+     * is nowhere else on a landscape screen that is not a thumb. So the root
+     * carries a flag and the toasts start below the banner while one is up.
+     */
+    this.root.classList.toggle('banner', step !== null);
+    if (!step) {
+      this.root.style.removeProperty('--banner-bottom');
+      return;
+    }
     this.objective.replaceChildren(el('b', undefined, step.title), el('span', undefined, step.hint));
+    /*
+     * Publish where the banner actually ends.
+     *
+     * A fixed offset was the first attempt and it does not survive a line
+     * wrapping: a three-row banner ran seventeen pixels past where the
+     * announcements had been told to start, and both are dark boxes of light
+     * text, so they do not look broken when they collide - they look
+     * unreadable. Costs one synchronous layout per tutorial step, which is a
+     * handful of times in a run.
+     */
+    this.root.style.setProperty(
+      '--banner-bottom',
+      `${this.objective.offsetTop + this.objective.offsetHeight}px`,
+    );
   }
 
   // ---------------------------------------------------------------- orbs
@@ -350,7 +600,19 @@ export class Ui {
    */
   private renderSkills(state: HudState): void {
     const level = state.progression.level;
-    const available = state.alchemy.outlooks(state.inventory, level).filter((o) => o.unlocked);
+    /*
+     * The arc is the loadout, in the loadout's order.
+     *
+     * It used to be every unlocked combination, which was fine at three and
+     * would not survive eleven: four circles is what fits up the side of a
+     * phone held sideways before they start running over the menu button.
+     * `unlocked` is still checked, because a bar restored from a save can name
+     * something the player's current level has not opened.
+     */
+    const byId = new Map(state.alchemy.outlooks(state.inventory, level).map((o) => [o.combination.id, o]));
+    const available = state.carried
+      .map((id) => byId.get(id))
+      .filter((o): o is NonNullable<typeof o> => !!o && o.unlocked);
 
     const wanted = available.map((o) => o.combination.id).join(',');
     if (wanted !== this.skillSignature) {
@@ -408,12 +670,31 @@ export class Ui {
 
     this.sheetBody.replaceChildren();
     if (this.tab === 'craft') this.renderCraft(state);
-    else this.renderAlchemy(state);
+    else if (this.tab === 'alchemy') this.renderAlchemy(state);
+    else if (this.tab === 'log') this.renderLog(state);
+    else this.renderScreen();
+  }
+
+  /**
+   * How the game sits on the device: how much world it shows, and which way up.
+   *
+   * In the crafting menu rather than a settings screen of its own because this
+   * is the only menu the game has - canon puts everything the player works with
+   * in one place - and because both settings are things you want to change
+   * while looking at the world, not before starting.
+   */
+  private renderScreen(): void {
+    renderSettings(this.sheetBody, {
+      screen: this.screen,
+      install: this.install,
+      sound: this.sound,
+      onChange: () => this.renderSheet(),
+    });
   }
 
   private renderCraft(state: HudState): void {
     // What you can make now, then what you cannot, then what is already built.
-    // A menu that does not pause has to answer "what can I do" at a glance.
+    // The menu has to answer "what can I do" before it is read line by line.
     const rank = (o: { can: boolean; built: boolean }) => (o.built ? 2 : o.can ? 0 : 1);
     const rows = [...state.crafting.outlooks(state.inventory)].sort((a, b) => rank(a) - rank(b));
     for (const outlook of rows) {
@@ -457,8 +738,15 @@ export class Ui {
       carryCapacity: 'Carry',
       pullRadius: 'Pull radius',
       pullSpeed: 'Pull speed',
+      strikeDamage: 'Strike',
+      strikeReach: 'Reach',
+      channelRate: 'Recovery',
     };
-    return `${names[effect.stat] ?? effect.stat} +${effect.amount}`;
+    // The only one that is a percentage rather than a flat amount, and a row
+    // reading "Recovery +18" where every neighbour is in units would be read
+    // as eighteen of something.
+    const unit = effect.stat === 'channelRate' ? '%' : '';
+    return `${names[effect.stat] ?? effect.stat} +${effect.amount}${unit}`;
   }
 
   private renderAlchemy(state: HudState): void {
@@ -495,6 +783,19 @@ export class Ui {
     }
     this.sheetBody.append(poolRow);
 
+    // What the bar is for, said once and near the top. Without it the Carry
+    // buttons look like a second kind of crafting rather than the choice of
+    // which four things end up under the right thumb.
+    if (state.alchemy.menuInteractive(level)) {
+      this.sheetBody.append(
+        el(
+          'p',
+          'note',
+          `Carrying ${state.carried.length} of ${state.slots}. These are the buttons above the attack.`,
+        ),
+      );
+    }
+
     for (const outlook of state.alchemy.outlooks(state.inventory, level)) {
       const row = el('div', 'row-item');
       row.classList.toggle('short', !outlook.can);
@@ -507,12 +808,11 @@ export class Ui {
       row.append(el('p', undefined, outlook.combination.description));
 
       if (!outlook.unlocked) {
-        row.append(el('span', 'tag', `Locked until level ${this.content.progression.alchemyUnlockLevel}`));
+        row.append(el('span', 'tag', `Locked until level ${state.alchemy.opensAt(outlook.combination)}`));
       } else {
-        const readied = state.selected === outlook.combination.id;
-        row.classList.toggle('on', readied);
-        const button = el('button', 'go', readied ? 'Readied' : 'Ready this');
-        button.disabled = readied;
+        const carried = state.carried.includes(outlook.combination.id);
+        const full = !carried && state.carried.length >= state.slots;
+        row.classList.toggle('on', carried);
         if (!outlook.can) {
           row.append(
             el('span', 'tag', `Short of ${Object.keys(outlook.shortfall)
@@ -520,11 +820,129 @@ export class Ui {
               .join(' and ')}`),
           );
         }
+        // Take-off is offered on a carried row rather than hidden, because with
+        // a full bar that is the only move available and a row with no button
+        // reads as a row that is not listening.
+        const button = el('button', 'go', carried ? 'Carrying' : full ? 'Bar full' : 'Carry');
+        button.disabled = full;
         row.append(button);
         // The whole row is the target: a 40px button is a poor tap area when
         // the world may be moving behind the menu.
-        onPress(row, () => this.hooks.onSelectCombination(outlook.combination.id));
+        onPress(row, () => this.hooks.onToggleCarry(outlook.combination.id));
       }
+      this.sheetBody.append(row);
+    }
+  }
+
+  /**
+   * Everything the player has picked up off the ground, in two columns of one.
+   *
+   * The bulletins and the found notes are shown as separate channels rather
+   * than as one chronological feed, because "plentiful and unreliable" against
+   * "rare and accurate" is the distinction the whole system rests on and a
+   * merged list would erase it. Where the player holds both halves of a
+   * disagreement, the pairing is drawn under the note that disagrees - it is
+   * not spelled out which side is right, because working that out is the only
+   * thing this system asks the player to do.
+   */
+  private renderLog(state: HudState): void {
+    this.renderAssessment(state);
+
+    const all = this.content.notes;
+    const held = state.notesHeld;
+    const { found, total } = accuracyHeld(all, held);
+    const pairs = pairings(all, held);
+
+    this.sheetBody.append(
+      el(
+        'p',
+        'note',
+        `${held.size} of ${all.length} picked up. ` +
+          (pairs.length
+            ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} of them contradict each other.`
+            : 'Nothing you are holding disagrees with anything else you are holding.'),
+      ),
+    );
+
+    if (!held.size) {
+      this.sheetBody.append(
+        el('p', 'note', 'There is paper lying about in every region. The gauntlets will take it if you walk near it with the pull on.'),
+      );
+      return;
+    }
+
+    const byId = new Map(all.map((note) => [note.id, note]));
+    const contradictedBy = new Map(pairs.map((p) => [p.bulletin.id, p.found]));
+
+    for (const which of ['jakindur', 'bulletin'] as const) {
+      const rows = channel(all, which).filter((note) => held.has(note.id));
+      if (!rows.length) continue;
+
+      const meta = this.content.noteChannels[which];
+      const head = el('div', 'logchan');
+      head.append(el('b', undefined, meta?.name ?? which));
+      head.append(
+        el(
+          'span',
+          undefined,
+          which === 'jakindur' ? `${found} of ${total} found` : `${rows.length} of ${channel(all, 'bulletin').length}`,
+        ),
+      );
+      this.sheetBody.append(head);
+
+      for (const note of rows) {
+        const row = el('div', `row-item note ${which}`);
+        row.append(el('b', undefined, note.title));
+        row.append(el('p', undefined, note.text));
+
+        const against = note.contradicts ? byId.get(note.contradicts) : contradictedBy.get(note.id);
+        const bothHeld = against && held.has(against.id);
+        if (bothHeld) {
+          row.classList.add('disputed');
+          row.append(el('span', 'tag', `Disagrees with ${against.title}`));
+        } else if (note.contradicts) {
+          // Said out loud, because a note that is arguing with something the
+          // player has not read is doing half of nothing.
+          row.append(el('span', 'tag', 'Arguing with something you have not found'));
+        }
+        this.sheetBody.append(row);
+      }
+    }
+  }
+
+  /**
+   * What the system has decided about you.
+   *
+   * In the Log rather than on a character sheet, because that is what it is:
+   * canon's section 10 reads the player continuously and grants a rune and a
+   * class without ever asking, and the conclusion belongs next to the two
+   * channels arguing about what the system is for. Nothing here is choosable,
+   * and the page says so.
+   */
+  private renderAssessment(state: HudState): void {
+    const { rune, archetype } = state;
+    if (!rune && !archetype) return;
+
+    const head = el('div', 'logchan');
+    head.append(el('b', undefined, 'Assessment'));
+    head.append(el('span', undefined, archetype ? 'Complete' : 'Provisional'));
+    this.sheetBody.append(head);
+
+    if (rune) {
+      const row = el('div', 'row-item note assess');
+      row.append(el('b', undefined, rune.rune));
+      row.append(el('p', undefined, rune.runeDescription));
+      row.append(el('span', 'tag', `Read as ${rune.name} during the opening`));
+      this.sheetBody.append(row);
+    }
+
+    if (archetype) {
+      const row = el('div', 'row-item note assess');
+      row.append(el('b', undefined, archetype.name));
+      row.append(el('p', undefined, archetype.description));
+      // Said plainly, because a player looking at this will look for the menu
+      // that let them pick it, and there is not one.
+      row.append(el('span', 'tag', 'You were not asked'));
       this.sheetBody.append(row);
     }
   }

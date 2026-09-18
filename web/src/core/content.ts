@@ -5,6 +5,10 @@
  * missing-asset failure mode.
  */
 import bundleJson from '@content/maelstrom-content.json';
+import type { Fragment } from './fragments';
+import type { NoteDef } from './notes';
+import type { EndingDef } from './ending';
+import type { ArchetypeConfig } from './telemetry';
 import type {
   AlchemyCombination,
   BiomeDef,
@@ -37,9 +41,18 @@ export class Content {
   readonly alchemy: readonly AlchemyCombination[] = bundle.alchemy;
   readonly enemies: readonly EnemyDef[] = bundle.enemies;
   readonly waves: WavesDef = bundle.waves;
+  /** The breach, and the three ways it reads afterwards. */
+  readonly ending: EndingDef = bundle.ending;
+  /** The seven signals, and the three things they can decide you are. */
+  readonly archetypes: ArchetypeConfig & { scales: Readonly<Record<string, number>> } =
+    bundle.archetypes;
   readonly tutorial: readonly TutorialStep[] = bundle.tutorial;
   /** The waking scene that plays before the first guide card. */
   readonly opening: OpeningScript = bundle.opening;
+  readonly fragments: readonly Fragment[] = bundle.fragments as readonly Fragment[];
+  /** Both channels of Information Integrity, in content order. */
+  readonly notes: readonly NoteDef[] = bundle.notes;
+  readonly noteChannels = bundle.noteChannels;
   /** Unreal units per screen unit; canon distances are stored in uu. */
   readonly unitsPerPixel: number = bundle.unitsPerPixel ?? 12;
 

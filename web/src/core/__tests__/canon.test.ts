@@ -90,27 +90,94 @@ describe('the Coliseum', () => {
 });
 
 describe('the enemies', () => {
-  it('is three tiers of rendered code, not a bestiary', () => {
-    expect(content.enemies).toHaveLength(3);
-    expect(content.enemies.map((e) => e.tier).sort()).toEqual([1, 2, 3]);
+  /*
+   * Three TIERS, which is the canon part, and more than three kinds, which is
+   * not. The tier is the threat scale - canon's "seeing a Minotaur tells the
+   * player the difficulty changed without a number appearing anywhere" - and
+   * that only survives if all three scales exist and none of them is empty.
+   * What each kind DOES is a separate axis and canon says nothing about it.
+   */
+  it('keeps all three threat tiers, with every one of them filled', () => {
+    for (const tier of [1, 2, 3]) {
+      expect(content.enemies.filter((e) => e.tier === tier).length).toBeGreaterThan(0);
+    }
+    expect(new Set(content.enemies.map((e) => e.tier))).toEqual(new Set([1, 2, 3]));
+  });
+
+  it('keeps the three canon kinds by name', () => {
+    const ids = content.enemies.map((e) => e.id);
+    for (const id of ['goblin', 'minotaur', 'scythe_bearer']) expect(ids).toContain(id);
+  });
+
+  it('stays a roster rather than a bestiary', () => {
+    // Canon's point is that a tier is legible at a glance. Past a certain
+    // number of kinds nothing is legible at a glance, whatever the tiers say.
+    expect(content.enemies.length).toBeLessThanOrEqual(9);
   });
 
   it('drops nothing, so fighting is never a gathering strategy', () => {
     for (const e of content.enemies) expect(e).not.toHaveProperty('drops');
   });
 
-  it('never attacks from beyond the range it closes to', () => {
-    for (const e of content.enemies) expect(e.attackRange).toBeLessThanOrEqual(e.aggroRadius);
+  it('never swings from beyond the range it notices at', () => {
+    // A melee kind that reaches further than it notices can never land a hit.
+    // A RANGED one is supposed to outreach its notice - that is the shape of
+    // it - but never the distance at which it forgets you is there at all.
+    for (const e of content.enemies) {
+      if (e.ranged) expect(e.attackRange).toBeLessThanOrEqual(e.loseRadius);
+      else expect(e.attackRange).toBeLessThanOrEqual(e.noticeRadius);
+    }
+  });
+
+  /*
+   * The informational advantage is the player's. An enemy that notices from
+   * most of a screen away is running a detection sweep, and every encounter
+   * becomes a lock-on however the field is named.
+   */
+  it('notices at an encounter distance, not across a screen', () => {
+    for (const e of content.enemies) expect(e.noticeRadius).toBeLessThanOrEqual(200);
+  });
+
+  it('loses the player further out than it finds them, so backing off works', () => {
+    for (const e of content.enemies) {
+      expect(e.loseRadius).toBeGreaterThan(e.noticeRadius);
+      expect(e.forgetSeconds).toBeGreaterThan(0);
+    }
+  });
+
+  it('wanders slower than it chases, so a chase looks like one', () => {
+    for (const e of content.enemies) {
+      expect(e.wanderSpeed).toBeGreaterThan(0);
+      expect(e.wanderSpeed).toBeLessThan(e.speed);
+      expect(e.roamRadius).toBeGreaterThan(0);
+    }
   });
 });
 
 describe('crafting and alchemy stay separate disciplines', () => {
   it('spends materials on gauntlet upgrades', () => {
-    expect(content.crafting.recipes).toHaveLength(4);
     for (const r of content.crafting.recipes) {
       expect(Object.keys(content.crafting.baseStats)).toContain(r.effect.stat);
       for (const id of Object.keys(r.cost)) expect(content.hasMaterial(id)).toBe(true);
     }
+  });
+
+  it('still has the four recipes canon actually specifies', () => {
+    // A count, not a total: the tree has been extended past canon and this is
+    // the part of it that is not ours to change.
+    const ids = content.crafting.recipes.map((r) => r.id);
+    for (const id of ['reinforced_weave', 'layered_weave', 'widened_aperture', 'deeper_current']) {
+      expect(ids).toContain(id);
+    }
+  });
+
+  it('gives every region something only it can make', () => {
+    // Canon's four recipes are all buildable at the spawn, which left the four
+    // outer regions paying out in elements and nothing else.
+    const wanted = new Set(
+      content.crafting.recipes.flatMap((r) => Object.keys(r.cost)).map((id) => content.material(id).biome),
+    );
+    for (const biome of content.biomes) expect(wanted).toContain(biome.id);
   });
 
   it('spends elements on abilities', () => {
