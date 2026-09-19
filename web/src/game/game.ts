@@ -1,9 +1,10 @@
 /**
  * The run: owns the systems, the world, the loop and the input wiring.
  *
- * Two thumbs. The left half of the screen walks. On the right, PULL is held
- * rather than tapped - canon's core verb is a sustained spiralling draw, not a
- * pickup press - and CAST fires the readied combination.
+ * Two thumbs. The left half of the screen walks. On the right, PULL is a toggle
+ * - canon's core verb is a sustained spiralling draw that works at a walk, not
+ * a pickup press - the large button swings, and the arc above it fires the four
+ * combinations the player chose to carry.
  */
 import { content } from '../core/content';
 import { Inventory } from '../core/inventory';
@@ -21,18 +22,53 @@ import { World } from './world';
 import { Renderer } from './renderer';
 import { Ui } from './ui';
 import { InputController } from './input';
-import { TitleScreen } from './title';
+import { TitleScreen, type MenuDeps } from './title';
+import { PauseMenu } from './pause';
 import { WaveDirector } from './waves';
 import { OpeningScene } from './opening';
+import { Sound } from './sound';
+import { Screen } from './screen';
+import { Install } from './install';
+import { Funnel } from '../core/funnel';
+import { fragmentFor, type Fragment, type FragmentTrigger } from '../core/fragments';
+import { accuracyHeld, pairings } from '../core/notes';
+import {
+  advanceBreach,
+  breachBlocked,
+  epilogueFor,
+  stageIndex,
+  type BreachBlock,
+} from '../core/ending';
+import { EndingScene } from './ending';
+import {
+  blend,
+  emptyReading,
+  mergeGrants,
+  profile,
+  readArchetype,
+  type ArchetypeDef,
+  type ArchetypeGrants,
+  type Reading,
+} from '../core/telemetry';
+import { admit, toggleCarried, LOADOUT_SLOTS, type LoadoutState } from '../core/loadout';
 import type { CombinationId, RecipeId } from '../core/types';
+
+/** Where the run toggle remembers itself, beside the mute and quest keys. */
+const RUN_KEY = 'maelstrom.run.v1';
 
 export class Game {
   private readonly world: World;
+  private readonly screen: Screen;
   private readonly renderer: Renderer;
   private readonly ui: Ui;
   private readonly input: InputController;
   private readonly title: TitleScreen;
+  private readonly pause: PauseMenu;
   private readonly opening: OpeningScene;
+  private readonly ending: EndingScene;
+  private readonly sound = new Sound();
+  private readonly install = new Install();
+  private readonly funnel = new Funnel();
   private readonly waves: WaveDirector;
 
   private readonly inventory = new Inventory(content as never);
@@ -40,10 +76,19 @@ export class Game {
   private readonly alchemy = new Alchemy(content as never);
   private readonly progression = new Progression(content.progression);
 
-  private selected: CombinationId | null = null;
+  /** The four under the thumb, and which have ever been offered a slot. */
+  private loadout: LoadoutState = { carried: [], known: [] };
   /** Gathering is on unless the player turns it off. */
   private pulling = true;
-  private castQueued = false;
+  /**
+   * Running is off unless the player turns it on, and it is remembered.
+   *
+   * Off by default because the opening asks the player to find their feet and
+   * a first walk at a run is a worse first walk. Remembered because it is a
+   * preference about how you like to move rather than a fact about this run -
+   * somebody who runs everywhere should not have to say so again tomorrow.
+   */
+  private running = false;
   /** Seconds left on each combination, ticked every frame. */
   private readonly cooldowns = new Map<CombinationId, number>();
 
@@ -51,6 +96,34 @@ export class Game {
   private guided = false;
   private tutorialStep = 0;
   private readonly tutorialProgress: TutorialProgress = emptyProgress();
+  /** World fragments already read this run. Cleared by starting over. */
+  private readonly fragmentsSeen = new Set<string>();
+  /** Notes picked up off the ground, from either channel. */
+  private readonly notesHeld = new Set<string>();
+
+  /*
+   * The seven signals, and what they have been read as.
+   *
+   * Canon's section 10 reads the player continuously and grants a rune at
+   * Level 2 and a class at Level 5, neither ever chosen from a menu. It warns
+   * the system cannot be retrofitted, because the rune reads the tutorial
+   * period as roughly half its evidence - which is a warning about when the
+   * data starts existing, so this starts counting on the first frame and banks
+   * the tutorial period the moment the rune lands.
+   */
+  private reading: Reading = emptyReading(content.archetypes.signals);
+  private tutorialReading: Reading | null = null;
+  private rune: ArchetypeDef | null = null;
+  private archetype: ArchetypeDef | null = null;
+  private grants: ArchetypeGrants = {};
+
+  /** 0..1 along the boundary breach. See core/ending.ts. */
+  private breach = 0;
+  /** Which of the breach's stage lines has already been said. */
+  private breachStage = -1;
+  private breachSpawn = 0;
+  /** Set once the player has got out. The run continues; the ending does not repeat. */
+  private finished = false;
 
   private playtimeMs = 0;
   private lastFrame = 0;
@@ -61,28 +134,124 @@ export class Game {
   constructor(
     canvas: HTMLCanvasElement,
     private readonly uiRoot: HTMLElement,
+    app: HTMLElement,
   ) {
     this.world = new World(content);
-    this.renderer = new Renderer(canvas, content);
+    /*
+     * First, and before anything that measures: the screen decides how big the
+     * app box is and which way up it sits, so a renderer built ahead of it
+     * would size its backing store to a box that is about to change shape.
+     */
+    this.screen = new Screen(app);
+    this.renderer = new Renderer(canvas, content, this.screen);
     this.waves = new WaveDirector(content, this.world);
 
-    this.ui = new Ui(uiRoot, content, {
+    this.ui = new Ui(uiRoot, content, this.screen, this.install, this.sound, {
       onCraft: (id) => this.craft(id),
-      onSelectCombination: (id) => this.selectCombination(id),
+      onToggleCarry: (id) => this.toggleCarry(id),
       onAttack: () => this.attack(),
       onSkill: (id) => this.useSkill(id),
       onTogglePull: () => this.togglePull(),
+      onToggleRun: () => this.toggleRun(),
+      onToggleMute: () => {
+        // Unlock first: the very first thing a player touches may be the mute
+        // button, and unmuting a context that was never created does nothing.
+        this.sound.unlock();
+        return this.sound.toggleMute();
+      },
+      onPause: () => {
+        // Closing the gauntlet sheet first, so two overlays are never stacked
+        // and Resume never uncovers a menu the player had forgotten was open.
+        this.ui.closeSheet();
+        this.pause.open();
+      },
     });
 
-    this.input = new InputController(canvas);
+    this.input = new InputController(canvas, this.screen);
+    // Escape pauses from a desktop keyboard. Bound as an event rather than
+    // polled: a keypress is over before the next frame runs.
+    this.input.onKey('escape', () => {
+      if (!this.started || this.opening.active || this.title.visible) return;
+      if (this.pause.visible) {
+        this.pause.close();
+        this.syncObjective();
+        return;
+      }
+      this.ui.closeSheet();
+      this.pause.open();
+    });
+    /*
+     * Shift runs, which is where a keyboard player already looks for it.
+     *
+     * An event rather than a held key, to match the button: RUN is a toggle on
+     * a phone, and a keyboard that worked the other way would be a second set
+     * of rules for the same control. InputController drops auto-repeat before
+     * it gets here, or holding Shift would flicker the toggle sixty times a
+     * second and land on whichever state the key-up happened to leave.
+     */
+    this.input.onKey('shift', () => {
+      if (!this.started || this.opening.active || this.title.visible || this.pause.visible) return;
+      this.toggleRun();
+    });
     this.ui.setPullActive(this.pulling);
+    try {
+      this.running = localStorage.getItem(RUN_KEY) === 'on';
+    } catch {
+      // A browser that refuses storage (private mode, a policy) still plays.
+      this.running = false;
+    }
+    this.ui.setRunActive(this.running);
 
     this.opening = new OpeningScene(uiRoot);
+    this.ending = new EndingScene(uiRoot);
 
-    this.title = new TitleScreen(uiRoot, {
-      onContinue: () => this.resume(),
+    // Every path out of the title screen is a genuine user gesture, which is
+    // the only moment a browser will let audio start.
+    /*
+     * One set of dependencies for both menus, so Settings opened before a run
+     * and Settings opened during one are the same rows reading the same state.
+     */
+    const menuDeps: MenuDeps = {
+      install: this.install,
+      screen: this.screen,
+      sound: this.sound,
+      facts: [
+        ['World', `${content.elements.length} elements, ${content.materials.length} materials, ${content.biomes.length} regions`],
+        ['Workshop', `${content.crafting.recipes.length} gauntlet upgrades, ${content.alchemy.length} combinations`],
+        ['Enemies', `${content.enemies.length} tiers, wandering`],
+        ['Lying about', `${content.notes.length} things to read, in two hands that disagree`],
+        ['Everything', 'Drawn and synthesised by code, no asset files'],
+      ],
+    };
+
+    this.pause = new PauseMenu(uiRoot, menuDeps, {
+      onResume: () => this.syncObjective(),
+      /*
+       * Quitting is not starting over.
+       *
+       * It saves and hands the player back to the menu with the run intact,
+       * because "I want to stop" and "I want this erased" are different
+       * sentences and only one of them can be taken back.
+       */
+      onQuit: () => {
+        this.persist();
+        this.started = false;
+        this.ui.closeSheet();
+        this.title.show(true, this.runSummary());
+      },
+    });
+
+    this.title = new TitleScreen(uiRoot, menuDeps, {
+      onContinue: () => {
+        this.sound.unlock();
+        this.goLandscape();
+        this.resume();
+      },
       onNewGame: (guided: boolean) => {
+        this.sound.unlock();
+        this.goLandscape();
         clearSave();
+        this.funnel.mark('restarted');
         this.resetRun();
         this.begin(guided);
       },
@@ -102,6 +271,17 @@ export class Game {
     // markSeen, not award: this suppresses the payout, it does not collect it.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
 
+    // The only distribution signal there is, with no store to report one.
+    if (this.install.state === 'installed') this.funnel.mark('installed');
+    this.install.onChange(() => {
+      if (this.install.state === 'installed') this.funnel.mark('installed');
+    });
+
+    this.ui.setMuteLabel(this.sound.isMuted);
+    // Before the first bind: the arc is drawn from the loadout, and a restored
+    // run that has not been reconciled yet draws an empty one.
+    this.syncLoadout();
+    this.applyGrants();
     this.ui.bind(this.hudState());
     // currentBiome is deliberately left empty: refreshPlace() skips when the
     // biome has not changed, so seeding it here meant the place card never got
@@ -109,6 +289,18 @@ export class Game {
     // it makes the award() call below a no-op on its own.
     this.refreshPlace();
     this.title.show(restored !== null && restored.started, restored ? this.runSummary() : null);
+  }
+
+  /**
+   * Ask the device for landscape, on the same gesture that starts the audio.
+   *
+   * Both have to ride a real press, and this is the only one the player makes
+   * before the world appears. Deliberately not awaited: the lock resolves a
+   * frame or two later on the platforms that grant it, and the run should not
+   * wait on the platforms that never will.
+   */
+  private goLandscape(): void {
+    void this.screen.requestNative();
   }
 
   // ---------------------------------------------------------------- controls
@@ -126,18 +318,44 @@ export class Game {
     this.ui.toast(this.pulling ? 'Gathering' : 'Gathering off', 'info');
   }
 
+  /**
+   * Running is a toggle too, and for the same reason the pull is: a hold-to-run
+   * button is a thumb committed for the length of an expedition, on a screen
+   * where that thumb is also the one that swings.
+   *
+   * It is not free. Creatures notice a running player from runNoticeScale
+   * further away - see World.update - which is the entire reason this is a
+   * button and not just a higher moveSpeed.
+   */
+  private toggleRun(): void {
+    this.running = !this.running;
+    this.ui.setRunActive(this.running);
+    this.ui.toast(this.running ? 'Running - easier to notice' : 'Walking', 'info');
+    try {
+      localStorage.setItem(RUN_KEY, this.running ? 'on' : 'off');
+    } catch {
+      // Not remembering the preference is a smaller problem than not running.
+    }
+  }
+
   private attack(): void {
     const result = this.world.swing();
     if (!result) return;
+    this.sound.play(result.hit.length ? 'hit' : 'ui', 1 + result.combo * 0.12);
+    if (result.hit.length) this.funnel.mark('struck');
+    if (result.killed.length) this.funnel.mark('killed');
+    for (let i = 0; i < result.killed.length; i++) this.sound.play('kill');
     this.ui.setCombo(result.combo);
     if (result.killed.length) this.waves.notifyKills(result.killed.length);
-    if (result.hit.length) this.tutorialProgress.struck += 1;
+    if (result.hit.length) {
+      this.tutorialProgress.struck += 1;
+      this.signal('aggression', result.hit.length);
+    }
   }
 
   private useSkill(id: CombinationId): void {
     if ((this.cooldowns.get(id) ?? 0) > 0) return;
-    this.selected = id;
-    this.cast();
+    this.cast(id);
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -156,8 +374,10 @@ export class Game {
     // The waking scene comes before the first card, and holds the world while
     // it plays. It runs for whichever opening was chosen: skipping the guide
     // skips the instruction, not the fiction.
+    this.funnel.mark('began');
     this.uiRoot.classList.add('waking');
     this.opening.play(content.opening, () => {
+      this.funnel.mark('wokeUp');
       this.uiRoot.classList.remove('waking');
       this.syncObjective();
     });
@@ -182,13 +402,28 @@ export class Game {
     this.waves.reset();
 
     this.cooldowns.clear();
-    this.selected = null;
-    this.castQueued = false;
+    this.reading = emptyReading(content.archetypes.signals);
+    this.tutorialReading = null;
+    this.rune = null;
+    this.archetype = null;
+    this.applyGrants();
+    this.breach = 0;
+    this.breachStage = -1;
+    this.breachSpawn = 0;
+    this.finished = false;
+    this.ui.setBreach(null, null);
+    this.loadout = { carried: [], known: [] };
     this.pulling = true;
     this.playtimeMs = 0;
     this.sinceSave = 0;
     this.currentBiome = '';
     Object.assign(this.tutorialProgress, emptyProgress());
+    // Given back on purpose: a reading lands once, and a new run is a player
+    // who has not read it. Anything holding run state needs a line here - the
+    // save used to write the old run straight back for exactly this reason.
+    this.fragmentsSeen.clear();
+    this.notesHeld.clear();
+    this.ui.hideFragment();
 
     // Waking at the spawn is not a visit, exactly as in the constructor.
     this.progression.markSeen('firstBiome', content.spawnBiome.id);
@@ -196,6 +431,7 @@ export class Game {
     this.ui.setPullActive(this.pulling);
     this.ui.setCombo(0);
     this.ui.setCooldowns(this.cooldowns);
+    this.syncLoadout();
     this.ui.refresh(this.hudState());
     this.refreshPlace();
   }
@@ -203,6 +439,10 @@ export class Game {
   private resume(): void {
     this.started = true;
     this.title.hide();
+    // Reconciled on the way back in as well as on the way out. It is cheap and
+    // idempotent, and it means every route into the world - a fresh run, a
+    // restored save, a quit and continue - gets the same bar.
+    this.syncLoadout();
     this.syncObjective();
   }
 
@@ -214,6 +454,156 @@ export class Game {
     this.tutorialStep = run.tutorialStep;
     this.playtimeMs = run.playtimeMs;
     this.guided = run.tutorialStep >= 0;
+    this.fragmentsSeen.clear();
+    for (const id of run.fragmentsSeen) this.fragmentsSeen.add(id);
+    this.notesHeld.clear();
+    for (const id of run.notesHeld) this.notesHeld.add(id);
+    // Notes already read are gone from the ground, or the Coliseum would
+    // repopulate itself with paper the player is already carrying.
+    for (const note of this.world.notes) if (this.notesHeld.has(note.id)) note.taken = true;
+    this.loadout = { carried: [...run.loadout.carried], known: [...run.loadout.known] };
+    this.breach = run.breach;
+    this.breachStage = stageIndex(run.breach, content.ending.stages);
+    this.finished = run.finished;
+
+    this.reading = { ...emptyReading(content.archetypes.signals), ...run.telemetry.reading };
+    this.tutorialReading = run.telemetry.tutorial;
+    const find = (id: string | null) =>
+      id ? (content.archetypes.archetypes.find((a) => a.id === id) ?? null) : null;
+    this.rune = find(run.telemetry.rune);
+    this.archetype = find(run.telemetry.archetype);
+    this.applyGrants();
+  }
+
+  /**
+   * One reading, the first time the player does a thing.
+   *
+   * The guide says what to do and canon withholds why; this is the narrow band
+   * in between - a sentence about what just happened, at the moment the game
+   * has shown it. Silent afterwards, because a reading about something coming
+   * apart into digits is worth nothing on the fortieth kill.
+   */
+  private fragment(on: FragmentTrigger): void {
+    const found = fragmentFor(content.fragments as readonly Fragment[], on, this.fragmentsSeen);
+    if (!found) return;
+    this.fragmentsSeen.add(found.id);
+    this.ui.showFragment(found.title, found.text);
+    this.sound.play('ui');
+  }
+
+  /**
+   * One note, off the ground and into the log.
+   *
+   * Shown immediately rather than filed silently, because a note the player
+   * has to go looking in a menu for is a note most players never read - and
+   * the disagreement between the two channels only works if both sides
+   * actually land.
+   */
+  private pickUpNote(id: string): void {
+    if (this.notesHeld.has(id)) return;
+    const def = content.notes.find((note) => note.id === id);
+    if (!def) return;
+
+    this.notesHeld.add(id);
+    this.signal('curiosity');
+    this.sound.play('absorb');
+    this.funnel.mark(def.channel === 'jakindur' ? 'foundNote' : 'readBulletin');
+    this.ui.showFragment(def.title, def.text, def.channel);
+
+    const disputes = pairings(content.notes, this.notesHeld);
+    const fresh = disputes.find((pair) => pair.found.id === id || pair.bulletin.id === id);
+    if (fresh) {
+      this.funnel.mark('sawContradiction');
+      // Named rather than resolved. Which of the two is lying is the one thing
+      // this system exists to make the player decide.
+      this.ui.toast(`That contradicts ${fresh.bulletin.title}`, 'big');
+    }
+
+    this.awardXp(this.progression.award('firstNote', id), `Picked up: ${def.title}`);
+    this.ui.refresh(this.hudState());
+  }
+
+  // ------------------------------------------------------- what it reads
+
+  /** Add to one of the seven counters. Anything not in the list is ignored. */
+  private signal(name: string, amount = 1): void {
+    if (amount <= 0 || !(name in this.reading)) return;
+    this.reading[name] = (this.reading[name] ?? 0) + amount;
+  }
+
+  /**
+   * Everything the telemetry currently has, weighted the way canon says.
+   *
+   * Before the rune lands there is only one period and the whole run is it.
+   * After, the tutorial period is banked and counts for `tutorialWeight` -
+   * canon's "roughly half its evidence" - against everything since.
+   */
+  private currentProfile(): Reading {
+    const { scales, tutorialWeight } = content.archetypes;
+    const whole = profile(this.reading, scales);
+    if (!this.tutorialReading) return whole;
+
+    const early = profile(this.tutorialReading, scales);
+    const since: Reading = {};
+    for (const signal of content.archetypes.signals) {
+      since[signal] = Math.max(0, (this.reading[signal] ?? 0) - (this.tutorialReading[signal] ?? 0));
+    }
+    return blend(early, profile(since, scales), tutorialWeight);
+  }
+
+  /**
+   * Read the player, and grant whatever that came out as.
+   *
+   * Called on level-up only. Canon has two moments - a rune at Level 2 and a
+   * class at Level 5 - and nothing in between, which is what stops this being
+   * a stat screen that shuffles while you watch it.
+   */
+  private readTelemetry(level: number): void {
+    const { runeLevel, archetypes } = content.archetypes;
+    const classLevel = content.progression.classLevel;
+
+    if (!this.rune && level >= runeLevel) {
+      // Bank the tutorial period at the moment it stops being the tutorial.
+      this.tutorialReading = { ...this.reading };
+      this.rune = readArchetype(profile(this.reading, content.archetypes.scales), archetypes);
+      if (this.rune) {
+        this.funnel.mark('gotRune');
+        this.ui.toast(`${this.rune.rune}. ${this.rune.runeDescription}`, 'big');
+      }
+    }
+
+    if (!this.archetype && level >= classLevel) {
+      this.archetype = readArchetype(this.currentProfile(), archetypes);
+      if (this.archetype) {
+        this.funnel.mark('gotClass');
+        this.ui.toast(`You have been assessed as ${this.archetype.name}.`, 'big');
+        this.ui.toast(this.archetype.description, 'big');
+      }
+    }
+
+    this.applyGrants();
+  }
+
+  /**
+   * Fold the rune and the class into one set of numbers, and hand them to the
+   * world.
+   *
+   * The two can be different archetypes - the rune reads the tutorial and the
+   * class reads the run, and somebody whose play changed will hold one of each.
+   * Canon never says they have to agree, so they merge field by field rather
+   * than the later one replacing the earlier wholesale.
+   */
+  private applyGrants(): void {
+    this.grants = mergeGrants(this.rune?.runeGrants, this.archetype?.classGrants);
+    this.world.strike = {
+      damage: this.inventory.strikeDamage,
+      range: this.inventory.strikeReach,
+      damageScale: this.grants.strikeScale,
+      comboBonus: this.grants.comboBonus,
+      comboMax: this.grants.comboMax,
+      chargeSeconds: this.grants.chargeSeconds,
+      chargeBonus: this.grants.chargeBonus,
+    };
   }
 
   private persist(): void {
@@ -224,6 +614,17 @@ export class Game {
         started: this.started,
         tutorialStep: this.tutorialStep,
         playtimeMs: this.playtimeMs,
+        fragmentsSeen: [...this.fragmentsSeen],
+        notesHeld: [...this.notesHeld],
+        breach: this.breach,
+        finished: this.finished,
+        telemetry: {
+          reading: this.reading,
+          tutorial: this.tutorialReading,
+          rune: this.rune?.id ?? null,
+          archetype: this.archetype?.id ?? null,
+        },
+        loadout: this.loadout,
       },
     );
   }
@@ -236,7 +637,11 @@ export class Game {
       crafting: this.crafting,
       alchemy: this.alchemy,
       progression: this.progression,
-      selected: this.selected,
+      notesHeld: this.notesHeld,
+      rune: this.rune,
+      archetype: this.archetype,
+      carried: this.loadout.carried,
+      slots: LOADOUT_SLOTS,
     };
   }
 
@@ -254,37 +659,65 @@ export class Game {
       carryCapacity: 'carry',
       pullRadius: 'pull radius',
       pullSpeed: 'pull speed',
+      strikeDamage: 'strike',
+      strikeReach: 'reach',
+      channelRate: 'recovery',
     };
     const stat = STAT_NAMES[recipe.effect.stat] ?? recipe.effect.stat;
+    // Before anything else: two of the recipes raise the swing, and the world
+    // holds its own copy of those numbers. Without this, crafting Coldforged
+    // Knuckles changed the menu and nothing else until the next level-up.
+    this.applyGrants();
+    this.sound.play('craft');
+    this.funnel.mark('crafted');
+    this.fragment('firstCraft');
     this.ui.toast(`${recipe.name}: ${stat} +${recipe.effect.amount}`, 'good');
     this.tutorialProgress.crafted += 1;
     this.awardXp(this.progression.award('firstCraft', recipe.id), `First craft: ${recipe.name}`);
     this.ui.refresh(this.hudState());
   }
 
-  private selectCombination(id: CombinationId): void {
-    this.selected = this.selected === id ? null : id;
+  /**
+   * Put a combination on the arc, or take it off.
+   *
+   * A full bar refuses rather than evicting: four things the player chose are
+   * worth more than the one they just tapped, and a bar that rearranges itself
+   * is a bar nobody trusts.
+   */
+  private toggleCarry(id: CombinationId): void {
+    const result = toggleCarried(this.loadout.carried, id, LOADOUT_SLOTS);
+    if (result.change === 'full') {
+      this.ui.toast(`Only ${LOADOUT_SLOTS} fit - take one off first`, 'bad');
+      return;
+    }
+    this.loadout = { carried: result.carried, known: this.loadout.known };
+    this.sound.play('ui');
     this.ui.refresh(this.hudState());
   }
 
-  private cast(): void {
-    this.readyFirstCombination();
-    if (!this.selected) {
-      this.ui.toast('Nothing to cast yet', 'bad');
-      return;
-    }
-    const combination = this.alchemy.cast(this.selected, this.inventory, this.progression.level);
+  private cast(id: CombinationId): void {
+    const combination = this.alchemy.cast(id, this.inventory, this.progression.level);
     if (!combination) {
-      this.ui.toast(this.whyNotCastable(this.selected), 'bad');
+      this.ui.toast(this.whyNotCastable(id), 'bad');
       return;
     }
     this.tutorialProgress.combinationsUsed += 1;
-    this.cooldowns.set(combination.id, combination.cooldownSeconds);
+    this.signal('alchemy');
+    this.sound.play('cast');
+    this.funnel.mark('cast');
+    this.fragment('firstCast');
+    // Scaled by the gauntlets: channelRate is the one crafting stat that
+    // reaches alchemy, and it is the reason the deep recipes are worth making
+    // once the carry capacity has stopped being the thing holding you back.
+    this.cooldowns.set(
+      combination.id,
+      combination.cooldownSeconds * this.inventory.cooldownScale * (this.grants.cooldownScale ?? 1),
+    );
     this.awardXp(
       this.progression.award('firstAlchemy', combination.id),
       `First cast: ${combination.name}`,
     );
-    const killed = this.world.cast(combination);
+    const killed = this.world.cast(combination, this.grants.castScale ?? 1);
     if (killed.length) this.waves.notifyKills(killed.length);
     this.ui.refresh(this.hudState());
   }
@@ -320,6 +753,9 @@ export class Game {
     const before = this.progression.levelAt(this.progression.xp - amount);
     this.ui.toast(message, 'good');
     if (after > before) {
+      if (after >= 1) this.funnel.mark('reachedLevel1');
+      if (after >= content.progression.alchemyUnlockLevel) this.funnel.mark('reachedLevel2');
+      this.sound.play('level');
       this.onLevelUp(before, after);
       // The cast bar is built from what the level unlocks, so it has to be
       // rebuilt here. Without this the combinations stayed invisible until the
@@ -340,15 +776,46 @@ export class Game {
     if (to >= content.progression.alchemyUnlockLevel) {
       this.ui.toast('The workshop is open. Alchemy, in the menu.', 'big');
     }
-    this.readyFirstCombination();
+    this.syncLoadout(true);
+    this.readTelemetry(to);
   }
 
-  /** Put something in the player's hand rather than making them find the menu. */
-  private readyFirstCombination(): void {
-    if (this.selected) return;
+  /**
+   * Hand over anything newly unlocked, once.
+   *
+   * A combination that unlocks and then waits in a menu for the player to go
+   * and find it is a combination most players never cast. So the first free
+   * slot takes it - and because `admit` remembers what it has offered, taking
+   * it back off again sticks.
+   */
+  private syncLoadout(announce = false): void {
     const level = this.progression.level;
-    const first = content.alchemy.find((c) => this.alchemy.unlocked(c, level));
-    if (first) this.selected = first.id;
+    const available = content.alchemy.filter((c) => this.alchemy.unlocked(c, level)).map((c) => c.id);
+    const before = this.loadout.carried.join(',');
+    const knownBefore = new Set(this.loadout.known);
+    this.loadout = admit(this.loadout, available, LOADOUT_SLOTS);
+    if (this.loadout.carried.join(',') !== before) this.ui.refresh(this.hudState());
+    if (!announce) return;
+
+    /*
+     * Say what opened, and especially what opened and did not fit.
+     *
+     * A combination that unlocks onto a full bar goes into `known` and stays
+     * off the arc, which is correct - the player chose those four - but until
+     * this, nothing anywhere mentioned that it had happened. The unlock was
+     * silent, and the only way to find it was to open the workshop and notice
+     * a row that had stopped saying "Locked".
+     */
+    const fresh = available.filter((id) => !knownBefore.has(id));
+    if (!fresh.length) return;
+    const names = fresh.map((id) => content.combination(id).name);
+    const missed = fresh.filter((id) => !this.loadout.carried.includes(id));
+    this.ui.toast(
+      missed.length
+        ? `${names.join(' and ')} - no room on the bar, swap in the workshop`
+        : `${names.join(' and ')}, on the bar`,
+      missed.length ? 'info' : 'good',
+    );
   }
 
   // ---------------------------------------------------------------- loop
@@ -363,6 +830,10 @@ export class Game {
     }
 
     this.renderer.update(dt);
+
+    // A reading the player is still in the middle of must not expire while the
+    // world is stopped, which is exactly when somebody would stop to read it.
+    if (!this.pause.visible) this.ui.tickFragment(dt);
     this.renderer.draw(this.world, {
       pullRadius: this.inventory.pullRadius / content.unitsPerPixel,
       pulling: this.pulling,
@@ -380,13 +851,28 @@ export class Game {
       return;
     }
 
+    // The same rule at the other end of the run: the scene owns the screen and
+    // nothing is allowed to walk into it while the player is reading.
+    if (this.ending.active) {
+      this.ending.update(dt);
+      return;
+    }
+
+    /*
+     * Paused: nothing moves, including the pull.
+     *
+     * Ahead of the menu check below because the pause is the stronger claim -
+     * a player who asked for the world to stop should not find the gauntlets
+     * still gathering for them.
+     */
+    if (this.pause.visible) return;
+
     // GDD 6.1 has the world keep running while the menu is open, reasoning that
     // a pause "would have erased wave pressure in exactly the moment it should
     // bite". The author asked for a pause instead, so this honours that - and
     // the pull is suspended with it, since a menu that kept gathering for you
     // would be a stranger answer than either.
     if (content.progression.pauseWithMenu && this.ui.sheetOpen) {
-      this.castQueued = false;
       this.world.updatePull(dt, false, 0, content.progression.player.pullSeconds, 0);
       return;
     }
@@ -396,11 +882,41 @@ export class Game {
     const wasMoving = Math.hypot(move.x, move.y) > 0.01;
 
     const before = { x: this.world.player.x, y: this.world.player.y };
-    this.world.movePlayer(dt, move.x, move.y, player.moveSpeed);
-    this.tutorialProgress.travelled += Math.hypot(
-      this.world.player.x - before.x,
-      this.world.player.y - before.y,
+    this.world.movePlayer(
+      dt,
+      move.x,
+      move.y,
+      this.running ? player.sprintSpeed : player.moveSpeed,
+      this.running,
     );
+    const walked = Math.hypot(this.world.player.x - before.x, this.world.player.y - before.y);
+    this.tutorialProgress.travelled += walked;
+    /*
+     * Footfalls come off distance rather than time, so slow ground - the
+     * Wetland, the Mountain - sounds heavy rather than just being slow.
+     *
+     * That was the intent from the start and it was not what the code did.
+     * The cue was played on every frame the player moved and thinned back out
+     * by a 0.26s wall-clock throttle in Sound, so the rhythm belonged to the
+     * throttle: the Wetland at moveScale 0.86 and the Desert at 1.0 produced
+     * the identical tread, and a stride at walking pace is 0.19s, which means
+     * roughly a third of the footfalls were being dropped even then. Now it
+     * fires on the frame the walk cycle actually advances, which is a stride -
+     * slower through deep going, faster at a run, and audibly both.
+     */
+    if (this.world.player.stepped) this.sound.play('step');
+    if (walked > 0.1) {
+      this.funnel.mark('walked');
+      this.signal('roaming', walked);
+    }
+    /*
+     * Patience is time spent with nothing hunting you.
+     *
+     * Deliberately not "time not attacking": standing still while three
+     * goblins close on you is not patience, it is being about to be hit, and
+     * counting it as patience would read every cornered player as Dotore.
+     */
+    if (!this.world.enemies.some((enemy) => !enemy.dead && enemy.aggro)) this.signal('patience', dt);
 
     this.world.updatePull(
       dt,
@@ -410,6 +926,14 @@ export class Game {
       this.inventory.free,
     );
 
+    for (const id of this.world.read) this.pickUpNote(id);
+
+    if (this.world.absorbed.length) {
+      this.sound.play('absorb');
+      this.funnel.mark('gathered');
+      this.fragment('firstMaterial');
+      if (wasMoving) this.funnel.mark('gatheredWhileMoving');
+    }
     for (const material of this.world.absorbed) {
       const taken = this.inventory.add(material, 1);
       if (taken === 0) {
@@ -417,18 +941,16 @@ export class Game {
         continue;
       }
       this.tutorialProgress.gathered += 1;
+      this.signal('gathering');
       if (wasMoving) this.tutorialProgress.gatheredMoving += 1;
       this.tutorialProgress.distinctHeld = this.inventory.distinctCount;
+      // The carry card's bar, and the last quiet milestone before the warning.
+      if (this.inventory.distinctCount >= 3) this.funnel.mark('heldThreeMaterials');
       this.awardXp(
         this.progression.award('firstMaterial', material),
         `New material: ${content.material(material).name}`,
       );
       this.ui.refresh(this.hudState());
-    }
-
-    if (this.castQueued) {
-      this.castQueued = false;
-      this.cast();
     }
 
     if (this.ui.attacking) this.attack();
@@ -442,6 +964,7 @@ export class Game {
     this.ui.setCombo(this.world.player.combo);
 
     this.world.update(dt);
+    this.updateBreach(dt);
     this.waves.update(dt, this.progression.level);
     this.drainEvents();
     this.refreshPlace();
@@ -452,17 +975,68 @@ export class Game {
     this.sinceSave += dt;
     if (this.sinceSave > 5) {
       this.sinceSave = 0;
+      this.funnel.tick(this.playtimeMs);
       this.persist();
     }
   }
 
+  /** Where players stop, readable from the console: maelstrom.funnelReport(). */
+  funnelReport(): string {
+    return this.funnel.report();
+  }
+
   private drainEvents(): void {
     for (const event of this.world.events) {
-      if (event.kind === 'player-died') this.ui.toast('You fell. Recovering...', 'bad');
+      /*
+       * Every kill, from wherever it came.
+       *
+       * Hooked to the event rather than to swing(), because a thing can also
+       * die to a cast or to a burn ticking down, and a deletion that only
+       * happened when you hit it would make the other two look like the enemy
+       * had simply been forgotten.
+       */
+      if (event.kind === 'enemy-killed' && event.enemy) {
+        const { enemy } = event;
+        this.renderer.addDeletion(
+          enemy.def.id,
+          enemy.x,
+          enemy.y,
+          enemy.def.color,
+          // The size drawEnemies uses, so the glyphs land on the silhouette the
+          // player was actually looking at.
+          (34 + enemy.def.tier * 8) * 1.35,
+        );
+      }
+      if (event.kind === 'enemy-killed') this.fragment('firstKill');
+      /*
+       * Something fired at you, which you may not be looking at.
+       *
+       * The bolt is drawn with a tell and a tail, but a player fighting a
+       * Minotaur is looking at the Minotaur - so the shot gets a noise as
+       * well, at a lower volume than a hit, because "that came from somewhere
+       * else" is the whole information a Wisp exists to deliver.
+       */
+      if (event.kind === 'enemy-fired') this.sound.play('ui', 0.7);
+
+      if (event.kind === 'player-hit') {
+        this.sound.play('hurt');
+        this.signal('risk', event.amount ?? 0);
+      }
+      if (event.kind === 'player-died') {
+        this.sound.play('hurt');
+        this.funnel.mark('died');
+        this.ui.toast('You fell. Recovering...', 'bad');
+      }
     }
     this.world.events.length = 0;
 
-    for (const message of this.waves.drainMessages()) this.ui.toast(message, 'big');
+    for (const message of this.waves.drainMessages()) {
+      // Canon calls the warning unmistakable; it is the only cue that is meant
+      // to be unpleasant.
+      this.sound.play('warn');
+      this.funnel.mark('sawWarning');
+      this.ui.toast(message, 'big');
+    }
     const cleared = this.waves.takeClearedWaves();
     for (let i = 0; i < cleared; i++) {
       this.awardXp(
@@ -470,13 +1044,126 @@ export class Game {
         'Wave cleared',
       );
     }
+    if (cleared > 0) this.fragment('waveCleared');
+  }
+
+  // ---------------------------------------------------------------- the ending
+
+  /** Why the boundary will not take a pull right now, or null when it will. */
+  private breachBlock(): BreachBlock {
+    return breachBlocked(
+      {
+        fromCentre: Math.hypot(this.world.player.x, this.world.player.y),
+        boundaryRadius: this.world.boundaryRadius,
+        level: this.progression.level,
+        built: this.crafting.isBuilt(content.ending.requires.recipe),
+      },
+      content.ending,
+    );
+  }
+
+  /**
+   * The boundary coming apart, one frame at a time.
+   *
+   * Only while the player is standing at the edge with the pull on. The rest of
+   * this - the stage lines, the assault - hangs off the meter rather than off a
+   * timer, so a player who breaks off to fight for twenty seconds comes back to
+   * the same sentence they left rather than to one that has moved on without
+   * them.
+   */
+  private updateBreach(dt: number): void {
+    if (this.finished) return;
+
+    /*
+     * Nearness first, and separately from the rest.
+     *
+     * breachBlocked() reports the level before the distance, which is the
+     * right answer for the reason string and the wrong one for deciding
+     * whether to draw anything - using it alone put "The boundary is code.
+     * Level 5 first." on screen from the first minute of the tutorial, in the
+     * middle of a game that has not mentioned a boundary yet.
+     */
+    const toEdge = this.world.boundaryRadius - Math.hypot(this.world.player.x, this.world.player.y);
+    const near = toEdge <= content.ending.breach.reach;
+    const blocked = this.breachBlock();
+
+    if (!near) {
+      // Walked away mid-attempt: the meter holds where it is and bleeds down
+      // slowly, so going back for health is not a decision to start over.
+      if (this.breach > 0) this.breach = advanceBreach(this.breach, dt, false, content.ending.breach);
+      this.ui.setBreach(this.breach > 0 ? this.breach : null, this.breach > 0 ? 'distance' : null);
+      return;
+    }
+
+    if (blocked !== null) {
+      // At the edge, and it will not open. Say which of the two it is: the
+      // player has walked to the end of the world, and nothing happening with
+      // no explanation is indistinguishable from a bug.
+      this.ui.setBreach(this.breach > 0 ? this.breach : null, blocked);
+      return;
+    }
+
+    const before = this.breach;
+    this.breach = advanceBreach(this.breach, dt, this.pulling, content.ending.breach);
+    this.ui.setBreach(this.breach, null);
+    if (before === 0 && this.breach > 0) this.funnel.mark('startedBreach');
+
+    const stage = stageIndex(this.breach, content.ending.stages);
+    if (stage > this.breachStage) {
+      this.breachStage = stage;
+      const line = content.ending.stages[stage];
+      if (line) {
+        this.sound.play('warn');
+        this.ui.toast(line.text, 'big');
+      }
+    }
+
+    // The system stops scheduling and starts arriving.
+    if (this.breach > 0 && this.breach < 1) {
+      this.breachSpawn -= dt;
+      if (this.breachSpawn <= 0) {
+        const [min, max] = content.ending.breach.spawnEverySeconds;
+        this.breachSpawn = (min ?? 6) + Math.random() * ((max ?? 10) - (min ?? 6));
+        this.waves.assault(content.ending.breach.pressure);
+      }
+    }
+
+    if (this.breach >= 1) this.finish();
+  }
+
+  /** Out. The run is kept: the world is still there, and so is the hole. */
+  private finish(): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.ui.setBreach(null, null);
+    this.ui.closeSheet();
+    this.sound.play('level');
+    this.funnel.mark('gotOut');
+
+    const rare = accuracyHeld(content.notes, this.notesHeld);
+    const epilogue = epilogueFor(rare.found, content.ending.epilogues);
+    this.persist();
+    if (!epilogue) {
+      // Cannot happen - the build refuses a table with no zero-note entry -
+      // but a missing epilogue must not be a black screen with no way out.
+      this.title.show(true, this.runSummary());
+      return;
+    }
+
+    this.ending.play(epilogue, this.runSummary(), () => {
+      this.started = false;
+      this.title.show(true, this.runSummary());
+    });
   }
 
   private runSummary(): string {
     const minutes = Math.round(this.playtimeMs / 60000);
-    return `Level ${this.progression.level} - ${this.progression.countSeen('firstMaterial')} of ${
-      content.materials.length
-    } materials - ${minutes} min`;
+    const rare = accuracyHeld(content.notes, this.notesHeld);
+    const out = this.finished ? 'Out - ' : '';
+    return (
+      `${out}Level ${this.progression.level} - ${this.progression.countSeen('firstMaterial')} of ` +
+      `${content.materials.length} materials - ${rare.found} of ${rare.total} notes - ${minutes} min`
+    );
   }
 
   private refreshPlace(): void {
@@ -487,10 +1174,33 @@ export class Game {
 
     if (disc) {
       this.ui.setPlace(disc.name, disc.mood);
+      if (disc.id !== content.spawnBiome.id) {
+        this.funnel.mark('leftSpawnBiome');
+        this.fragment('newBiome');
+      }
+      // Arriving somewhere new is worth more than a note: it is the larger
+      // decision, and it is the one canon builds the whole world shape around.
+      if (!this.progression.hasSeen('firstBiome', disc.id)) this.signal('curiosity', 3);
+      if (this.progression.countSeen('firstBiome') >= content.biomes.length) this.funnel.mark('sawAllBiomes');
       this.awardXp(this.progression.award('firstBiome', disc.id), `Reached ${disc.name}`);
     } else {
       this.ui.setPlace('The Coliseum', 'Forest, between the regions.');
     }
+
+    /*
+     * Retune the ambient bed to the region.
+     *
+     * Pitch and brightness are derived from the terrain rather than authored
+     * per biome: fog muffles, so it closes the filter, and slow ground sits
+     * lower. That way a new region gets a sound for free the moment it gets
+     * terrain, and the two can never describe different places.
+     */
+    const terrain = this.world.terrainAt(this.world.player.x, this.world.player.y);
+    this.sound.setBiome(
+      44 + (1 - terrain.moveScale) * 90,
+      2400 - terrain.fog * 2100,
+      disc ? 0.012 + terrain.fog * 0.05 : 0.008,
+    );
   }
 
   private syncObjective(): void {
@@ -508,5 +1218,6 @@ export class Game {
   destroy(): void {
     cancelAnimationFrame(this.raf);
     this.input.destroy();
+    this.sound.dispose();
   }
 }

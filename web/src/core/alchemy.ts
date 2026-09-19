@@ -39,11 +39,18 @@ export class Alchemy {
 
   /**
    * A tutorial combination works from Level 1 because it was handed over rather
-   * than discovered. Everything else waits for the workshop at Level 2.
+   * than discovered. Everything else waits for the workshop at Level 2, or for
+   * its own minLevel where it has one.
    */
   unlocked(combination: AlchemyCombination, level: number): boolean {
     if (combination.tutorial) return level >= 1;
-    return this.menuInteractive(level);
+    return level >= (combination.minLevel ?? this.content.progression.alchemyUnlockLevel);
+  }
+
+  /** The level a combination opens at, for a menu that has to say so. */
+  opensAt(combination: AlchemyCombination): number {
+    if (combination.tutorial) return 1;
+    return combination.minLevel ?? this.content.progression.alchemyUnlockLevel;
   }
 
   outlook(combination: AlchemyCombination, inventory: Inventory, level: number): CombinationOutlook {

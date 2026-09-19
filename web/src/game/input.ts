@@ -5,12 +5,32 @@
  * play surface places it, which is what makes one-thumb play comfortable on a
  * phone without forcing the player to hunt for a control.
  *
+ * Everything here works in the game box's own coordinates rather than the
+ * viewport's, because the two stop agreeing the moment the box is rotated into
+ * a portrait screen to force landscape.
+ *
  * Keyboard is kept alongside it so the game is playable (and automatable) on a
  * desktop browser.
  */
 export interface Vector2 {
   x: number;
   y: number;
+}
+
+/**
+ * Whatever knows where the game box is and which way up it is.
+ *
+ * Touches arrive in viewport coordinates. Those are the same numbers as the
+ * box's own only while the box is untransformed, so the stick cannot subtract a
+ * bounding rect and call it done - a rotated element reports its axis-aligned
+ * cover, and the axes come out swapped. `Screen` implements this; the fallback
+ * below is the untransformed case, which is what the tests and a desktop
+ * browser use.
+ */
+export interface PointerSpace {
+  toLocal(clientX: number, clientY: number): Vector2;
+  /** Box width, for the side-of-screen test. Also in the box's own axes. */
+  readonly width: number;
 }
 
 /** Distance in CSS pixels at which the stick reads as fully deflected. */
@@ -40,7 +60,9 @@ export class InputController {
   private tapOnlyPointer: number | null = null;
   private pointerStart: { x: number; y: number; time: number } | null = null;
   private readonly keys = new Set<string>();
+  private readonly taps = new Map<string, () => void>();
   private readonly disposers: (() => void)[] = [];
+  private readonly space: PointerSpace;
 
   /**
    * @param onTap fired when a pointer goes down and up in roughly the same place,
@@ -48,8 +70,18 @@ export class InputController {
    */
   constructor(
     private readonly surface: HTMLElement,
+    space?: PointerSpace,
     private readonly onTap?: (x: number, y: number) => void,
   ) {
+    this.space = space ?? {
+      toLocal: (clientX, clientY) => {
+        const rect = surface.getBoundingClientRect();
+        return { x: clientX - rect.left, y: clientY - rect.top };
+      },
+      get width() {
+        return surface.getBoundingClientRect().width;
+      },
+    };
     this.bind(surface, 'pointerdown', this.onPointerDown);
     this.bind(surface, 'pointermove', this.onPointerMove);
     this.bind(surface, 'pointerup', this.onPointerUp);
@@ -75,9 +107,9 @@ export class InputController {
     if ((event.target as HTMLElement)?.closest('[data-ui]')) return;
 
     // Right side is the action thumb's territory - a drag there should not steer.
-    const rect = this.surface.getBoundingClientRect();
-    if (event.clientX - rect.left > rect.width * STICK_ZONE) {
-      this.pointerStart = { x: event.clientX, y: event.clientY, time: performance.now() };
+    const at = this.space.toLocal(event.clientX, event.clientY);
+    if (at.x > this.space.width * STICK_ZONE) {
+      this.pointerStart = { x: at.x, y: at.y, time: performance.now() };
       this.tapOnlyPointer = event.pointerId;
       return;
     }
@@ -91,17 +123,18 @@ export class InputController {
       // slides off the canvas. If the pointer is already gone the stick still
       // works, so never let this take the rest of the handler down with it.
     }
-    this.origin = { x: event.clientX, y: event.clientY };
+    this.origin = { x: at.x, y: at.y };
     this.knob = { ...this.origin };
-    this.pointerStart = { x: event.clientX, y: event.clientY, time: performance.now() };
+    this.pointerStart = { x: at.x, y: at.y, time: performance.now() };
   };
 
   private onPointerMove = (event: PointerEvent): void => {
     if (event.pointerId !== this.pointerId || !this.origin) return;
     event.preventDefault();
 
-    const dx = event.clientX - this.origin.x;
-    const dy = event.clientY - this.origin.y;
+    const at = this.space.toLocal(event.clientX, event.clientY);
+    const dx = at.x - this.origin.x;
+    const dy = at.y - this.origin.y;
     const distance = Math.hypot(dx, dy);
     const clamped = Math.min(distance, STICK_RADIUS);
 
@@ -122,9 +155,10 @@ export class InputController {
 
     const start = this.pointerStart;
     if (start && this.onTap) {
-      const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      const at = this.space.toLocal(event.clientX, event.clientY);
+      const moved = Math.hypot(at.x - start.x, at.y - start.y);
       const held = performance.now() - start.time;
-      if (moved < TAP_SLOP && held < TAP_MS) this.onTap(event.clientX, event.clientY);
+      if (moved < TAP_SLOP && held < TAP_MS) this.onTap(at.x, at.y);
     }
 
     if (isTapOnly) {
@@ -159,8 +193,37 @@ export class InputController {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    this.keys.add(event.key.toLowerCase());
+    const key = event.key.toLowerCase();
+    this.keys.add(key);
+    /*
+     * Auto-repeat is a held key, not a second press.
+     *
+     * A key held down fires keydown again every few tens of milliseconds, and
+     * a one-shot handler bound to it would run dozens of times for one press.
+     * On a toggle that is not a near-miss: holding Shift would flip run on and
+     * off continuously and settle on whichever side the key-up happened to
+     * land, which reads as the button being broken. The held-key set above
+     * still wants every one of these, so the guard is on the dispatch only.
+     */
+    const handler = this.taps.get(key);
+    if (handler && !event.repeat) {
+      event.preventDefault();
+      handler();
+    }
   };
+
+  /**
+   * A key that does something once, delivered as an event.
+   *
+   * Not polled. A keypress is down and up again inside a few milliseconds, and
+   * the frame that would have noticed it routinely happens after the keyup has
+   * already removed it - so a polled one-shot key works intermittently, which
+   * is worse than not working. The held keys above are a different question and
+   * polling is exactly right for those.
+   */
+  onKey(key: string, handler: () => void): void {
+    this.taps.set(key.toLowerCase(), handler);
+  }
 
   private onKeyUp = (event: KeyboardEvent): void => {
     this.keys.delete(event.key.toLowerCase());
@@ -186,12 +249,6 @@ export class InputController {
 
   isKeyDown(key: string): boolean {
     return this.keys.has(key);
-  }
-
-  consumeKey(key: string): boolean {
-    if (!this.keys.has(key)) return false;
-    this.keys.delete(key);
-    return true;
   }
 
   destroy(): void {

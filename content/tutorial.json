@@ -2,19 +2,64 @@
   "$comment": "The opening guide, following GDD section 8.1: Level 0 teaches gathering with no enemies in the world at all, then reaching Level 1 triggers an unmistakable warning and the first wave bundle, which is where combat is taught. Canon is explicit that the tutorial says what to do and where to go and deliberately withholds why. Text lives here; the rule that completes each step lives in web/src/core/tutorial.ts, keyed by id, and the build fails if the two disagree.",
   "opening": {
     "$comment": "The waking scene, GDD section 8.1: the run opens on black and fades up onto the Coliseum before the first guide card. Canon has the player wake with no memory and no explanation, so these lines say what is true and nothing about why. Seconds are per line; the fade runs underneath the first of them. It is skippable with a tap and plays only at the start of a new run, never on Continue.",
+    "$inferred": "The middle three lines are INFERRED, not canon. Canon gives the amnesia, the orbs, the bounded arena and the withheld why; it does not say the ground is warm, that something is running under it, or that the edge is nearer than the horizon. They are written to plant one idea - this is a place and also a running system - which the fragments below then build on. Cut or rewrite them freely; nothing in code depends on the count.",
     "fadeSeconds": 2.4,
-    "lineSeconds": 2.8,
+    "lineSeconds": 2.5,
     "lines": [
       "You wake.",
       "Two half-orbs hang above your hands. They were not there before.",
+      "The ground is warm. Something under it is still running.",
+      "There is a horizon, and there is an edge. They are not the same distance away.",
       "Nobody explains why. Only what to do, and where to go."
+    ]
+  },
+  "fragments": {
+    "$comment": "Short readings that surface the first time the player does something, so the situation arrives through play rather than through a cutscene. Each fires once per run and is cleared by starting over. `on` is matched in web/src/game/game.ts; the build fails on an unknown trigger or an unused one.",
+    "$inferred": "ALL of this text is INFERRED. What canon supports: the enemies are renderings of hostile code rather than creatures; the world is one bounded arena; the player is an intruder; and section 10's telemetry reads the player continuously in order to grant the rune at Level 2. What is invented here: that the gauntlets were provisioned for this person specifically, that the fighting is a measurement someone is keeping the results of, and the vocabulary - intake, allocated, assessment. These are deliberately unattributed: canon's Jakindur notes are a TWO-channel system where a plentiful unreliable source and a rare accurate one can disagree, and building that needs the real prose. This is one channel and no narrator, so it can be replaced by that system rather than contradicting it.",
+    "list": [
+      {
+        "id": "intake",
+        "on": "firstMaterial",
+        "title": "Intake",
+        "text": "The orb takes it without being asked. Whatever these are, they were built to do this - and they were sized for your hands."
+      },
+      {
+        "id": "specification",
+        "on": "firstCraft",
+        "title": "Specification",
+        "text": "The weave closes the way something does when it already knew the shape. You are not inventing. You are assembling a thing that has been made before."
+      },
+      {
+        "id": "deletion",
+        "on": "firstKill",
+        "title": "Deletion",
+        "text": "It does not fall. It comes apart into the digits it was standing in for, and they go out one at a time. Whatever that was, it was never alive. It was allocated."
+      },
+      {
+        "id": "boundary",
+        "on": "newBiome",
+        "title": "Boundary",
+        "text": "The ground changes underfoot and simply keeps going. No wall, no door, nothing loads. Whoever laid this out did not expect anyone to walk between the parts of it."
+      },
+      {
+        "id": "assessment",
+        "on": "waveCleared",
+        "title": "Assessment",
+        "text": "The quiet comes back all at once, which is not how quiet works. Something decided the test had finished. Something is keeping the result."
+      },
+      {
+        "id": "privilege",
+        "on": "firstCast",
+        "title": "Privilege",
+        "text": "Two elements go in and something leaves your hands that you did not design. This was stocked. Someone expected you to need it, and put it where you would find it."
+      }
     ]
   },
   "steps": [
     {
       "id": "move",
       "title": "Find your feet",
-      "hint": "Press and drag anywhere on the left of the screen to walk. You woke here. Nobody has told you why."
+      "hint": "Press and drag anywhere on the left of the screen to walk. RUN moves you faster and makes you easier to notice. You woke here. Nobody has told you why."
     },
     {
       "id": "pull",

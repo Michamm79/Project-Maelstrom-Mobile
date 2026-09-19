@@ -11,9 +11,13 @@
  */
 import alchemistSheet from '../assets/alchemist.png';
 import { drawIcon, shade, withAlpha } from './icons';
-import type { BiomeDisc, World } from './world';
+import { drawCreature, isCreature } from './creatures';
+import { SWING_SECONDS, WIND_UP_SECONDS, type BiomeDisc, type World } from './world';
 import type { Content } from '../core/content';
 import type { InputController } from './input';
+import type { Screen } from './screen';
+import { DELETION_SECONDS, drawDeletion, makeDeletion, type Deletion } from './deletion';
+import { drawBetween, drawEdge, drawFloor, drawScatter, drawShelf, drawWeather, hasTerrain, shelvesIn } from './terrain';
 
 /** Sprite sheet geometry. Rows match the order make-sprites.mjs emits. */
 const SPRITE_W = 16;
@@ -24,8 +28,9 @@ const SPRITE_SCALE = 2;
 /** The connective terrain between the regions. Canon: forest, not a void. */
 const BETWEEN = { ground: '#232f22', groundAlt: '#293626', fog: '#0f150e' };
 
-/**
- * How much world the *longer* screen axis shows, in world units.
+/*
+ * How much world the *longer* screen axis shows lives in `screen.ts`, because
+ * the player can change it.
  *
  * The camera used to draw one world unit per CSS pixel, which meant the amount
  * of world on screen was whatever the device happened to be. Turning a phone
@@ -37,9 +42,27 @@ const BETWEEN = { ground: '#232f22', groundAlt: '#293626', fog: '#0f150e' };
  * view, turned. It is purely presentational - the simulation is all in world
  * units, so nothing about reach, speed or spawn density changes with it.
  */
-const LONG_SPAN = 700;
-const ZOOM_MIN = 0.9;
+
+/**
+ * Legibility floor and ceiling on that zoom.
+ *
+ * The floor was 0.9, which quietly capped the widest view setting on a phone:
+ * 1080 units across a 915px screen needs 0.847, so asking for Wide gave back
+ * the same 1017 as the step below it. 0.8 draws the character at 38px, which
+ * is still a clear silhouette, and lets the setting mean what it says.
+ */
+const ZOOM_MIN = 0.8;
 const ZOOM_MAX = 2.2;
+
+/**
+ * Screen pixels per world unit, for a box of this size showing this span.
+ *
+ * Exported so the relationship can be asserted without a canvas: the clamp is
+ * the part that bites, and it used to silently swallow a whole view setting.
+ */
+export function zoomFor(width: number, height: number, span: number): number {
+  return clamp(Math.max(width, height) / span, ZOOM_MIN, ZOOM_MAX);
+}
 
 interface Floater {
   x: number;
@@ -50,11 +73,67 @@ interface Floater {
   life: number;
 }
 
+/**
+ * A kick of ground thrown up by a running foot.
+ *
+ * World space, not screen space, so a puff stays on the patch of ground it
+ * came off while the camera keeps moving - which is the whole reason it reads
+ * as something the player did to the floor rather than an overlay on the lens.
+ */
+interface Dust {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  age: number;
+  life: number;
+  color: string;
+}
+
+/**
+ * Three per footfall, and a footfall is a stride, so the rate is the pace.
+ *
+ * Two was the first guess and the trail came out as one or two lonely pixels:
+ * a stride at a run is 0.155s and a puff lives about 0.42s, so only two or
+ * three strides are ever on screen at once and two pixels each is not a trail,
+ * it is a speck. Three, held a little longer, reads as something the running
+ * is throwing up behind it.
+ */
+const DUST_PER_STEP = 3;
+/**
+ * How long a puff hangs about, which is really how LONG the trail is.
+ *
+ * A puff barely travels - it is kicked ground settling, and the drag has it
+ * stopped inside about seven units. So the separation between the runner and
+ * their own dust is made entirely by the runner moving away from it, at
+ * sprintSpeed. At 0.5s that is 42 units of trail against a sprite 32 units
+ * wide: almost all of it came out underneath the character and behind the
+ * shadow, and what reached open ground was a speck. 0.9s puts roughly 75 units
+ * of it in the clear, which is the difference between a speck and a trail.
+ */
+const DUST_SECONDS = 0.9;
+/** Cap for the same reason the floaters have one: a stuck tab must not grow. */
+const MAX_DUST = 48;
+/**
+ * One art pixel, in world units.
+ *
+ * The art buffer is a quarter of the canvas and the canvas is drawn at device
+ * pixel ratio, so on the 2x screens this is built for one art pixel covers two
+ * world units. Everything drawn on this layer rounds to it - a puff at a
+ * fractional coordinate gets anti-aliased by the buffer and comes out as a
+ * grey smudge, which is precisely the thing the pixel pass exists to remove.
+ */
+const ART_UNIT = 2;
+
 export interface RenderState {
   /** Current gauntlet reach, in screen units. */
   pullRadius: number;
   pulling: boolean;
-  /** True only during the first bundle - canon's fading tutorial affordance. */
+  /**
+   * True only during the first bundle, where it lifts the awareness limit so
+   * every enemy is marked however far away. Afterwards the player still senses
+   * what is nearby - that is permanent now - just not the whole Coliseum.
+   */
   showEnemies: boolean;
 }
 
@@ -62,25 +141,111 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Above this average frame time the haze starts giving way to the frame rate. */
+const SLOW_FRAME_MS = 22;
+/** And below this it comes back. The gap is the hysteresis. */
+const GOOD_FRAME_MS = 18;
+
+/** Side of the baked haze texture. Detail-free, so it can be small. */
+const FOG_TEXTURE = 192;
+
+function bakeFog(tint: string, strength: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = FOG_TEXTURE;
+  canvas.height = FOG_TEXTURE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const half = FOG_TEXTURE / 2;
+  const haze = ctx.createRadialGradient(half, half, half * 0.12, half, half, half * 0.72);
+  haze.addColorStop(0, withAlpha(tint, 0));
+  haze.addColorStop(0.55, withAlpha(tint, strength * 0.55));
+  haze.addColorStop(1, withAlpha(tint, strength));
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, 0, FOG_TEXTURE, FOG_TEXTURE);
+  return canvas;
+}
+
+/**
+ * Concurrent deletions worth drawing.
+ *
+ * A wave clear can kill a dozen things inside a second, and each one is up to
+ * 150 glyphs. Past a handful the screen is unreadable anyway, so the oldest
+ * give way rather than the frame rate doing it for them.
+ */
+const MAX_DELETIONS = 8;
+
+/**
+ * Device pixels per art pixel.
+ *
+ * The whole world layer is drawn into a buffer this many times smaller than the
+ * canvas and then blown up with smoothing off, which is what makes every mark
+ * in the game - terrain, props, icons, creatures, effects - land on one grid.
+ * Doing it here rather than in each drawing function is the difference between
+ * a pixel-art game and thirty functions that each have their own idea of how
+ * big a pixel is.
+ *
+ * It also costs less rather than more: at 4, a 1678x824 canvas fills 420x206
+ * pixels a frame instead of 1.4 million, and the blit is one hardware-scaled
+ * copy. The fog - one full-screen alpha blend, and the single most expensive
+ * thing this renderer does - gets sixteen times cheaper with it.
+ */
+const ART_PIXEL = 4;
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
+  /**
+   * The world, at art resolution.
+   *
+   * Everything below the HUD is drawn here and blitted up. The HUD is DOM and
+   * the floaters are text, so both stay on the crisp layer: a damage number
+   * three art-pixels tall is not a style, it is unreadable.
+   */
+  private readonly pixels: HTMLCanvasElement = document.createElement('canvas');
+  private readonly pctx: CanvasRenderingContext2D;
+  /** Buffer size in art pixels, recomputed on resize. */
+  private bufferW = 1;
+  private bufferH = 1;
   private readonly floaters: Floater[] = [];
+  private readonly dust: Dust[] = [];
+  private readonly deletions: Deletion[] = [];
   private width = 0;
   private height = 0;
   private dpr = 1;
   private zoom = 1;
+  /** The haze, baked at low resolution and stretched. See drawFog. */
+  private fog: HTMLCanvasElement | null = null;
+  private fogKey = '';
+  /**
+   * Rolling frame time, and how much of the haze the device can afford.
+   *
+   * The fog is one full-screen alpha blend, which is nearly free on a GPU and
+   * measurably not on a software rasteriser - 10fps on SwiftShader here. A
+   * phone that cannot afford it should lose the atmosphere rather than the
+   * frame rate, so this backs it off and restores it when there is headroom.
+   */
+  private frameMs = 16.7;
+  private fogQuality = 1;
 
   private readonly sheet = new Image();
   private sheetReady = false;
   private readonly boxWatcher: ResizeObserver;
 
+  private readonly unwatchScreen: () => void;
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly content: Content,
+    private readonly screen: Screen,
   ) {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('2D canvas context unavailable');
     this.ctx = ctx;
+
+    const pctx = this.pixels.getContext('2d', { alpha: false });
+    if (!pctx) throw new Error('2D canvas context unavailable for the art buffer');
+    this.pctx = pctx;
 
     this.sheet.onload = () => {
       this.sheetReady = true;
@@ -106,6 +271,10 @@ export class Renderer {
     this.boxWatcher = new ResizeObserver(() => this.resize());
     this.boxWatcher.observe(canvas);
     window.addEventListener('orientationchange', this.onViewportChange);
+    // Turning the box sideways changes its size, so the observer above would
+    // catch that on its own; changing the view setting does not, and a zoom
+    // that only took effect on the next rotation would look broken.
+    this.unwatchScreen = this.screen.onChange(() => this.resize());
   }
 
   private readonly onViewportChange = (): void => {
@@ -114,18 +283,54 @@ export class Renderer {
 
   dispose(): void {
     this.boxWatcher.disconnect();
+    this.unwatchScreen();
     window.removeEventListener('orientationchange', this.onViewportChange);
   }
 
   resize(): void {
     // Cap DPR at 2: a 3x display triples the fill cost for no visible gain.
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = this.canvas.getBoundingClientRect();
-    this.width = Math.max(1, Math.round(rect.width));
-    this.height = Math.max(1, Math.round(rect.height));
+    /*
+     * clientWidth/Height, not getBoundingClientRect.
+     *
+     * The rect is the element's axis-aligned cover AFTER transforms, so once
+     * the app box is rotated into a portrait viewport it reports the box with
+     * its sides swapped - and the backing store would come out portrait again,
+     * which is the exact bug the ResizeObserver was added to fix. These two
+     * read the layout box, which is the shape the game is actually drawn in.
+     */
+    this.width = Math.max(1, this.canvas.clientWidth || Math.round(this.canvas.getBoundingClientRect().width));
+    this.height = Math.max(1, this.canvas.clientHeight || Math.round(this.canvas.getBoundingClientRect().height));
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
-    this.zoom = clamp(Math.max(this.width, this.height) / LONG_SPAN, ZOOM_MIN, ZOOM_MAX);
+    this.zoom = zoomFor(this.width, this.height, this.screen.span);
+
+    /*
+     * Round UP, so the blit always covers the canvas.
+     *
+     * Rounding down leaves a strip of whatever was in the backing store along
+     * the right and bottom edges - and because the canvas is opaque and never
+     * cleared under the blit, that strip is the previous frame. A one-pixel
+     * smear of last frame down the edge of the screen is the kind of thing
+     * that looks like a driver bug rather than an off-by-one.
+     */
+    this.bufferW = Math.max(1, Math.ceil(this.canvas.width / ART_PIXEL));
+    this.bufferH = Math.max(1, Math.ceil(this.canvas.height / ART_PIXEL));
+    this.pixels.width = this.bufferW;
+    this.pixels.height = this.bufferH;
+  }
+
+  /**
+   * A creature has stopped running. Canon says they are renderings of hostile
+   * code, so this is the rendering coming apart rather than a body falling.
+   */
+  addDeletion(id: string, x: number, y: number, color: string, size: number): void {
+    const effect = makeDeletion(id, x, y, color, size);
+    if (!effect) return;
+    this.deletions.push(effect);
+    if (this.deletions.length > MAX_DELETIONS) {
+      this.deletions.splice(0, this.deletions.length - MAX_DELETIONS);
+    }
   }
 
   addFloater(x: number, y: number, text: string, color: string, life = 1.25): void {
@@ -133,48 +338,205 @@ export class Renderer {
     if (this.floaters.length > 40) this.floaters.splice(0, this.floaters.length - 40);
   }
 
+  /** Seconds the renderer has been running, for effects that pulse. */
+  private time = 0;
+
   update(dt: number): void {
+    // A wall clock for anything that pulses on its own - the shield ring, the
+    // heal motes - rather than each of them counting its own frames.
+    this.time += dt;
+    // Smoothed hard, so one slow frame during a load never dims the world.
+    this.frameMs += (Math.min(100, dt * 1000) - this.frameMs) * 0.05;
+    if (this.frameMs > SLOW_FRAME_MS) this.fogQuality = Math.max(0, this.fogQuality - dt * 0.6);
+    else if (this.frameMs < GOOD_FRAME_MS) this.fogQuality = Math.min(1, this.fogQuality + dt * 0.2);
+
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const floater = this.floaters[i];
       if (!floater) continue;
       floater.age += dt;
       if (floater.age >= floater.life) this.floaters.splice(i, 1);
     }
+
+    for (let i = this.deletions.length - 1; i >= 0; i--) {
+      const effect = this.deletions[i];
+      if (!effect) continue;
+      effect.age += dt;
+      if (effect.age >= DELETION_SECONDS) this.deletions.splice(i, 1);
+    }
+
+    for (let i = this.dust.length - 1; i >= 0; i--) {
+      const puff = this.dust[i];
+      if (!puff) continue;
+      puff.age += dt;
+      if (puff.age >= puff.life) {
+        this.dust.splice(i, 1);
+        continue;
+      }
+      puff.x += puff.vx * dt;
+      puff.y += puff.vy * dt;
+      // Drags to a stop rather than sailing off: it is kicked ground settling,
+      // not a spark. Frame-rate independent, so a 30fps phone sees the same arc.
+      const drag = Math.max(0, 1 - dt * 5.5);
+      puff.vx *= drag;
+      puff.vy *= drag;
+    }
+  }
+
+  /**
+   * Kick some ground up behind a running foot.
+   *
+   * Called once per footfall - which is once per stride, off distance - so the
+   * puffs come faster when the player is running and slow down in deep going,
+   * with nothing here having to know either of those things.
+   *
+   * `color` comes from the ground actually underfoot, so the Desert throws
+   * sand and the Snowy Mountain throws snow. A single grey would read as a
+   * smudge following the character everywhere.
+   */
+  addDust(x: number, y: number, dirX: number, dirY: number, color: string): void {
+    for (let i = 0; i < DUST_PER_STEP; i++) {
+      // Thrown BACKWARDS from the direction of travel, with a spread across
+      // it. Dust leaving ahead of the runner is the one arrangement that makes
+      // them look like they are being blown along rather than doing the work.
+      const spread = (Math.random() - 0.5) * 1.3;
+      const cos = Math.cos(spread);
+      const sin = Math.sin(spread);
+      const bx = -dirX * cos + dirY * sin;
+      const by = -dirX * sin - dirY * cos;
+      const push = 26 + Math.random() * 30;
+      this.dust.push({
+        // At the heels and already a little way back, so the first frame of a
+        // puff is not drawn under the boot that made it. The sprite's feet sit
+        // about 18 units below its origin, where the shadow ellipse is.
+        x: x + bx * 9,
+        y: y + 16 + by * 4,
+        vx: bx * push,
+        vy: by * push * 0.45 - 12,
+        age: 0,
+        life: DUST_SECONDS * (0.75 + Math.random() * 0.5),
+        color,
+      });
+    }
+    if (this.dust.length > MAX_DUST) this.dust.splice(0, this.dust.length - MAX_DUST);
+  }
+
+  /**
+   * Put a context into world space.
+   *
+   * The camera offset is snapped to whole ART pixels rather than to CSS ones.
+   * That is the difference between a world that moves under a fixed grid and
+   * one whose grid crawls: at any sub-pixel offset the terrain's hard edges
+   * land on different art pixels every frame, and a checker that is supposed to
+   * be still shimmers the whole time you walk.
+   */
+  private toWorld(ctx: CanvasRenderingContext2D, camera: { x: number; y: number }, artPerCss: number): void {
+    ctx.scale(this.zoom, this.zoom);
+    const snap = (v: number) => Math.round(v * artPerCss) / artPerCss / this.zoom;
+    ctx.translate(snap(this.width / 2 - camera.x * this.zoom), snap(this.height / 2 - camera.y * this.zoom));
   }
 
   draw(world: World, state: RenderState, input?: InputController): void {
     const ctx = this.ctx;
-    ctx.save();
-    ctx.scale(this.dpr, this.dpr);
+    const pctx = this.pctx;
+
+    /*
+     * A footfall at a run throws ground up. Read here rather than pushed from
+     * the Game because the colour has to be the ground the foot is actually
+     * on, and this is the side of the wall that already knows how to ask.
+     *
+     * `stepped` is set for the single frame the walk cycle advances and the
+     * loop runs exactly one step per draw, so no footfall is seen twice or
+     * missed. Between the regions there is no disc and the connective forest
+     * is what is underfoot - which is most of the map, so it is not a fallback.
+     */
+    if (world.player.stepped && world.player.running) {
+      const disc = world.biomeAt(world.player.x, world.player.y);
+      /*
+       * Lifted well clear of the floor it came off.
+       *
+       * The first version passed `groundAlt` straight through, on the reading
+       * that kicked ground is the colour of the ground - and it was completely
+       * invisible. groundAlt is one step off `ground` by design, because the
+       * two are a floor's own two-tone grain: #2b3a24 against #334227 in the
+       * spawn. Half-transparent over its own near-twin is nothing at all.
+       * Airborne material catches light the floor does not, so it goes up two
+       * thirds of the way to white and keeps only the hue.
+       */
+      this.addDust(
+        world.player.x,
+        world.player.y,
+        Math.cos(world.player.facing),
+        Math.sin(world.player.facing),
+        shade(disc ? disc.palette.groundAlt : BETWEEN.groundAlt, 0.62),
+      );
+    }
 
     const camera = {
       x: clamp(world.player.x, -world.boundaryRadius, world.boundaryRadius),
       y: clamp(world.player.y, -world.boundaryRadius, world.boundaryRadius),
     };
 
-    ctx.fillStyle = BETWEEN.fog;
-    ctx.fillRect(0, 0, this.width, this.height);
+    /*
+     * The art buffer keeps the SAME coordinate system the renderer has always
+     * used - CSS pixels - by scaling down instead of up. Every drawing function
+     * below this line is unchanged and none of them knows it is being drawn
+     * small, which is the only reason a change this deep is a dozen lines
+     * rather than a rewrite of all thirty of them.
+     */
+    const artPerCss = this.dpr / ART_PIXEL;
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.imageSmoothingEnabled = false;
+    pctx.save();
+    pctx.scale(artPerCss, artPerCss);
 
-    ctx.save();
-    // Rounded in CSS pixels rather than world units: at any zoom but 1 a world
-    // space round lands the camera between device pixels and the ground
-    // checker shimmers as you walk.
-    ctx.scale(this.zoom, this.zoom);
-    ctx.translate(
-      Math.round(this.width / 2 - camera.x * this.zoom) / this.zoom,
-      Math.round(this.height / 2 - camera.y * this.zoom) / this.zoom,
-    );
+    pctx.fillStyle = BETWEEN.fog;
+    pctx.fillRect(0, 0, this.width, this.height);
+
+    pctx.save();
+    this.toWorld(pctx, camera, artPerCss);
 
     this.drawGround(world, camera);
     this.drawProps(world, camera);
     this.drawNodes(world, state, camera);
+    this.drawNotes(world, camera);
+    this.drawWeather(world, camera);
+    this.drawMending(world);
     this.drawEnemies(world, state, camera);
+    this.drawProjectiles(world);
+    this.drawDeletions();
     this.drawPullRing(world, state);
+    this.drawDust();
+    this.drawSwing(world);
     this.drawPlayer(world);
+    this.drawFog(world, camera);
+
+    pctx.restore();
+    pctx.restore();
+
+    // One hardware-scaled copy, smoothing off. This is the whole effect.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      this.pixels,
+      0,
+      0,
+      this.bufferW,
+      this.bufferH,
+      0,
+      0,
+      this.bufferW * ART_PIXEL,
+      this.bufferH * ART_PIXEL,
+    );
+    ctx.imageSmoothingEnabled = true;
+
+    // The crisp layer: damage numbers and the stick. Text three art-pixels tall
+    // is not a style, and the stick belongs with the HUD, which is DOM.
+    ctx.save();
+    ctx.scale(this.dpr, this.dpr);
+    ctx.save();
+    this.toWorld(ctx, camera, artPerCss);
     this.drawFloaters();
-
     ctx.restore();
-
     if (input) this.drawJoystick(input);
     ctx.restore();
   }
@@ -199,21 +561,24 @@ export class Renderer {
   }
 
   private drawGround(world: World, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 80);
 
-    ctx.fillStyle = BETWEEN.ground;
-    ctx.fillRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
-
-    // A soft checker so movement reads even on open ground.
-    const cell = 96;
-    ctx.fillStyle = BETWEEN.groundAlt;
-    const x0 = Math.floor(bounds.left / cell) * cell;
-    const y0 = Math.floor(bounds.top / cell) * cell;
-    for (let x = x0; x < bounds.right; x += cell) {
-      for (let y = y0; y < bounds.bottom; y += cell) {
-        if (((x / cell) + (y / cell)) % 2 === 0) ctx.fillRect(x, y, cell, cell);
-      }
+    /*
+     * The ground between the regions is forest, and it wears the forest's tile.
+     *
+     * It used to be a flat fill plus a 96-unit checker, which was a fine
+     * movement cue when the game was smooth and read as enormous flat squares
+     * the moment the world went onto a four-pixel grid. It is also not filler:
+     * 900 of the Coliseum's 1,940 material nodes are scattered out here, which
+     * makes it half the map.
+     */
+    const spawn = world.discs.find((d) => d.id === 'plains_forest');
+    if (spawn) {
+      drawBetween(ctx, spawn, bounds);
+    } else {
+      ctx.fillStyle = BETWEEN.ground;
+      ctx.fillRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
     }
 
     for (const disc of world.discs) {
@@ -225,7 +590,40 @@ export class Renderer {
       ) {
         continue;
       }
-      this.drawBiome(disc);
+      /*
+       * Two of the five have a floor of their own now.
+       *
+       * They are the two the spawn withholds - the only sources of Glacite and
+       * Umbrel - which makes them the two regions anyone crosses the Coliseum
+       * FOR. The other three keep the tinted disc until they get the same
+       * treatment, and `hasTerrain` is the switch rather than a comment,
+       * so there is never a build where half a region is converted.
+       */
+      if (hasTerrain(disc.id)) {
+        drawFloor(ctx, disc);
+        drawScatter(ctx, disc, bounds);
+        drawEdge(ctx, disc, bounds);
+      } else {
+        this.drawBiome(disc);
+      }
+    }
+
+    // Elevation after every floor is down, so a shelf on one region is never
+    // painted over by the region next to it.
+    for (const disc of world.discs) {
+      if (!hasTerrain(disc.id)) continue;
+      if (
+        disc.x + disc.radius < bounds.left ||
+        disc.x - disc.radius > bounds.right ||
+        disc.y + disc.radius < bounds.top ||
+        disc.y - disc.radius > bounds.bottom
+      ) {
+        continue;
+      }
+      // Back to front, so a nearer block overlaps the one behind it.
+      for (const shelf of shelvesIn(disc, bounds).sort((a, b) => a.y - b.y)) {
+        drawShelf(ctx, disc, shelf);
+      }
     }
 
     // The boundary itself, so the edge of the world is legible before you hit it.
@@ -237,8 +635,31 @@ export class Renderer {
   }
 
   /** Feathered so a region blends into the forest rather than snapping on. */
+  /**
+   * What each region is doing while you are in it.
+   *
+   * Over the scenery and under the creatures: snow blowing across a goblin is
+   * atmosphere, and snow blowing over the top of one is a goblin you cannot
+   * see coming.
+   */
+  private drawWeather(world: World, camera: { x: number; y: number }): void {
+    const bounds = this.visible(camera, 80);
+    for (const disc of world.discs) {
+      if (!hasTerrain(disc.id)) continue;
+      if (
+        disc.x + disc.radius < bounds.left ||
+        disc.x - disc.radius > bounds.right ||
+        disc.y + disc.radius < bounds.top ||
+        disc.y - disc.radius > bounds.bottom
+      ) {
+        continue;
+      }
+      drawWeather(this.pctx, disc, bounds, this.time);
+    }
+  }
+
   private drawBiome(disc: BiomeDisc): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const gradient = ctx.createRadialGradient(disc.x, disc.y, disc.radius * 0.55, disc.x, disc.y, disc.radius);
     gradient.addColorStop(0, disc.palette.ground);
     gradient.addColorStop(0.82, disc.palette.ground);
@@ -255,41 +676,225 @@ export class Renderer {
     ctx.stroke();
   }
 
+  /**
+   * Scenery, drawn per kind.
+   *
+   * Three shapes tinted by the local accent used to serve the whole Coliseum,
+   * which is why every region looked like the spawn in a different colour. The
+   * kinds are what actually distinguish a snowfield from a server floor.
+   */
   private drawProps(world: World, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 40);
 
-    for (const prop of world.props) {
-      if (prop.x < bounds.left || prop.x > bounds.right || prop.y < bounds.top || prop.y > bounds.bottom) {
-        continue;
-      }
+    for (const prop of world.propsIn(bounds.left, bounds.top, bounds.right, bounds.bottom)) {
       const disc = world.biomeAt(prop.x, prop.y);
       const base = disc ? disc.palette.accent : '#4c7a4a';
-      ctx.fillStyle = withAlpha(shade(base, prop.tone), 0.45);
+      const tint = shade(base, prop.tone);
+      const s = prop.size;
 
-      if (prop.kind === 'tuft') {
-        ctx.beginPath();
-        ctx.ellipse(prop.x, prop.y, prop.size * 0.5, prop.size * 0.28, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (prop.kind === 'stone') {
-        ctx.beginPath();
-        ctx.arc(prop.x, prop.y, prop.size * 0.36, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.moveTo(prop.x, prop.y - prop.size);
-        ctx.lineTo(prop.x + prop.size * 0.34, prop.y);
-        ctx.lineTo(prop.x - prop.size * 0.34, prop.y);
-        ctx.closePath();
-        ctx.fill();
+      ctx.save();
+      ctx.translate(prop.x, prop.y);
+      ctx.fillStyle = withAlpha(tint, 0.45);
+
+      switch (prop.kind) {
+        case 'stone':
+          ctx.beginPath();
+          ctx.arc(0, 0, s * 0.36, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        case 'tree':
+          ctx.beginPath();
+          ctx.moveTo(0, -s);
+          ctx.lineTo(s * 0.34, 0);
+          ctx.lineTo(-s * 0.34, 0);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        // Wind-scalloped snow: a low mound with a bright lip facing the light.
+        case 'drift':
+          ctx.fillStyle = withAlpha('#e8f2fb', 0.3);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.72, s * 0.3, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = withAlpha('#ffffff', 0.34);
+          ctx.beginPath();
+          ctx.ellipse(-s * 0.1, -s * 0.1, s * 0.46, s * 0.14, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        // Bare rock breaking the snow: angular, never rounded.
+        case 'crag':
+          ctx.fillStyle = withAlpha(shade(base, -0.5), 0.55);
+          ctx.beginPath();
+          ctx.moveTo(-s * 0.5, s * 0.28);
+          ctx.lineTo(-s * 0.18, -s * 0.62);
+          ctx.lineTo(s * 0.16, -s * 0.2);
+          ctx.lineTo(s * 0.52, s * 0.3);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        // Glacite showing through. It is the region's whole reason to exist,
+        // so it is the one prop that emits rather than reflects.
+        case 'shard':
+          ctx.fillStyle = withAlpha('#bfe9ff', 0.5);
+          ctx.beginPath();
+          ctx.moveTo(0, -s * 0.8);
+          ctx.lineTo(s * 0.22, 0);
+          ctx.lineTo(0, s * 0.34);
+          ctx.lineTo(-s * 0.22, 0);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        // Sand ridge: long, shallow, and lying across the wind.
+        case 'dune':
+          ctx.fillStyle = withAlpha(shade(base, 0.12), 0.24);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 1.15, s * 0.22, 0.3, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        case 'bone':
+          ctx.fillStyle = withAlpha('#e6dcc4', 0.42);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.42, s * 0.1, -0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(-s * 0.3, -s * 0.2, s * 0.1, 0, Math.PI * 2);
+          ctx.arc(s * 0.3, s * 0.2, s * 0.1, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        // Standing water. Darker than the ground rather than lighter, which is
+        // what stops the Wetland reading as a field with puddles painted on.
+        case 'pool':
+          ctx.fillStyle = withAlpha('#16333a', 0.5);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.9, s * 0.45, prop.tone, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = withAlpha('#9fd8e8', 0.14);
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          break;
+
+        case 'reed':
+          ctx.strokeStyle = withAlpha(tint, 0.5);
+          ctx.lineWidth = Math.max(1, s * 0.09);
+          for (const lean of [-0.22, 0, 0.26]) {
+            ctx.beginPath();
+            ctx.moveTo(lean * s * 0.4, 0);
+            ctx.quadraticCurveTo(lean * s, -s * 0.6, lean * s * 1.5 + s * 0.06, -s * 1.05);
+            ctx.stroke();
+          }
+          break;
+
+        // A rack, seen from above: a dark block with a column of live lights.
+        case 'rack':
+          ctx.fillStyle = withAlpha('#0f1020', 0.62);
+          ctx.fillRect(-s * 0.46, -s * 0.6, s * 0.92, s * 1.2);
+          ctx.fillStyle = withAlpha('#7fd8d8', 0.55);
+          for (let i = 0; i < 4; i++) {
+            const lit = ((prop.tone * 40 + i) | 0) % 3 !== 0;
+            if (!lit) continue;
+            ctx.fillRect(-s * 0.3, -s * 0.44 + i * s * 0.28, s * 0.6, s * 0.08);
+          }
+          break;
+
+        case 'conduit':
+          ctx.strokeStyle = withAlpha('#7fd8d8', 0.2);
+          ctx.lineWidth = Math.max(1.5, s * 0.16);
+          ctx.beginPath();
+          ctx.moveTo(-s * 0.8, -s * 0.2);
+          ctx.lineTo(s * 0.1, -s * 0.2);
+          ctx.lineTo(s * 0.1, s * 0.7);
+          ctx.stroke();
+          break;
+
+        case 'tuft':
+        default:
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s * 0.5, s * 0.28, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
       }
+
+      ctx.restore();
     }
   }
 
   // ---------------------------------------------------------------- nodes
 
+  /**
+   * Paper, lying where somebody left it.
+   *
+   * Deliberately not an icon from the material set: a note must not read as
+   * something to gather, or players who have learned "pale shape means ore"
+   * will walk past the one thing in the region that is worth reading. It is a
+   * flat rectangle with a corner turned and a slow glow, and the rare channel
+   * is warmer than the bulletins because it was written by hand.
+   */
+  private drawNotes(world: World, camera: { x: number; y: number }): void {
+    const ctx = this.pctx;
+    const bounds = this.visible(camera, 60);
+
+    for (const note of world.notes) {
+      if (note.taken) continue;
+      const at = world.notePosition(note);
+      if (at.x < bounds.left || at.x > bounds.right || at.y < bounds.top || at.y > bounds.bottom) continue;
+
+      const def = this.content.notes.find((n) => n.id === note.id);
+      const handwritten = def?.channel === 'jakindur';
+      const glow = 0.45 + Math.sin(this.time * 1.6 + at.x * 0.01) * 0.2;
+
+      ctx.save();
+      ctx.translate(at.x, at.y);
+      ctx.globalAlpha = 1 - note.pull * 0.4;
+      const scale = 1 - note.pull * 0.5;
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = 'rgba(0,0,0,0.26)';
+      ctx.beginPath();
+      ctx.ellipse(0, 11, 11, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // A halo, so a sheet of paper on pale ground is still findable.
+      ctx.fillStyle = withAlpha(handwritten ? '#f0c98a' : '#9fd8e8', glow * 0.32);
+      ctx.beginPath();
+      ctx.arc(0, 0, 21, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.rotate(handwritten ? -0.22 : 0.06);
+      ctx.fillStyle = handwritten ? '#efe0c2' : '#dfe9ef';
+      ctx.fillRect(-8, -11, 16, 21);
+      ctx.strokeStyle = withAlpha(handwritten ? '#8a6a3a' : '#5d7d8c', 0.8);
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(-8, -11, 16, 21);
+
+      // Ruled lines for the printed channel, a scrawl for the other.
+      ctx.strokeStyle = withAlpha(handwritten ? '#6b4f2a' : '#7f99a6', 0.7);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (handwritten) {
+        ctx.moveTo(-5, -5);
+        ctx.bezierCurveTo(2, -3, -4, 1, 4, 3);
+      } else {
+        for (let i = 0; i < 4; i++) {
+          ctx.moveTo(-5, -6 + i * 4);
+          ctx.lineTo(i === 3 ? 0 : 5, -6 + i * 4);
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   private drawNodes(world: World, state: RenderState, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 70);
 
     for (const node of world.nodes) {
@@ -340,7 +945,7 @@ export class Renderer {
    */
   private drawPullRing(world: World, state: RenderState): void {
     if (!state.pulling) return;
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const { player } = world;
     const pulse = 0.5 + Math.sin(world.time * 9) * 0.18;
 
@@ -364,17 +969,36 @@ export class Renderer {
   // ---------------------------------------------------------------- enemies
 
   private drawEnemies(world: World, state: RenderState, camera: { x: number; y: number }): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const bounds = this.visible(camera, 90);
 
     for (const enemy of world.enemies) {
       const offscreen =
         enemy.x < bounds.left || enemy.x > bounds.right || enemy.y < bounds.top || enemy.y > bounds.bottom;
 
-      // The first-bundle affordance: an arrow at the screen edge for anything
-      // out of view. It disappears for good once that bundle is done.
+      /*
+       * Canon's asymmetry, the player's half of it: they sense what is around
+       * them, the program does not sense them. Enemies now notice only at an
+       * encounter distance, so this marker is not a crutch - it is the thing
+       * that lets a player go looking for a fight rather than only being found
+       * by one. Local, not a map of everything: only inside awarenessRadius.
+       */
       if (offscreen) {
-        if (state.showEnemies && !enemy.dead) this.drawOffscreenMarker(enemy.x, enemy.y, world);
+        if (!enemy.dead) {
+          const reach = Math.hypot(enemy.x - world.player.x, enemy.y - world.player.y);
+          // The tutorial bundle drops the limit entirely, so the first fight is
+          // never a search. After it, awareness is local again.
+          // Scaled by where the player is standing: the Wetland is "low
+          // visibility" and the Desert is "visible from far off", and both of
+          // those cut in the player's direction as well as the enemies'.
+          const sight = world.terrainAt(world.player.x, world.player.y).sight;
+          // Solvane's whole domain is revealing, so a live Clarion is the same
+          // affordance the first bundle gets for free: everything, marked.
+          const revealed = state.showEnemies || world.player.status.revealed > 0;
+          const sense = revealed ? Infinity : this.content.waves.awarenessRadius * sight;
+          const limit = Number.isFinite(sense) ? sense : this.content.waves.awarenessRadius * sight;
+          if (reach <= sense) this.drawOffscreenMarker(enemy, world, Math.min(1, reach / limit));
+        }
         continue;
       }
 
@@ -387,25 +1011,47 @@ export class Renderer {
       ctx.ellipse(0, 14, 13, 5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      if (enemy.dead) ctx.globalAlpha = 0.35;
+      // Nothing to draw: a dead creature has already been replaced by its
+      // deletion, and a translucent corpse under the glyphs reads as the effect
+      // failing to remove it.
+      if (enemy.dead) {
+        ctx.restore();
+        continue;
+      }
 
-      // Aggro tell, so being noticed is legible before it reaches you.
+      // Noticed-you tell. It matters more now that noticing is an encounter
+      // rather than a sweep: this is the moment the wandering stopped.
       if (enemy.aggro && !enemy.dead) {
-        ctx.fillStyle = withAlpha('#f87171', 0.85);
+        const top = -30 - def.tier * 7;
+        ctx.fillStyle = withAlpha('#f87171', 0.85 + Math.sin(world.time * 10) * 0.15);
         ctx.beginPath();
-        ctx.moveTo(0, -30);
-        ctx.lineTo(4, -24);
-        ctx.lineTo(-4, -24);
+        ctx.moveTo(0, top);
+        ctx.lineTo(5, top - 7);
+        ctx.lineTo(-5, top - 7);
         ctx.closePath();
         ctx.fill();
       }
 
       const bob = Math.sin(world.time * 3 + enemy.id) * 2;
       ctx.translate(0, bob);
-      // Tier is read by silhouette: the size difference is doing the work a
-      // number on a health bar would otherwise have to.
+      // Tier is read by silhouette first and size second: a Goblin, a Minotaur
+      // and a Scythe-bearer are different shapes, not one shape at three scales.
       const size = 34 + def.tier * 8;
-      drawIcon(ctx, def.shape, enemy.hitFlash > 0 ? '#ffffff' : def.color, size);
+      if (isCreature(def.id)) {
+        drawCreature(ctx, def.id, {
+          color: def.color,
+          size: size * 1.35,
+          time: world.time,
+          phase: enemy.id * 1.7,
+          facing: Math.cos(enemy.facing) < 0 ? -1 : 1,
+          windUp: enemy.windUp > 0 ? 1 - enemy.windUp / WIND_UP_SECONDS : 0,
+          stagger: Math.min(1, enemy.stagger * 4),
+          aggro: enemy.aggro,
+          flash: enemy.hitFlash,
+        });
+      } else {
+        drawIcon(ctx, def.shape, enemy.hitFlash > 0 ? '#ffffff' : def.color, size);
+      }
 
       if (enemy.hp < def.hp && !enemy.dead) {
         const w = 28;
@@ -420,30 +1066,141 @@ export class Renderer {
     }
   }
 
-  private drawOffscreenMarker(x: number, y: number, world: World): void {
-    const ctx = this.ctx;
-    const dx = x - world.player.x;
-    const dy = y - world.player.y;
+  /**
+   * An arrow at the edge of the view for something out of sight.
+   *
+   * @param nearness 0 at the player, 1 at the limit of what they can sense, so
+   *   the marker fades with distance and reads as "roughly over there" rather
+   *   than as a precise fix on something the player cannot actually see.
+   */
+  private drawOffscreenMarker(enemy: World['enemies'][number], world: World, nearness: number): void {
+    const ctx = this.pctx;
+    const dx = enemy.x - world.player.x;
+    const dy = enemy.y - world.player.y;
     const angle = Math.atan2(dy, dx);
     const radius = (Math.min(this.width, this.height) / this.zoom) * 0.42;
+    const fade = 0.22 + (1 - nearness) * 0.55;
+    // Tier by size, the same way the bodies read it: a Scythe-bearer somewhere
+    // off screen is worth knowing about before it arrives.
+    const size = 5 + enemy.def.tier * 1.6;
 
     ctx.save();
     ctx.translate(world.player.x + Math.cos(angle) * radius, world.player.y + Math.sin(angle) * radius);
     ctx.rotate(angle);
-    ctx.fillStyle = withAlpha('#f87171', 0.5);
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = enemy.aggro ? '#f87171' : shade(enemy.def.color, 0.25);
     ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(-5, 5);
-    ctx.lineTo(-5, -5);
+    ctx.moveTo(size * 1.5, 0);
+    ctx.lineTo(-size, size * 0.85);
+    ctx.lineTo(-size, -size * 0.85);
     ctx.closePath();
     ctx.fill();
+    // A dark edge so it stays readable over pale ground.
+    ctx.globalAlpha = fade * 0.8;
+    ctx.strokeStyle = '#181024';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * The haze some regions sit under.
+   *
+   * Drawn over the world and under the floaters, as a radial wash that is
+   * thinnest around the player: coolant fog and marsh mist are supposed to
+   * close the distance down, not blind you where you stand. Strength comes
+   * from the blended terrain, so it fades in across the border rather than
+   * switching on.
+   */
+  private drawFog(world: World, camera: { x: number; y: number }): void {
+    const terrain = world.terrainAt(world.player.x, world.player.y);
+    const strength = terrain.fog * this.fogQuality;
+    if (strength <= 0.01) return;
+
+    const disc = world.biomeAt(world.player.x, world.player.y);
+    const ctx = this.pctx;
+    const reach = Math.max(this.width, this.height) / this.zoom;
+
+    /*
+     * Baked small and stretched, rather than filled at full resolution.
+     *
+     * Measured: a screen-sized radial gradient fill cost 10fps on its own at
+     * DPR 2 - about 1.5 million gradient-evaluated pixels every frame, while
+     * the props and the nodes together cost nothing. Haze has no detail in it,
+     * so a 192px texture scaled up is indistinguishable and turns the per-frame
+     * cost into one blit.
+     */
+    const tint = disc?.palette.fog ?? '#101018';
+    // Quantised, or easing the quality would rebake the texture every frame.
+    const key = `${tint}|${strength.toFixed(2)}`;
+    if (key !== this.fogKey) {
+      this.fog = bakeFog(tint, strength);
+      this.fogKey = key;
+    }
+    if (!this.fog) return;
+
+    ctx.drawImage(this.fog, camera.x - reach, camera.y - reach, reach * 2, reach * 2);
+  }
+
+  // ---------------------------------------------------------------- swing
+
+  /**
+   * The basic attack, drawn.
+   *
+   * `attackAnim` has been counting down on every swing since combat went in and
+   * nothing ever read it, so the attack landed damage with no picture attached -
+   * which is a large part of why it felt weightless whatever the numbers said.
+   *
+   * It is an arc rather than a weapon, because the gauntlets are the weapon: a
+   * crescent sweeping through the same cone the hit test uses, so what you see
+   * is what was actually checked.
+   */
+  private drawSwing(world: World): void {
+    const { player } = world;
+    if (player.attackAnim <= 0) return;
+
+    const ctx = this.pctx;
+    const attack = this.content.progression.combat.basicAttack;
+    // 0 at the start of the swing, 1 at the end.
+    const t = 1 - player.attackAnim / SWING_SECONDS;
+    const halfArc = (attack.arcDegrees * Math.PI) / 360;
+    // The leading edge travels through the cone; the trail follows it.
+    const lead = player.facing - halfArc + t * halfArc * 2;
+    const trail = lead - Math.min(halfArc * 1.4, t * halfArc * 2.6);
+    const reach = attack.range * (0.72 + t * 0.28);
+    const fade = Math.sin(Math.min(1, t) * Math.PI);
+
+    ctx.save();
+    ctx.translate(player.x, player.y);
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = withAlpha('#bfe9ff', fade * 0.55);
+    ctx.lineWidth = 9 * (1 - t * 0.45);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, reach * 0.82, trail, lead);
+    ctx.stroke();
+
+    ctx.strokeStyle = withAlpha('#ffffff', fade * 0.8);
+    ctx.lineWidth = 3 * (1 - t * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, reach * 0.86, trail, lead);
+    ctx.stroke();
+
+    // A spark at the leading edge, so the eye follows the direction of the cut.
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = '#eaf8ff';
+    ctx.beginPath();
+    ctx.arc(Math.cos(lead) * reach * 0.86, Math.sin(lead) * reach * 0.86, 3.2 * fade, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
   }
 
   // ---------------------------------------------------------------- player
 
   private drawPlayer(world: World): void {
-    const ctx = this.ctx;
+    const ctx = this.pctx;
     const { player } = world;
     const bob = Math.sin(player.bob) * 2.5;
 
@@ -457,12 +1214,82 @@ export class Renderer {
 
     if (player.invulnerable > 0 && Math.floor(player.invulnerable * 12) % 2 === 0) ctx.globalAlpha = 0.45;
     if (player.dead) ctx.globalAlpha = 0.3;
+    /*
+     * Under a veil, you can still see yourself - dimmed.
+     *
+     * Canon's Umbrel is dampening rather than invisibility, and the player has
+     * to keep track of where they are, so this is a state you can read at a
+     * glance rather than a sprite that disappears.
+     */
+    if (player.status.hidden > 0) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.55);
 
     if (this.sheetReady) this.drawPlayerSprite(ctx, player);
     else this.drawPlayerFallback(ctx, bob);
 
     ctx.globalAlpha = 1;
+    this.drawStatus(ctx, player);
     ctx.restore();
+  }
+
+  /**
+   * The timers, drawn on the player rather than in a corner of the HUD.
+   *
+   * A shield is something you check in the half-second before deciding to take
+   * a hit, and a number in the top-left is not where anyone is looking then.
+   */
+  private drawStatus(ctx: CanvasRenderingContext2D, player: World['player']): void {
+    const { status } = player;
+
+    if (status.shield > 0) {
+      // Pulses faster as it runs out of time, so "about to lapse" is legible
+      // without the player having to read a countdown.
+      const urgency = status.shieldFor < 3 ? 9 : 2.5;
+      const pulse = 0.55 + Math.sin(this.time * urgency) * 0.2;
+      ctx.strokeStyle = withAlpha('#98a4b0', pulse);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(0, -2, 20, 26, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (status.healLeft > 0) {
+      // Motes rising, rather than a ring: growth going up is the one shape
+      // that cannot be confused with the shield around it.
+      ctx.fillStyle = withAlpha('#7fbf5a', 0.75);
+      for (let i = 0; i < 3; i++) {
+        const t = (this.time * 0.9 + i / 3) % 1;
+        ctx.globalAlpha = 0.75 * (1 - t);
+        ctx.beginPath();
+        ctx.arc(Math.sin((t + i) * 6) * 11, 14 - t * 34, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (status.hidden > 0) {
+      ctx.strokeStyle = withAlpha('#5b4a72', 0.5 + Math.sin(this.time * 3) * 0.15);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 24, 12, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    /*
+     * Dotore's charge, which is only ever above zero for a player the
+     * telemetry read as Dotore.
+     *
+     * Drawn as an arc filling clockwise around the hands rather than as a bar,
+     * because the thing it is telling you is "swing now" and that decision is
+     * made looking at the character, not at a corner of the HUD.
+     */
+    if (player.charge > 0.02) {
+      const full = player.charge >= 1;
+      ctx.strokeStyle = withAlpha(full ? '#f5d76e' : '#b07cf0', full ? 0.85 : 0.45 + player.charge * 0.3);
+      ctx.lineWidth = full ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(0, -2, 23, -Math.PI / 2, -Math.PI / 2 + player.charge * Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   private drawPlayerSprite(ctx: CanvasRenderingContext2D, player: World['player']): void {
@@ -497,10 +1324,47 @@ export class Renderer {
 
   // ---------------------------------------------------------------- overlays
 
+  /**
+   * The puffs, as squares on the art grid.
+   *
+   * Squares rather than circles, and rounded onto ART_UNIT rather than left
+   * where the physics put them: an arc drawn at this size comes out as four
+   * grey pixels, and a rect at a fractional coordinate comes out as a smudge.
+   * Both are the buffer anti-aliasing something, which is the one thing
+   * nothing on this layer is allowed to do.
+   *
+   * Each puff shrinks from two art pixels to one and fades as it goes, so it
+   * settles rather than vanishing.
+   */
+  private drawDust(): void {
+    const ctx = this.pctx;
+    const snap = (v: number) => Math.round(v / ART_UNIT) * ART_UNIT;
+    for (const puff of this.dust) {
+      const t = puff.age / puff.life;
+      // Full-strength for the first third and then away, rather than fading
+      // from the instant it appears: a puff that starts at half and falls off
+      // immediately never has a frame where it is actually visible.
+      ctx.globalAlpha = t < 0.35 ? 0.8 : 0.8 * (1 - (t - 0.35) / 0.65);
+      ctx.fillStyle = puff.color;
+      const size = t < 0.55 ? ART_UNIT * 2 : ART_UNIT;
+      ctx.fillRect(snap(puff.x), snap(puff.y), size, size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   private drawFloaters(): void {
     const ctx = this.ctx;
     ctx.textAlign = 'center';
-    ctx.font = '600 13px system-ui, sans-serif';
+    /*
+     * The same face the HUD uses, at a whole multiple of the cell.
+     *
+     * 14 rather than 13: the glyphs are seven pixels tall in a ten-pixel em,
+     * so a size that is not a multiple of ten puts a stem on a fraction of a
+     * device pixel and the damage numbers come out with uneven strokes. This
+     * is the one piece of text the renderer owns, and it is the one piece that
+     * would give the typeface away if it were off the grid.
+     */
+    ctx.font = '20px "Maelstrom Pixel", system-ui, sans-serif';
     for (const floater of this.floaters) {
       const t = floater.age / floater.life;
       ctx.globalAlpha = 1 - t;
@@ -510,29 +1374,138 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
+  /**
+   * What is in the air, and where it came from.
+   *
+   * Drawn over the enemies rather than under them, because a bolt that passes
+   * behind the thing that fired it looks like a bug, and a bolt is the one
+   * thing on screen the player has to be able to see coming.
+   */
+  private drawProjectiles(world: World): void {
+    const ctx = this.pctx;
+    for (const shot of world.projectiles) {
+      // A short tail along its own heading, so a still frame shows a direction
+      // rather than a dot. This is most of what makes it readable in motion.
+      const speed = Math.max(1, Math.hypot(shot.vx, shot.vy));
+      const tx = (shot.vx / speed) * shot.radius * 2.6;
+      const ty = (shot.vy / speed) * shot.radius * 2.6;
+
+      ctx.strokeStyle = withAlpha(shot.color, 0.4);
+      ctx.lineWidth = shot.radius * 1.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(shot.x - tx, shot.y - ty);
+      ctx.lineTo(shot.x, shot.y);
+      ctx.stroke();
+
+      ctx.fillStyle = withAlpha('#ffffff', 0.85);
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, shot.radius * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(shot.color, 0.9);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, shot.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+  }
+
+  /**
+   * The mender's work, drawn as a line to each thing it is repairing.
+   *
+   * Under the creatures, so it reads as something happening between them
+   * rather than over them. This is the only way the player can find out what
+   * a Lich is for: health bars are not shown, so an enemy quietly refilling is
+   * invisible, and "that one is putting the others back together" has to be
+   * something you can see rather than something you infer from losing.
+   */
+  private drawMending(world: World): void {
+    const ctx = this.pctx;
+    for (const healer of world.enemies) {
+      const aura = healer.def.mends;
+      if (!aura || healer.dead || healer.mendAnim <= 0) continue;
+
+      const pulse = 0.35 + Math.sin(this.time * 6) * 0.18;
+      for (const other of world.enemies) {
+        if (other === healer || other.dead || other.hp >= other.def.hp) continue;
+        if (Math.hypot(other.x - healer.x, other.y - healer.y) > aura.radius) continue;
+
+        ctx.strokeStyle = withAlpha(healer.def.color, pulse);
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(healer.x, healer.y - 10);
+        // Bowed rather than straight: a straight line between two moving
+        // things reads as a rendering artefact.
+        const midX = (healer.x + other.x) / 2;
+        const midY = (healer.y + other.y) / 2 - 22;
+        ctx.quadraticCurveTo(midX, midY, other.x, other.y - 10);
+        ctx.stroke();
+      }
+    }
+  }
+
+  private drawDeletions(): void {
+    for (const effect of this.deletions) drawDeletion(this.pctx, effect);
+  }
+
+  /** Outer ring and knob radius, in CSS pixels. Sized to a thumb, not a cursor. */
+  private static readonly STICK_RING = 76;
+  private static readonly STICK_KNOB = 34;
+
+  /**
+   * The stick, and the ghost of where it rests.
+   *
+   * It is a FLOATING stick - the first touch anywhere on the left half places
+   * it, so there is never anything to find and never a fixed circle to miss.
+   * That is worth keeping, and it has one cost: a player looking at a still
+   * screen has no idea the left half does anything at all, which the guide has
+   * to spend a card saying.
+   *
+   * So a faint resting ring is drawn in the bottom-left corner while no thumb
+   * is down. It is not a control - pressing it does nothing the rest of the
+   * left half does not already do - it is the advertisement, and it goes away
+   * the moment the real stick is placed.
+   */
   private drawJoystick(input: InputController): void {
-    if (!input.origin || !input.knob) return;
+    const ring = Renderer.STICK_RING;
+
+    if (!input.origin || !input.knob) {
+      /*
+       * Up the left edge rather than in the corner.
+       *
+       * The corner is where a resting thumb goes and where the reference draws
+       * its stick, and it is also where the gauntlet orbs report what is being
+       * carried - so a ghost drawn there sat on top of them. Placed against
+       * the height instead, it clears the orb readout in both orientations
+       * (which reserves the bottom ~110px upright and ~50px on its side)
+       * without either one needing to know the other's size.
+       */
+      const x = ring + 22;
+      const y = this.height * 0.62;
+      this.drawStickRing(x, y, ring, 0.16, 0.05);
+      this.drawStickRing(x, y, Renderer.STICK_KNOB, 0.2, 0.09);
+      return;
+    }
+
+    // Already in the box's own coordinates: the input controller maps every
+    // touch through the screen on the way in, so there is nothing to subtract
+    // here and nothing that goes wrong when the box is rotated.
+    const { x: ox, y: oy } = input.origin;
+    const { x: kx, y: ky } = input.knob;
+
+    this.drawStickRing(ox, oy, ring, 0.3, 0.1);
+    this.drawStickRing(kx, ky, Renderer.STICK_KNOB, 0.55, 0.3);
+  }
+
+  private drawStickRing(x: number, y: number, radius: number, edge: number, face: number): void {
     const ctx = this.ctx;
-    const rect = this.canvas.getBoundingClientRect();
-    const ox = input.origin.x - rect.left;
-    const oy = input.origin.y - rect.top;
-    const kx = input.knob.x - rect.left;
-    const ky = input.knob.y - rect.top;
-
     ctx.beginPath();
-    ctx.arc(ox, oy, 52, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${face})`;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(kx, ky, 24, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.24)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255,255,255,${edge})`;
+    ctx.lineWidth = 2.5;
     ctx.stroke();
   }
 }

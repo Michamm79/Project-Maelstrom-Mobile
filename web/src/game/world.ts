@@ -15,7 +15,16 @@
 import { Rng, hashString } from '../core/rng';
 import type { Content } from '../core/content';
 import { abilityTargets, applyDamage } from '../core/combat';
-import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId } from '../core/types';
+import { placeNote } from '../core/notes';
+import {
+  absorbDamage,
+  beginHeal,
+  freshStatus,
+  raiseShield,
+  tickStatus,
+  type PlayerStatus,
+} from '../core/status';
+import type { AlchemyCombination, BiomeId, EnemyDef, MaterialId, TerrainDef } from '../core/types';
 
 /** Screen units travelled per walk-cycle frame. */
 const STEP_DISTANCE = 13;
@@ -46,16 +55,72 @@ export interface WorldNode {
   pullDistance: number;
 }
 
+/**
+ * A note lying in the world, from either channel.
+ *
+ * Picked up by the pull rather than by walking over it, because the pull is the
+ * game's verb and "your hands are for pulling code" is the one line in the rare
+ * channel that matters. It has no carry cost and no capacity check: paper is
+ * not ore, and a player at a full pack should not be unable to read.
+ */
+export interface WorldNote {
+  id: string;
+  x: number;
+  y: number;
+  taken: boolean;
+  /** 0..1 while it is on its way in. */
+  pull: number;
+}
+
+/**
+ * Something in the air, on its way to the player.
+ *
+ * Nothing in the game could threaten the player at range, so closing distance
+ * was never a decision and standing still was never a mistake - which quietly
+ * wasted the Wetland's cover and the Desert's exposure, since being seen from
+ * further away cost nothing if nothing could reach you. These can.
+ *
+ * Deliberately slow and visible. It is a thing to walk out of, not a thing to
+ * react to: canon's whole input rule is that the player never has to aim
+ * precisely or move precisely, and a fast bolt would be a dodge check.
+ */
+export interface Projectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  damage: number;
+  color: string;
+  /** Seconds before it gives up, so a stray shot cannot cross the Coliseum. */
+  life: number;
+}
+
 export interface Enemy {
   id: number;
   def: EnemyDef;
   x: number;
   y: number;
   hp: number;
+  /** Where it entered the world; roam targets are chosen around this. */
   homeX: number;
   homeY: number;
   /** Canon: enemies do not know where the player is until they notice them. */
   aggro: boolean;
+  /**
+   * Seconds of pursuit left once the player is past loseRadius. Aggro is not a
+   * latch: an enemy that has lost you keeps coming for a while and then gives
+   * up and goes back to wandering, which is what makes backing off work.
+   */
+  alertFor: number;
+  /** The point it is currently ambling towards, and how long it is resting first. */
+  roamX: number;
+  roamY: number;
+  roamPause: number;
+  /** Winds up before it strikes, so a hit is something you can see coming. */
+  windUp: number;
+  /** Reeling from a hit: cannot move, and whatever it was winding up is lost. */
+  stagger: number;
   cooldown: number;
   hitFlash: number;
   knockX: number;
@@ -63,12 +128,29 @@ export interface Enemy {
   dead: boolean;
   facing: number;
   burn: number;
+  /** Seconds left moving at `slowScale` of its own pace. */
+  slow: number;
+  slowScale: number;
+  /** Counts up while this one is mending, purely so the renderer can pulse. */
+  mendAnim: number;
+  /**
+   * Whether this one arrived as part of a wave.
+   *
+   * A wave counts as cleared when the field is empty, and the ambient
+   * population is by definition never empty - so without this the first
+   * ambient spawn would have meant no wave was ever cleared again, no wave XP
+   * was ever paid, and the bundle never ended. Which nothing would have
+   * reported: the game would simply have stopped progressing.
+   */
+  fromWave: boolean;
 }
 
 export interface CombatEvent {
-  kind: 'player-hit' | 'enemy-hit' | 'enemy-killed' | 'player-died';
+  kind: 'player-hit' | 'enemy-hit' | 'enemy-killed' | 'player-died' | 'enemy-fired';
   enemy?: Enemy;
   amount?: number;
+  /** player-hit: how much of it the shield took, so the HUD can say so. */
+  soaked?: number;
 }
 
 /** Non-interactive scenery, so the world does not read as an empty field. */
@@ -76,7 +158,7 @@ export interface Prop {
   x: number;
   y: number;
   size: number;
-  kind: 'tuft' | 'stone' | 'spire';
+  kind: 'tuft' | 'stone' | 'tree' | 'drift' | 'crag' | 'shard' | 'dune' | 'bone' | 'reed' | 'pool' | 'rack' | 'conduit';
   tone: number;
 }
 
@@ -105,6 +187,31 @@ export interface Player {
   mirrored: boolean;
   frame: number;
   travelled: number;
+  /**
+   * True while RUN is on AND the player is actually moving.
+   *
+   * Not "the toggle is on": a player standing still with RUN lit is not making
+   * any more noise than one standing still without it, and charging the
+   * stationary player the run's whole visibility cost would make the toggle
+   * something you have to remember to switch off every time you stop.
+   */
+  running: boolean;
+  /**
+   * Set for the one frame the walk cycle advances, which is a footfall.
+   *
+   * The sound used to be played every frame the player moved and thinned out
+   * by a wall-clock throttle, so the rhythm was the throttle's and the
+   * Wetland's deep going sounded exactly like the Desert's hard flat. This is
+   * the actual stride, so it is slower on slow ground and faster when running,
+   * which is what the comment in game.ts always claimed it was.
+   */
+  stepped: boolean;
+  /** Seconds since the last swing, which is what Dotore's charge is made of. */
+  sinceSwing: number;
+  /** 0..1 of a full charge. Held here so the renderer can draw it. */
+  charge: number;
+  /** Shield, heal, concealment and revelation - see core/status.ts. */
+  status: PlayerStatus;
 }
 
 export interface BiomeDisc {
@@ -115,7 +222,35 @@ export interface BiomeDisc {
   radius: number;
   palette: { ground: string; groundAlt: string; accent: string; fog: string };
   mood: string;
+  terrain: TerrainDef;
 }
+
+/** What the connective forest between the regions does: nothing. */
+const NEUTRAL: TerrainDef = {
+  moveScale: 1,
+  concealment: 1,
+  sight: 1,
+  fog: 0,
+  propDensity: 1,
+  props: ['tuft', 'stone', 'tree'],
+};
+
+/** Bucket size for the prop index, in world units: about a third of a screen. */
+const PROP_CELL = 220;
+
+/** Cantor-ish pairing, so a cell is one number rather than a string key. */
+function propKey(cx: number, cy: number): number {
+  return (cx + 4096) * 8192 + (cy + 4096);
+}
+
+/** How wide the blend between a region and the forest is, in world units. */
+const TERRAIN_FEATHER = 90;
+
+/** How far inside a region's edge a note may sit, in Unreal units. */
+const NOTE_INSET = 600;
+
+/** Notes come in faster than ore: they weigh nothing. */
+const NOTE_PULL_SCALE = 0.55;
 
 /** The player as they wake: one definition, so reset() cannot drift from it. */
 function freshPlayer(combat: Content['progression']['combat']): Player {
@@ -140,24 +275,122 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
     mirrored: false,
     frame: 0,
     travelled: 0,
+    running: false,
+    stepped: false,
+    sinceSwing: 99,
+    charge: 0,
+    status: freshStatus(),
   };
 }
 
+/** Seeds the wander stream, kept apart from the world's generation stream. */
+const ROAM_SEED = 0x9e3779b9;
+
+/** How close counts as having arrived at a roam target. */
+const ARRIVE_DISTANCE = 14;
+/** Share of the full shove that a combo-less hit delivers. */
+const COMBO_SHOVE_FLOOR = 0.4;
+
+/** The share of a blow that always gets through, however well armoured. */
+const ARMOUR_FLOOR = 0.25;
+
+/**
+ * Damage, after the armour has taken its cut.
+ *
+ * A flat subtraction rather than a percentage, because flat is what makes the
+ * decision legible: a Golem's 6 turns a 9-damage punch into 3 and a 26-damage
+ * Sunlance into 20, so the basic attack becomes a bad answer and a combination
+ * becomes a good one without a single number appearing on screen.
+ *
+ * Floored at a fraction rather than at zero: an armour value that made a kind
+ * literally immune to the only weapon a new player has would be a wall rather
+ * than a question, and nothing on screen would tell them which it was.
+ */
+export function afterArmour(amount: number, armour: number | undefined): number {
+  if (!armour || amount <= 0) return amount;
+  return Math.max(amount * ARMOUR_FLOOR, amount - armour);
+}
+
+/**
+ * How fast an enemy is moving right now, as a fraction of its own speed.
+ *
+ * Applied to the wander as well as the chase, because a slow that only bit
+ * while something was pursuing you would let a frozen crowd stroll away at
+ * full speed the moment they lost interest.
+ */
+function paceScale(enemy: Enemy): number {
+  return enemy.slow > 0 ? Math.max(0.1, enemy.slowScale) : 1;
+}
+
+/** How long a swing takes to draw. The renderer reads attackAnim against it. */
+export const SWING_SECONDS = 0.26;
+
+/** The tell before a blow lands, so a hit is something you can see coming. */
+export const WIND_UP_SECONDS = 0.42;
+
+/**
+ * Everything outside the world that changes what a swing does.
+ *
+ * Crafting supplies the flat parts - the hands are the weapon, so the gauntlet
+ * upgrades reach the attack - and the telemetry read supplies the scales. Both
+ * are passed in rather than held, because the world owns neither an inventory
+ * nor an archetype and a copy of these numbers kept here would go stale the
+ * moment either changed.
+ */
+export interface StrikeBonus {
+  damage: number;
+  range: number;
+  /** Multiplies the final damage. Nahaste's stated cost; Amorratua's edge. */
+  damageScale?: number;
+  /** Multiplies the per-hit combo bonus. */
+  comboBonus?: number;
+  /** Added to the combo ceiling. */
+  comboMax?: number;
+  /** Dotore: seconds of not swinging that build a full charge. */
+  chargeSeconds?: number;
+  /** Dotore: the fraction a full charge adds to the blow. */
+  chargeBonus?: number;
+}
+
+const NO_BONUS: StrikeBonus = { damage: 0, range: 0 };
+
 export class World {
   readonly nodes: WorldNode[] = [];
+  readonly notes: WorldNote[] = [];
   readonly props: Prop[] = [];
+  /**
+   * Props bucketed by cell, so drawing walks the handful in view instead of
+   * every one in the world. At 9000 props the linear scan cost about 10fps on
+   * its own, and the scatter is fixed at generation - nothing moves - so the
+   * index never needs rebuilding.
+   */
+  private readonly propGrid = new Map<number, Prop[]>();
   readonly enemies: Enemy[] = [];
+  /** In flight, from the kinds that fight at range. Drawn and stepped here. */
+  readonly projectiles: Projectile[] = [];
   readonly discs: BiomeDisc[] = [];
   readonly player: Player;
   readonly boundaryRadius: number;
+  /**
+   * What crafting and the telemetry read add to a swing.
+   *
+   * Set by the game layer whenever either changes. Held rather than passed on
+   * every call because the renderer needs the charge fields too, and two copies
+   * of the same numbers is how one of them goes stale.
+   */
+  strike: StrikeBonus = { ...NO_BONUS };
 
   /** Drained by the game layer each frame. */
   readonly events: CombatEvent[] = [];
   /** Materials absorbed this frame, in the order the spirals completed. */
   readonly absorbed: MaterialId[] = [];
+  /** Notes drawn in this frame. Drained by the game layer with `absorbed`. */
+  readonly read: string[] = [];
 
   private elapsed = 0;
   private nextEnemyId = 0;
+  /** Its own stream, so wandering never perturbs the world's generation. */
+  private roamRng = new Rng(ROAM_SEED);
 
   constructor(private readonly content: Content) {
     const upp = content.unitsPerPixel;
@@ -172,6 +405,7 @@ export class World {
         radius: b.radius / upp,
         palette: b.palette,
         mood: b.mood,
+        terrain: b.terrain,
       });
     }
 
@@ -190,6 +424,27 @@ export class World {
     const rng = new Rng(hashString('coliseum'));
     this.generateProps(rng);
     this.generateNodes(rng);
+    this.placeNotes();
+  }
+
+  /**
+   * Both channels, laid out from their own ids.
+   *
+   * Deterministic rather than rolled, so the Coliseum is the same place on
+   * every run: a note that moved between runs could not be described to
+   * anybody, and the rare channel is meant to be findable by someone who has
+   * been told where to look.
+   */
+  private placeNotes(): void {
+    const upp = this.content.unitsPerPixel;
+    for (const note of this.content.notes) {
+      const disc = this.discs.find((d) => d.id === note.biome);
+      if (!disc) continue;
+      // Inset in world units, converted: far enough in that a note is never
+      // outside the disc it belongs to.
+      const spot = placeNote(note, disc, (NOTE_INSET / upp) / Math.max(1, disc.radius));
+      this.notes.push({ id: note.id, x: spot.x, y: spot.y, taken: false, pull: 0 });
+    }
   }
 
   /**
@@ -201,17 +456,53 @@ export class World {
    */
   reset(): void {
     this.nodes.length = 0;
+    this.notes.length = 0;
+    this.read.length = 0;
+    this.projectiles.length = 0;
     this.props.length = 0;
+    this.propGrid.clear();
     this.enemies.length = 0;
     this.events.length = 0;
     this.absorbed.length = 0;
     this.elapsed = 0;
     this.nextEnemyId = 0;
+    this.roamRng = new Rng(ROAM_SEED);
     Object.assign(this.player, freshPlayer(this.content.progression.combat));
     this.populate();
   }
 
   // ---------------------------------------------------------------- geography
+
+  /**
+   * Notes come in on the same draw as everything else, and faster.
+   *
+   * No capacity check on purpose: paper is not ore, and a player with a full
+   * pack standing next to the one note that explains the ending should not be
+   * quietly unable to pick it up.
+   */
+  private pullNotes(dt: number, active: boolean, radius: number, seconds: number): void {
+    for (const note of this.notes) {
+      if (note.taken) continue;
+
+      if (note.pull > 0) {
+        if (!active) {
+          note.pull = Math.max(0, note.pull - dt / Math.max(0.05, seconds));
+          continue;
+        }
+        note.pull += dt / Math.max(0.05, seconds * NOTE_PULL_SCALE);
+        if (note.pull >= 1) {
+          note.taken = true;
+          note.pull = 1;
+          this.read.push(note.id);
+        }
+        continue;
+      }
+
+      if (!active) continue;
+      if (Math.hypot(note.x - this.player.x, note.y - this.player.y) > radius) continue;
+      note.pull = 0.0001;
+    }
+  }
 
   /** Which region a point falls in, or null for the connective forest between. */
   biomeAt(x: number, y: number): BiomeDisc | null {
@@ -221,28 +512,113 @@ export class World {
     return null;
   }
 
+  /** Props overlapping a world rectangle, from the bucket index. */
+  propsIn(left: number, top: number, right: number, bottom: number): Prop[] {
+    const found: Prop[] = [];
+    const x0 = Math.floor(left / PROP_CELL);
+    const x1 = Math.floor(right / PROP_CELL);
+    const y0 = Math.floor(top / PROP_CELL);
+    const y1 = Math.floor(bottom / PROP_CELL);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const cell = this.propGrid.get(propKey(cx, cy));
+        if (cell) found.push(...cell);
+      }
+    }
+    return found;
+  }
+
+  /**
+   * What the ground does at a point, blended across the disc edge.
+   *
+   * A hard lookup would snap the player's speed and the enemies' reach the
+   * instant they crossed a circle, which reads as a bug rather than as a
+   * border. Over TERRAIN_FEATHER units the values ease back to neutral, so
+   * walking into the Wetland slows you down over a couple of steps.
+   */
+  terrainAt(x: number, y: number): TerrainDef {
+    for (const disc of this.discs) {
+      const from = Math.hypot(x - disc.x, y - disc.y);
+      if (from > disc.radius) continue;
+      const depth = Math.min(1, (disc.radius - from) / TERRAIN_FEATHER);
+      if (depth >= 1) return disc.terrain;
+      const t = disc.terrain;
+      return {
+        moveScale: NEUTRAL.moveScale + (t.moveScale - NEUTRAL.moveScale) * depth,
+        concealment: NEUTRAL.concealment + (t.concealment - NEUTRAL.concealment) * depth,
+        sight: NEUTRAL.sight + (t.sight - NEUTRAL.sight) * depth,
+        fog: t.fog * depth,
+        propDensity: t.propDensity,
+        props: t.props,
+      };
+    }
+    return NEUTRAL;
+  }
+
   disc(id: BiomeId): BiomeDisc {
     const d = this.discs.find((c) => c.id === id);
     if (!d) throw new Error(`unknown biome "${id}"`);
     return d;
   }
 
+  /**
+   * Scenery, drawn from whatever grows where it lands.
+   *
+   * This used to scatter grass tufts, stones and trees uniformly across the
+   * whole Coliseum and tint them with the local accent colour, so the Snowy
+   * Mountain had grass and the Data-Center had trees - just blue ones and
+   * purple ones. Each region names its own prop kinds now, which is most of
+   * what makes crossing a border look like arriving somewhere.
+   */
   private generateProps(rng: Rng): void {
-    const count = 900;
-    const kinds: Prop['kind'][] = ['tuft', 'stone', 'spire'];
+    /*
+     * 900 put 1.7 props on a screen, across a world of 116 million square
+     * units. That is not scenery, it is the occasional lonely shrub - and it
+     * is why every region read as bare ground however distinct its palette
+     * was. 9000 puts about 17 on screen, which is ground cover.
+     *
+     * The cost is a bounds comparison per prop per frame and roughly 17 fills;
+     * the draw is culled, so the scatter size is bounded by memory, not by
+     * frame time.
+     */
+    const count = 9000;
     for (let i = 0; i < count; i++) {
       const angle = rng.range(0, Math.PI * 2);
       // Square-root so props spread evenly over area rather than bunching at
       // the centre, which is what a uniform radius would do.
       const r = Math.sqrt(rng.range(0, 1)) * this.boundaryRadius;
-      this.props.push({
-        x: Math.cos(angle) * r,
-        y: Math.sin(angle) * r,
-        size: rng.range(9, 26),
-        kind: rng.weighted(kinds, (k) => (k === 'tuft' ? 6 : k === 'stone' ? 3 : 1)),
-        tone: rng.range(-0.25, 0.2),
-      });
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+
+      const terrain = this.terrainAt(x, y);
+      // Density is a rejection roll rather than a per-biome count, so the
+      // Desert thins out and the Wetland crowds without either needing its own
+      // scatter pass.
+      if (terrain.propDensity < 1 && rng.next() > terrain.propDensity) continue;
+
+      const kinds = terrain.props as Prop['kind'][];
+      const kind = kinds[rng.int(0, kinds.length)] ?? 'tuft';
+      this.addProp({ x, y, size: rng.range(9, 26), kind, tone: rng.range(-0.25, 0.2) });
+      // Over-dense regions get a second prop near the first, which reads as
+      // undergrowth rather than as a denser uniform sprinkle.
+      if (terrain.propDensity > 1 && rng.next() < terrain.propDensity - 1) {
+        this.addProp({
+          x: x + rng.range(-26, 26),
+          y: y + rng.range(-26, 26),
+          size: rng.range(8, 20),
+          kind: kinds[rng.int(0, kinds.length)] ?? 'tuft',
+          tone: rng.range(-0.25, 0.2),
+        });
+      }
     }
+  }
+
+  private addProp(prop: Prop): void {
+    this.props.push(prop);
+    const key = propKey(Math.floor(prop.x / PROP_CELL), Math.floor(prop.y / PROP_CELL));
+    const cell = this.propGrid.get(key);
+    if (cell) cell.push(prop);
+    else this.propGrid.set(key, [prop]);
   }
 
   private pushNode(rng: Rng, material: MaterialId, biome: BiomeId, x: number, y: number): void {
@@ -360,6 +736,8 @@ export class World {
    */
   updatePull(dt: number, active: boolean, radius: number, seconds: number, space: number): void {
     this.absorbed.length = 0;
+    this.read.length = 0;
+    this.pullNotes(dt, active, radius, seconds);
     let room = space;
 
     for (const node of this.nodes) {
@@ -410,6 +788,16 @@ export class World {
    * recomputed against the player's current position rather than a frozen
    * target, so walking away mid-pull curves the path instead of breaking it.
    */
+  /** Where a note is while it is coming in: straight, not spiralled. */
+  notePosition(note: WorldNote): { x: number; y: number } {
+    if (note.pull <= 0) return { x: note.x, y: note.y };
+    const t = Math.min(1, note.pull);
+    return {
+      x: note.x + (this.player.x - note.x) * t,
+      y: note.y + (this.player.y - note.y) * t,
+    };
+  }
+
   pullPosition(node: WorldNode): { x: number; y: number } {
     if (node.pull <= 0) return { x: node.x, y: node.y };
     const t = Math.min(1, node.pull);
@@ -430,9 +818,23 @@ export class World {
 
   // ---------------------------------------------------------------- movement
 
-  movePlayer(dt: number, dirX: number, dirY: number, speed: number): void {
+  /**
+   * @param speed the pace asked for - walk or run. Which one is the Game's
+   *   call, because the toggle is a control and controls live up there.
+   * @param running whether that pace is the run, kept apart from the speed so
+   *   the world can charge for it without having to compare two numbers it was
+   *   not given.
+   */
+  movePlayer(dt: number, dirX: number, dirY: number, speed: number, running = false): void {
+    // The Wetland is "slow going" and the Snowy Mountain is deep: the mood
+    // lines said so long before anything made them true.
+    speed *= this.terrainAt(this.player.x, this.player.y).moveScale;
     const length = Math.hypot(dirX, dirY);
     this.player.moving = length > 0.01;
+    // Consumed by whoever looks this frame; never left set for the next one.
+    this.player.stepped = false;
+    // Standing still is quiet whatever the button says - see Player.running.
+    this.player.running = running && this.player.moving;
 
     if (!this.player.moving) {
       this.player.frame = 0;
@@ -462,6 +864,7 @@ export class World {
     if (this.player.travelled >= STEP_DISTANCE) {
       this.player.travelled -= STEP_DISTANCE;
       this.player.frame = (this.player.frame + 1) % WALK_FRAMES;
+      this.player.stepped = true;
     }
   }
 
@@ -483,7 +886,7 @@ export class World {
 
   // ---------------------------------------------------------------- enemies
 
-  spawn(def: EnemyDef, x: number, y: number): Enemy {
+  spawn(def: EnemyDef, x: number, y: number, fromWave = true): Enemy {
     const enemy: Enemy = {
       id: this.nextEnemyId++,
       def,
@@ -493,6 +896,12 @@ export class World {
       homeX: x,
       homeY: y,
       aggro: false,
+      alertFor: 0,
+      roamX: x,
+      roamY: y,
+      roamPause: 0,
+      windUp: 0,
+      stagger: 0,
       cooldown: 0,
       hitFlash: 0,
       knockX: 0,
@@ -500,6 +909,10 @@ export class World {
       dead: false,
       facing: 0,
       burn: 0,
+      slow: 0,
+      slowScale: 1,
+      mendAnim: 0,
+      fromWave,
     };
     this.enemies.push(enemy);
     return enemy;
@@ -529,14 +942,23 @@ export class World {
    * never promises a hit it cannot land - and the arc means neighbours of the
    * target get caught too, which is what stops a crowd becoming a queue.
    */
-  swing(): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
+  swing(override?: StrikeBonus): { hit: Enemy[]; killed: Enemy[]; combo: number } | null {
     const player = this.player;
+    const bonus = override ?? this.strike;
     const attack = this.content.progression.combat.basicAttack;
     if (player.dead || player.attackCooldown > 0) return null;
 
-    const target = this.nearestTarget(attack.range);
+    /*
+     * The gauntlets are the weapon, so crafting reaches the swing.
+     *
+     * Passed in rather than held, because the world does not own an inventory
+     * and a copy of these numbers kept here would be a copy that goes stale
+     * the moment something is crafted.
+     */
+    const reach = attack.range + bonus.range;
+    const target = this.nearestTarget(reach);
     player.attackCooldown = attack.cooldownSeconds;
-    player.attackAnim = 0.2;
+    player.attackAnim = SWING_SECONDS;
     if (!target) {
       this.breakCombo();
       return { hit: [], killed: [], combo: 0 };
@@ -545,15 +967,30 @@ export class World {
     this.faceToward(target.x, target.y);
 
     // Staying on one target builds the combo; switching or losing it resets.
+    const comboMax = attack.comboMax + (bonus.comboMax ?? 0);
     if (player.comboTargetId === target.id && player.comboTimer > 0) {
-      player.combo = Math.min(attack.comboMax, player.combo + 1);
+      player.combo = Math.min(comboMax, player.combo + 1);
     } else {
       player.combo = 0;
     }
     player.comboTargetId = target.id;
     player.comboTimer = attack.comboWindowSeconds;
 
-    const damage = attack.damage + player.combo * attack.comboBonus;
+    /*
+     * Dotore's charge, spent here and nowhere else.
+     *
+     * Canon gives the archetype one line - charge builds, and is released into
+     * the next attack - so it is read off the time since the last swing and
+     * consumed whole, rather than being a meter with its own button. Somebody
+     * who is not Dotore has a chargeBonus of nothing and this is a multiply by
+     * one.
+     */
+    const charged = 1 + player.charge * (bonus.chargeBonus ?? 0);
+    player.sinceSwing = 0;
+    player.charge = 0;
+
+    const combo = player.combo * attack.comboBonus * (bonus.comboBonus ?? 1);
+    const damage = (attack.damage + bonus.damage + combo) * (bonus.damageScale ?? 1) * charged;
     const halfArc = (attack.arcDegrees * Math.PI) / 360;
     const hit: Enemy[] = [];
     const killed: Enemy[] = [];
@@ -562,7 +999,7 @@ export class World {
       if (enemy.dead) continue;
       const dx = enemy.x - player.x;
       const dy = enemy.y - player.y;
-      if (Math.hypot(dx, dy) > attack.range) continue;
+      if (Math.hypot(dx, dy) > reach) continue;
       let delta = Math.atan2(dy, dx) - player.facing;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
@@ -571,10 +1008,27 @@ export class World {
       const length = Math.max(0.001, Math.hypot(dx, dy));
       enemy.hitFlash = 0.16;
       enemy.aggro = true;
-      enemy.knockX += (dx / length) * attack.knockback;
-      enemy.knockY += (dy / length) * attack.knockback;
-      const died = applyDamage(enemy, damage);
-      this.events.push({ kind: 'enemy-hit', enemy, amount: damage });
+      const weight = Math.max(1, enemy.def.weight);
+      // Interrupts: whatever it was about to do, it is not doing it now.
+      enemy.stagger = Math.max(enemy.stagger, attack.staggerSeconds / weight);
+      enemy.windUp = 0;
+
+      /*
+       * The shove grows through the combo instead of being flat.
+       *
+       * Flat, it broke the combo outright: a full 46-unit push on the first hit
+       * put a goblin past the 46-unit reach that threw it, so the second swing
+       * could never land and Amorratua's "consecutive hits" hook was dead for
+       * tier 1. Ramped, early hits hold the target inside reach and the last
+       * one sends it - which is also the more satisfying shape.
+       */
+      const through = comboMax > 0 ? player.combo / comboMax : 1;
+      const shove = (attack.knockback * (COMBO_SHOVE_FLOOR + (1 - COMBO_SHOVE_FLOOR) * through)) / weight;
+      enemy.knockX += (dx / length) * shove;
+      enemy.knockY += (dy / length) * shove;
+      const dealt = afterArmour(damage, enemy.def.armour);
+      const died = applyDamage(enemy, dealt);
+      this.events.push({ kind: 'enemy-hit', enemy, amount: dealt });
       hit.push(enemy);
       if (died) {
         this.events.push({ kind: 'enemy-killed', enemy });
@@ -591,7 +1045,13 @@ export class World {
   }
 
   /** Resolve one alchemical combination against whatever it catches. */
-  cast(combination: AlchemyCombination): Enemy[] {
+  cast(combination: AlchemyCombination, damageScale = 1): Enemy[] {
+    const effect = combination.effect;
+    // Whatever the shape, the caster's own timers are set first: a self-cast
+    // catches nobody and would otherwise fall straight past the loop below and
+    // do nothing at all.
+    this.applySelf(combination);
+
     const hits = abilityTargets(
       combination,
       this.player.x,
@@ -603,12 +1063,31 @@ export class World {
     for (const hit of hits) {
       const enemy = hit.target;
       enemy.hitFlash = 0.18;
+      /*
+       * A cast gives you away.
+       *
+       * Even from inside a veil: dampening what notices you is not the same as
+       * being able to hit things from inside it for free, and an ability that
+       * broke canon's asymmetry in the player's favour permanently would make
+       * every other combination pointless.
+       */
       enemy.aggro = true;
-      enemy.knockX += hit.pushX * combination.effect.knockback;
-      enemy.knockY += hit.pushY * combination.effect.knockback;
-      if (combination.effect.burnSeconds) enemy.burn = combination.effect.burnSeconds;
-      const died = applyDamage(enemy, hit.damage);
-      this.events.push({ kind: 'enemy-hit', enemy, amount: hit.damage });
+      const heft = Math.max(1, enemy.def.weight);
+      enemy.stagger = Math.max(enemy.stagger, this.content.progression.combat.basicAttack.staggerSeconds / heft);
+      enemy.windUp = 0;
+      const push = effect.knockback / heft;
+      enemy.knockX += hit.pushX * push;
+      enemy.knockY += hit.pushY * push;
+      if (effect.burnSeconds) enemy.burn = effect.burnSeconds;
+      if (effect.slowSeconds) {
+        // Longest wins, rather than latest: a fresh short slow landing on a
+        // long one should not cut it short.
+        enemy.slow = Math.max(enemy.slow, effect.slowSeconds);
+        enemy.slowScale = Math.min(enemy.slowScale, effect.slowScale ?? 0.5);
+      }
+      const dealt = afterArmour(hit.damage * damageScale, enemy.def.armour);
+      const died = applyDamage(enemy, dealt);
+      this.events.push({ kind: 'enemy-hit', enemy, amount: dealt });
       if (died) {
         this.events.push({ kind: 'enemy-killed', enemy });
         killed.push(enemy);
@@ -617,10 +1096,43 @@ export class World {
     return killed;
   }
 
+  /** The half of a combination that lands on the caster rather than on a target. */
+  private applySelf(combination: AlchemyCombination): void {
+    const { shieldAmount, shieldSeconds, healAmount, healSeconds, hideSeconds, revealSeconds } =
+      combination.effect;
+    const status = this.player.status;
+
+    if (shieldAmount) raiseShield(status, shieldAmount, shieldSeconds ?? 0);
+    if (healAmount) beginHeal(status, healAmount, healSeconds ?? 0);
+    if (hideSeconds) {
+      status.hidden = Math.max(status.hidden, hideSeconds);
+      /*
+       * Going quiet drops what is already chasing you.
+       *
+       * Without this the veil only stopped new enemies noticing, which meant
+       * casting it while being chased did nothing whatsoever - and being
+       * chased is the only time anybody would cast it.
+       */
+      for (const enemy of this.enemies) {
+        if (enemy.dead) continue;
+        enemy.aggro = false;
+        enemy.alertFor = 0;
+        enemy.windUp = 0;
+        this.chooseRoam(enemy);
+      }
+    }
+    if (revealSeconds) status.revealed = Math.max(status.revealed, revealSeconds);
+  }
+
   private updateEnemies(dt: number): void {
     const player = this.player;
+    const cover = this.terrainAt(player.x, player.y).concealment;
     for (const enemy of this.enemies) {
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
+      if (enemy.slow > 0) {
+        enemy.slow = Math.max(0, enemy.slow - dt);
+        if (enemy.slow === 0) enemy.slowScale = 1;
+      }
 
       if (enemy.burn > 0) {
         enemy.burn -= dt;
@@ -637,34 +1149,78 @@ export class World {
 
       if (enemy.dead || player.dead) continue;
 
+      const def = enemy.def;
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const distance = Math.hypot(dx, dy);
 
-      // Canon's stealth asymmetry: an enemy has to notice the player first, and
-      // loses them again at a longer range than it found them - so backing off
-      // actually works rather than tethering them to you forever.
-      if (!enemy.aggro && distance <= enemy.def.aggroRadius) enemy.aggro = true;
-      else if (enemy.aggro && distance > enemy.def.aggroRadius * 2.2) enemy.aggro = false;
-
-      const targetX = enemy.aggro ? player.x : enemy.homeX;
-      const targetY = enemy.aggro ? player.y : enemy.homeY;
-      const tx = targetX - enemy.x;
-      const ty = targetY - enemy.y;
-      const toTarget = Math.hypot(tx, ty);
-
-      if (toTarget > (enemy.aggro ? enemy.def.attackRange * 0.85 : 6)) {
-        enemy.x += (tx / toTarget) * enemy.def.speed * dt;
-        enemy.y += (ty / toTarget) * enemy.def.speed * dt;
-        enemy.facing = Math.atan2(ty, tx);
+      /*
+       * Canon's asymmetry, the right way round: the program does not know where
+       * the intruder is. So noticing is an encounter - you have to be close -
+       * and it decays rather than latching.
+       *
+       * This used to be a detection sweep of 220-360uu, most of a screen, with
+       * the enemy then walking the exact line to the player's current position.
+       * That is a lock-on however it is labelled: there was no way to be near
+       * one without being found, and no way to lose one except by outrunning a
+       * radius. Now they amble between roam targets and find the player by
+       * bumping into them, which is also what makes hunting one down a thing
+       * the player can choose to do.
+       */
+      // Scaled by the ground the PLAYER is standing on, not the enemy: this is
+      // how visible the player is, so the Wetland's cover and the Desert's
+      // exposure are properties of where you chose to stand.
+      // A veil is dampening, not invisibility: it is the noticing that stops,
+      // and this is the one place canon's asymmetry is decided.
+      //
+      // Running is the player spending that asymmetry. It multiplies the
+      // noticing and NOT loseRadius below, on purpose: running away from
+      // something has to work, or the control a panicking player grabs is the
+      // one that makes the chase longer. A veil still beats it outright -
+      // Umbrel dampens, and nothing you do with your feet is louder than that.
+      const loud = player.running ? this.content.progression.player.runNoticeScale : 1;
+      const notice = player.status.hidden > 0 ? 0 : def.noticeRadius * cover * loud;
+      if (distance <= notice) {
+        enemy.aggro = true;
+        enemy.alertFor = def.forgetSeconds;
+      } else if (enemy.aggro && distance > def.loseRadius * cover) {
+        enemy.alertFor -= dt;
+        if (enemy.alertFor <= 0) {
+          enemy.aggro = false;
+          this.chooseRoam(enemy);
+        }
       }
 
+      enemy.stagger = Math.max(0, enemy.stagger - dt);
       enemy.cooldown = Math.max(0, enemy.cooldown - dt);
-      if (enemy.aggro && distance <= enemy.def.attackRange && enemy.cooldown <= 0) {
-        enemy.cooldown = 1.2;
-        this.hurtPlayer(enemy.def.damage, enemy);
+
+      // Reeling: it takes the shove whole instead of walking through it, which
+      // is what makes the knockback something you can see.
+      if (enemy.stagger > 0) continue;
+
+      if (enemy.aggro) this.pursue(enemy, dt, dx, dy, distance);
+      else this.wander(enemy, dt);
+
+      enemy.windUp = Math.max(0, enemy.windUp - dt);
+      if (enemy.aggro && distance <= def.attackRange && enemy.cooldown <= 0) {
+        // The wind-up is the tell. A hit that lands on the same frame the enemy
+        // arrives is one the player had no way to read.
+        if (enemy.windUp <= 0) {
+          // A ranged kind needs a longer tell: a bolt you cannot see coming is
+          // damage you had no way to avoid, from something across a clearing.
+          enemy.windUp = def.ranged?.windUpSeconds ?? WIND_UP_SECONDS;
+        } else if (enemy.windUp <= dt) {
+          enemy.cooldown = def.attackCooldownSeconds ?? 1.2;
+          if (def.ranged) this.fire(enemy, dx, dy, distance);
+          else this.hurtPlayer(def.damage, enemy);
+        }
+      } else if (!enemy.aggro || distance > def.attackRange) {
+        // Stepped out of reach mid-swing: the blow does not follow you.
+        enemy.windUp = 0;
       }
     }
+
+    this.mend(dt);
 
     // Corpses are cleared once they have finished fading, in the game layer's
     // sight; nothing respawns on its own, because waves decide what exists.
@@ -676,14 +1232,177 @@ export class World {
     }
   }
 
-  private hurtPlayer(amount: number, enemy: Enemy): void {
+  /** Closing on a player it can currently see. */
+  private pursue(enemy: Enemy, dt: number, dx: number, dy: number, distance: number): void {
+    /*
+     * Stop at the edge of its reach rather than walking into the player - and
+     * for the kinds that fight from further off, at the distance they want to
+     * keep. Without keepDistance a Wisp closes to 85% of a 300-unit attack
+     * range, which is to say it walks into the player's fists and stops being
+     * a ranged enemy at all.
+     */
+    const stopAt = enemy.def.keepDistance ?? enemy.def.attackRange * 0.85;
+    if (distance <= stopAt) {
+      enemy.facing = Math.atan2(dy, dx);
+      // Backs off when crowded rather than standing in it, so walking at a
+      // Wisp is a way of making it stop shooting.
+      if (distance < stopAt * 0.72 && distance > 1) {
+        const pace = enemy.def.speed * paceScale(enemy) * 0.7;
+        enemy.x -= (dx / distance) * pace * dt;
+        enemy.y -= (dy / distance) * pace * dt;
+      }
+      return;
+    }
+    const pace = enemy.def.speed * paceScale(enemy);
+    enemy.x += (dx / distance) * pace * dt;
+    enemy.y += (dy / distance) * pace * dt;
+    enemy.facing = Math.atan2(dy, dx);
+  }
+
+  /** Ambling between roam targets, with a rest at each one. */
+  private wander(enemy: Enemy, dt: number): void {
+    if (enemy.roamPause > 0) {
+      enemy.roamPause -= dt;
+      return;
+    }
+
+    const tx = enemy.roamX - enemy.x;
+    const ty = enemy.roamY - enemy.y;
+    const toTarget = Math.hypot(tx, ty);
+
+    if (toTarget <= ARRIVE_DISTANCE) {
+      // Destructured defensively: a def assembled by hand - a test fixture, a
+      // half-migrated save, content mid-edit - used to throw here and take the
+      // whole world update with it, which reads as the game freezing rather
+      // than as one enemy being wrong.
+      const pause = enemy.def.pauseSeconds ?? [];
+      enemy.roamPause = this.roamRng.range(pause[0] ?? 0.6, pause[1] ?? 2.2);
+      this.chooseRoam(enemy);
+      return;
+    }
+
+    const pace = enemy.def.wanderSpeed * paceScale(enemy);
+    enemy.x += (tx / toTarget) * pace * dt;
+    enemy.y += (ty / toTarget) * pace * dt;
+    enemy.facing = Math.atan2(ty, tx);
+  }
+
+  /**
+   * A new point to drift to, around where this enemy entered the world and
+   * inside the boundary - the Coliseum is bounded, so nothing wanders out of it.
+   */
+  private chooseRoam(enemy: Enemy): void {
+    const angle = this.roamRng.range(0, Math.PI * 2);
+    // Square-rooted so targets spread over the area rather than bunching at the
+    // centre, the same reason the props scatter that way.
+    const reach = Math.sqrt(this.roamRng.range(0.05, 1)) * enemy.def.roamRadius;
+    let x = enemy.homeX + Math.cos(angle) * reach;
+    let y = enemy.homeY + Math.sin(angle) * reach;
+
+    const fromCentre = Math.hypot(x, y);
+    const limit = this.boundaryRadius - 40;
+    if (fromCentre > limit) {
+      x = (x / fromCentre) * limit;
+      y = (y / fromCentre) * limit;
+    }
+    enemy.roamX = x;
+    enemy.roamY = y;
+  }
+
+  /**
+   * One shot, aimed where the player is standing now.
+   *
+   * Deliberately not led - it does not aim where the player is going. Canon's
+   * input rule is that the player never has to move precisely, and a bolt that
+   * predicted you would make walking in a straight line the mistake. Aimed at
+   * the present, it is a thing you leave by moving at all, which is the
+   * behaviour worth teaching.
+   */
+  private fire(enemy: Enemy, dx: number, dy: number, distance: number): void {
+    const shot = enemy.def.ranged;
+    if (!shot) return;
+    const length = Math.max(0.001, distance);
+    this.projectiles.push({
+      x: enemy.x,
+      y: enemy.y - 8,
+      vx: (dx / length) * shot.speed,
+      vy: (dy / length) * shot.speed,
+      radius: shot.radius,
+      damage: enemy.def.damage,
+      color: enemy.def.color,
+      // Generous enough to cross its own attack range and no further, so a
+      // stray shot cannot travel the Coliseum looking for someone.
+      life: (enemy.def.attackRange * 1.3) / Math.max(1, shot.speed),
+    });
+    this.events.push({ kind: 'enemy-fired', enemy });
+  }
+
+  /**
+   * Whatever is mending, putting the others back together.
+   *
+   * Only living enemies, and never itself: a mender that healed itself would
+   * be a damage-race against its own number rather than a decision about what
+   * to kill first, and killing it first is the entire point of it.
+   */
+  private mend(dt: number): void {
+    for (const healer of this.enemies) {
+      const aura = healer.def.mends;
+      if (!aura || healer.dead) continue;
+
+      let mended = false;
+      for (const other of this.enemies) {
+        if (other === healer || other.dead || other.hp >= other.def.hp) continue;
+        if (Math.hypot(other.x - healer.x, other.y - healer.y) > aura.radius) continue;
+        other.hp = Math.min(other.def.hp, other.hp + aura.perSecond * dt);
+        mended = true;
+      }
+      healer.mendAnim = mended ? healer.mendAnim + dt : 0;
+    }
+  }
+
+  /**
+   * Everything in the air, moved one frame.
+   *
+   * Checked against the player's radius rather than a point, and removed on
+   * the frame it connects: a bolt that kept going after landing would hit
+   * again on the next frame, which is a shot that does its damage several
+   * times for no reason anybody could see.
+   */
+  private updateProjectiles(dt: number): void {
+    const player = this.player;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const shot = this.projectiles[i];
+      if (!shot) continue;
+
+      shot.x += shot.vx * dt;
+      shot.y += shot.vy * dt;
+      shot.life -= dt;
+
+      const reach = shot.radius + this.content.progression.player.radius;
+      const hit =
+        !player.dead && Math.hypot(player.x - shot.x, player.y - shot.y) <= reach;
+
+      if (hit) this.hurtPlayer(shot.damage, null);
+      // Out of time, out of the world, or spent. The boundary check matters
+      // because a shot fired at the edge would otherwise fly out of it.
+      if (hit || shot.life <= 0 || Math.hypot(shot.x, shot.y) > this.boundaryRadius) {
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  private hurtPlayer(amount: number, enemy: Enemy | null): void {
     const player = this.player;
     if (player.invulnerable > 0 || player.dead) return;
     const combat = this.content.progression.combat;
-    player.hp = Math.max(0, player.hp - amount);
+    // The shield soaks what it can and the rest lands. It still costs the hit:
+    // invulnerability and the regen delay both start, because being shielded
+    // is not the same as not having been hit.
+    const { soaked, through } = absorbDamage(player.status, amount);
+    player.hp = Math.max(0, player.hp - through);
     player.invulnerable = combat.invulnerableSeconds;
     player.sinceHit = 0;
-    this.events.push({ kind: 'player-hit', amount, enemy });
+    this.events.push({ kind: 'player-hit', amount: through, enemy: enemy ?? undefined, soaked });
     if (player.hp <= 0) {
       player.dead = true;
       player.respawnAt = this.elapsed + combat.respawnSeconds;
@@ -699,12 +1418,22 @@ export class World {
     const combat = this.content.progression.combat;
 
     player.invulnerable = Math.max(0, player.invulnerable - dt);
+    // Before the regen below, so a heal and the passive regen in the same frame
+    // both count against the same maxHp rather than the heal being clamped away.
+    const healed = tickStatus(player.status, dt);
+    if (healed > 0 && !player.dead) player.hp = Math.min(player.maxHp, player.hp + healed);
     player.sinceHit += dt;
     player.bob += dt;
     player.attackAnim = Math.max(0, player.attackAnim - dt);
     player.attackCooldown = Math.max(0, player.attackCooldown - dt);
     player.comboTimer = Math.max(0, player.comboTimer - dt);
     if (player.comboTimer <= 0 && player.combo > 0) this.breakCombo();
+
+    // The charge. Zero for anybody the telemetry did not read as Dotore, since
+    // chargeSeconds is absent and this stays at nothing.
+    player.sinceSwing += dt;
+    const buildIn = this.strike.chargeSeconds ?? 0;
+    player.charge = buildIn > 0 && !player.dead ? Math.min(1, player.sinceSwing / buildIn) : 0;
 
     if (player.dead) {
       // Death is a setback, not a reset: canon never wipes the world or
@@ -715,6 +1444,9 @@ export class World {
         player.x = 0;
         player.y = 0;
         player.invulnerable = combat.invulnerableSeconds;
+        // Dying clears what you were holding. A shield that survives the thing
+        // it failed to stop is a shield that was not doing anything.
+        Object.assign(player.status, freshStatus());
       }
     } else if (player.sinceHit >= combat.regenDelaySeconds && player.hp < player.maxHp) {
       player.hp = Math.min(player.maxHp, player.hp + combat.regenPerSecond * dt);
@@ -725,9 +1457,24 @@ export class World {
     }
 
     this.updateEnemies(dt);
+    // After the enemies, so a bolt fired this frame does not also travel this
+    // frame - which would let a point-blank shot skip its own flight entirely.
+    this.updateProjectiles(dt);
   }
 
   get time(): number {
     return this.elapsed;
+  }
+
+  /** Live enemies, and how many of them arrived in a wave. */
+  census(): { alive: number; fromWaves: number } {
+    let alive = 0;
+    let fromWaves = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      alive += 1;
+      if (enemy.fromWave) fromWaves += 1;
+    }
+    return { alive, fromWaves };
   }
 }

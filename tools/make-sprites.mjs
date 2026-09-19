@@ -2,9 +2,20 @@
 /**
  * Character sprite sheet generator — GBA-era top-down pixel art.
  *
- * Style reference is the handheld Zelda look (chunky 1px tinted outline, 3-tone
- * shading, saturated palette, 4-direction facing, bouncy 4-frame walk). The
- * CHARACTER is original: a hooded alchemist, not anybody else's design.
+ * Style reference is the handheld look (chunky 1px tinted outline, 3-tone
+ * shading, 4-direction facing, bouncy 4-frame walk). The CHARACTER is drawn
+ * from a reference the author supplied of themselves: silver hair, a black
+ * shirt that covers the arms and the upper back but leaves the torso bare, and
+ * dark trousers. It replaced a hooded alchemist, which is why the palette's
+ * `h/H/d` ramp is hair where it used to be a hood.
+ *
+ * That cut is what makes the figure legible rather than a problem to solve: the
+ * bare torso is a light mass between two dark sleeves, so the shirt can be as
+ * near-black as it should be without the whole silhouette going flat against
+ * dark ground. Silver hair does the same job at the top.
+ *
+ * The belt has to stay dark for the same reason in reverse - a warm brown at
+ * skin value merged into the torso and the two read as one tan block.
  *
  * The body is authored as character maps and the legs are drawn per frame, so
  * a walk cycle costs four leg poses rather than sixteen hand-placed frames —
@@ -33,21 +44,21 @@ const H = 24;
 // "warm" rather than "harsh".
 const PALETTE = {
   '.': null,
-  o: '#241a33', // outline
-  h: '#6cbf8e', // hood light
-  H: '#46906c', // hood mid
-  d: '#2c6349', // hood shadow
-  s: '#f0c49c', // skin
-  S: '#c48f68', // skin shadow
-  c: '#f2e6c8', // tunic light
-  C: '#d4c096', // tunic shadow
-  k: '#8a5a35', // leather
-  K: '#5c3a20', // leather dark
-  t: '#8d9bb5', // trouser
-  T: '#6a7692', // trouser shadow
-  b: '#7a4e2e', // boot
-  B: '#4e2f1a', // boot dark
-  y: '#e8d089', // pale hair
+  o: '#1d1526', // outline
+  h: '#e2e6ec', // hair light - silver
+  H: '#b3b9c4', // hair mid
+  d: '#848b98', // hair shadow, and the line where it meets the face
+  s: '#efc09a', // skin
+  S: '#c8926a', // skin shadow
+  c: '#312f3a', // shirt, lit
+  C: '#1f1d26', // shirt, shadow
+  k: '#4a3a2c', // belt - dark leather, or it reads as more skin
+  K: '#2b211a', // belt dark
+  t: '#1f1c26', // trouser
+  T: '#15131a', // trouser shadow
+  b: '#2c2630', // boot
+  B: '#19161c', // boot dark
+  y: '#b3b9c4', // kept for compatibility; the hood's pale hair is now hair
 };
 
 // ---------------------------------------------------------------- body maps
@@ -57,40 +68,40 @@ const BODY = {
   down: [
     '......oooo......',
     '....oohhhhoo....',
-    '...ohhhhhhhho...',
+    '...ohhHhhHhhho..',
     '..ohhhhhhhhhho..',
     '..oHhhhhhhhhHo..',
-    '..oHHddddddHHo..',
+    '..oHHhhhhhhHHo..',
     '..oHdssssssdHo..',
     '..oHdsossosdHo..',
     '..oHdssssssdHo..',
     '...oHdSSSSdHo...',
     '...ooHHddHHoo...',
-    '..oHHccccccHHo..',
-    '..oHccccccccHo..',
-    '..oHcckkkkccHo..',
-    '..oHccKKKKccHo..',
-    '..osccccccccso..',
-    '...occcccccco...',
+    '..occcccccccco..',
+    '..oCcsssssscCo..',
+    '..oCcsssssscCo..',
+    '..oCckkkkkkcCo..',
+    '..osttttttttso..',
+    '...otttttttto...',
   ],
   up: [
     '......oooo......',
     '....oohhhhoo....',
-    '...ohhhhhhhho...',
+    '...ohhHhhHhhho..',
     '..ohhhhhhhhhho..',
     '..oHhhhhhhhhHo..',
     '..oHHhhhhhhHHo..',
-    '..oHHhyyyyhHHo..',
-    '..oHHhyyyyhHHo..',
-    '..oHHdyyyydHHo..',
-    '...oHHdyydHHo...',
+    '..oHhhhhhhhhHo..',
+    '..oHHhhhhhhHHo..',
+    '..oHHdhhhhdHHo..',
+    '...oHHddddHHo...',
     '...ooHHddHHoo...',
-    '..oHHccccccHHo..',
-    '..oHccccccccHo..',
-    '..oHccccccccHo..',
-    '..oHccKKKKccHo..',
-    '..osccccccccso..',
-    '...occcccccco...',
+    '..occcccccccco..',
+    '..oCccccccccCo..',
+    '..oCcsssssscCo..',
+    '..oCckkkkkkcCo..',
+    '..osttttttttso..',
+    '...otttttttto...',
   ],
   side: [
     '.....oooo.......',
@@ -98,18 +109,18 @@ const BODY = {
     '..ohhhhhhhho....',
     '..ohhhhhhhhho...',
     '..oHhhhhhhhho...',
-    '..oHHdddddhho...',
+    '..oHHhhhhhhho...',
     '..oHdssssssho...',
     '..oHdsossssho...',
     '..oHdssssssho...',
     '...oHdSSSSho....',
     '...ooHHddHHo....',
-    '..oHHccccccHo...',
-    '..oHcccccccHo...',
-    '..oHcckkkkcHo...',
-    '..oHccKKKKcHo...',
-    '..oHcccccccso...',
-    '...occcccco.....',
+    '..occccccccco...',
+    '..oCsssssscCo...',
+    '..oCsssssscCo...',
+    '..oCkkkkkkcCo...',
+    '..ostttttttso...',
+    '...ottttttto....',
   ],
 };
 

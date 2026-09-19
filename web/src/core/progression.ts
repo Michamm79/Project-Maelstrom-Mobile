@@ -12,7 +12,13 @@
  */
 import type { ProgressionConfig } from './types';
 
-export type NoveltyKind = 'firstMaterial' | 'firstCraft' | 'firstAlchemy' | 'firstBiome' | 'clearWave';
+export type NoveltyKind =
+  | 'firstNote'
+  | 'firstMaterial'
+  | 'firstCraft'
+  | 'firstAlchemy'
+  | 'firstBiome'
+  | 'clearWave';
 
 export class Progression {
   private xpTotal = 0;

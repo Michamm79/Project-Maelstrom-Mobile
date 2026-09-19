@@ -176,3 +176,62 @@ describe('the Coliseum', () => {
     expect(seconds).toBeLessThanOrEqual(walkMax! + 5);
   });
 });
+
+describe('notes lying in the world', () => {
+  /** Put one note at a known offset and clear everything else out of the way. */
+  function onlyNoteAt(dx: number, dy: number, id = 'b_intake_1'): void {
+    world.nodes.length = 0;
+    world.notes.length = 0;
+    world.notes.push({ id, x: world.player.x + dx, y: world.player.y + dy, taken: false, pull: 0 });
+  }
+
+  it('come in on the same draw as everything else', () => {
+    onlyNoteAt(RADIUS - 5, 0);
+    for (let t = 0; t < 2; t += 1 / 60) world.updatePull(1 / 60, true, RADIUS, SECONDS, 60);
+    expect(world.notes[0]?.taken).toBe(true);
+  });
+
+  it('are reported once and once only', () => {
+    onlyNoteAt(RADIUS - 5, 0);
+    let reported = 0;
+    for (let t = 0; t < 4; t += 1 / 60) {
+      world.updatePull(1 / 60, true, RADIUS, SECONDS, 60);
+      reported += world.read.length;
+    }
+    expect(reported).toBe(1);
+  });
+
+  it('stay put with the pull switched off', () => {
+    onlyNoteAt(RADIUS - 5, 0);
+    for (let t = 0; t < 2; t += 1 / 60) world.updatePull(1 / 60, false, RADIUS, SECONDS, 60);
+    expect(world.notes[0]?.taken).toBe(false);
+  });
+
+  it('are picked up with the pack completely full', () => {
+    // Paper is not ore. A player at capacity standing on the one note that
+    // explains the ending should not be quietly unable to read it.
+    onlyNoteAt(RADIUS - 5, 0);
+    for (let t = 0; t < 2; t += 1 / 60) world.updatePull(1 / 60, true, RADIUS, SECONDS, 0);
+    expect(world.notes[0]?.taken).toBe(true);
+  });
+
+  it('are out of reach past the pull radius', () => {
+    onlyNoteAt(RADIUS + 40, 0);
+    for (let t = 0; t < 3; t += 1 / 60) world.updatePull(1 / 60, true, RADIUS, SECONDS, 60);
+    expect(world.notes[0]?.taken).toBe(false);
+  });
+
+  it('all sit inside the region they were written for', () => {
+    const fresh = new World(content);
+    for (const note of fresh.notes) {
+      const def = content.notes.find((n) => n.id === note.id);
+      const disc = fresh.disc(def!.biome);
+      expect(Math.hypot(note.x - disc.x, note.y - disc.y)).toBeLessThanOrEqual(disc.radius);
+    }
+  });
+
+  it('are all actually in the world, both channels', () => {
+    const fresh = new World(content);
+    expect(fresh.notes).toHaveLength(content.notes.length);
+  });
+});

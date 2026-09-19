@@ -3,11 +3,13 @@
   "note": "GENERATED FILE - do not edit. Source of truth is content/*.json; run npm run build:content.",
   "version": 2,
   "progression": {
-    "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening; past Level 2 the cycle continues and canon's storyline does not yet advance. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu - neither is built yet.",
+    "$comment": "Progression, from GDD section 8. Levels 0 to 2 are the scripted opening and are canon. Levels 3 and up are INFERRED: canon's storyline does not advance past Level 2, but its own systems gate things at Level 5 - the deck calls that the point the game escalates, and content/waves.json holds repeating bundles and the ambient population there - so the levels in between have to exist and have to be reachable. The rune at Level 2 and the class at Level 5 are read from telemetry rather than chosen from a menu; both are built, in web/src/core/telemetry.ts.",
     "alchemyUnlockLevel": 2,
     "classLevel": 5,
     "$xp_comment": "XP is novelty, not volume: first collection of each material type, first successful craft, first visit to each biome. Deliberately NOT per-unit gathering, which would reward farming one node and teach nothing about the variety the crafting and alchemy systems depend on.",
     "xp": {
+      "$firstNote_comment": "INFERRED. Notes are the main reason to walk past the ring of nodes a region clusters in - the rare channel sits out near the edge - and novelty XP is how the game says a thing was worth doing. Deliberately below a material: reading is not gathering.",
+      "firstNote": 25,
       "firstMaterial": 30,
       "firstCraft": 60,
       "firstAlchemy": 60,
@@ -15,18 +17,19 @@
       "clearWave": 40
     },
     "levelCurve": {
-      "$comment": "Cumulative XP to advance FROM level n TO n+1. Set from canon's own triggers rather than by feel. Level 1 is the end of the gathering tutorial: the spawn holds six materials at 30 each, so 150 means finding five of them. Level 2 is clearing all three waves of the first bundle, so it sits at 350 cumulative - reachable from the six spawn materials (180), a first craft (60) and three cleared waves (120). An earlier curve put Level 1 at 60, which armed the wave director after two pickups.",
+      "$comment": "XP to advance FROM level n TO n+1; the build step turns these into a cumulative table. The first two come from canon's own triggers. Level 1 is the end of the gathering tutorial: the spawn holds six materials at 30 each, so 150 means finding five of them. Level 2 is clearing all three waves of the first bundle, so it sits at 350 cumulative - reachable from the six spawn materials (180), a first craft (60) and three cleared waves (120). An earlier curve put Level 1 at 60, which armed the wave director after two pickups.",
+      "$reachable_comment": "The rest are set against the XP that actually EXISTS, which the previous curve was not. Novelty is finite: 18 materials, 12 recipes, 11 combinations, 4 regions to arrive in and 3 waves in the only bundle that is not gated behind Level 5. That is 2360 XP, and the old curve put Level 5 at 1970 and Level 6 at 3010 - so the escalation was 570 short of reachable and the level that opens Nightfall was unreachable outright, in a build where content/waves.json gated the whole late game on getting there. build-content.mjs now computes that ceiling and fails if any level the content gates sits above it.",
       "thresholds": [
         150,
         200,
-        340,
+        270,
+        360,
+        440,
+        480,
         520,
-        760,
-        1040,
-        1380,
-        1760,
-        2200,
-        2700
+        580,
+        700,
+        800
       ]
     },
     "levels": [
@@ -44,12 +47,44 @@
         "level": 2,
         "trigger": "Clearing all three waves",
         "grants": "Rune, and the full alchemy menu."
+      },
+      {
+        "level": 3,
+        "trigger": "INFERRED. Whatever you did next - a region, a few crafts, the first casts of your own",
+        "grants": "Rimebind and Duststorm. Both are about controlling where things are rather than killing them."
+      },
+      {
+        "level": 4,
+        "trigger": "INFERRED. Two regions' worth of material, or one region and most of the workshop",
+        "grants": "Verdance and Ironward: the first two combinations that do not touch anything but you."
+      },
+      {
+        "level": 5,
+        "trigger": "INFERRED, but the level itself is canon - the deck calls this the point the game escalates",
+        "grants": "Sunlance and Clarion. Bundles start repeating and an ambient population moves in. Canon also reads a class here, and it is read from how you have been playing."
+      },
+      {
+        "level": 6,
+        "trigger": "INFERRED. All four outer regions, and enough of the crafting tree to survive the cycle",
+        "grants": "Nightfall, which needs Dark Fiber and so needs the Data-Center."
+      },
+      {
+        "level": 7,
+        "trigger": "INFERRED. Surviving the escalation rather than exploring it",
+        "grants": "Nothing new to cast. Past here the only XP left is cleared waves."
+      },
+      {
+        "level": 8,
+        "trigger": "INFERRED",
+        "grants": "Nothing new. The curve continues so the bar has somewhere to go."
       }
     ],
     "player": {
       "$comment": "Speeds in screen units per second, chosen so that spawn to biome edge lands inside canon's measured 30-35 seconds walking and 25-30 sprinting.",
       "moveSpeed": 70,
       "sprintSpeed": 84,
+      "$run_comment": "sprintSpeed was authored here from the first content pass and then read by nothing: the game moved the player at moveSpeed and had no way to ask for the other number. The RUN toggle is what makes it live. runNoticeScale is INFERRED and is the whole reason it is a toggle rather than a speed buff - a run that costs nothing is one the player leaves on forever, and then the button is a lie. Running multiplies how far a creature notices you (noticeRadius) and deliberately NOT how far it loses you (loseRadius): running away from something should work, or the control the player reaches for in a panic is the one that punishes them. 1.35 puts the goblin's 90 at 122 and the wisp's 150 at 203, so a run across open ground is an announcement and the Wetland's cover still undoes most of it.",
+      "runNoticeScale": 1.35,
       "radius": 11,
       "pullSeconds": 0.45
     },
@@ -62,7 +97,7 @@
       "respawnSeconds": 3,
       "$attack_comment": "Canon has no weapon ITEMS, but it plainly has a basic attack: section 9 gives Nahaste 'near-zero unarmed capability' as its cost, which only means something if everyone else has some; Amorratua scales damage with 'consecutive hits without disengaging'; and Dotore builds charge 'released into the next attack'. So this is the gauntlets themselves - the same hands that pull. Numbers are INFERRED.",
       "basicAttack": {
-        "damage": 6,
+        "damage": 9,
         "range": 46,
         "arcDegrees": 110,
         "cooldownSeconds": 0.42,
@@ -70,7 +105,10 @@
         "comboWindowSeconds": 1.8,
         "comboBonus": 1.5,
         "comboMax": 5,
-        "knockback": 40
+        "knockback": 320,
+        "$knockback_comment": "Knockback is a velocity that bleeds off at 7/s, so the distance it actually moves something is roughly knockback/7 world units - the old 40 was about six units, less than a quarter of a body and invisible in play. 320 is about 46, roughly one body length, which also pushes a goblin back out of its own 34-unit attack range so the hit buys space as well as damage. Divided by each tier weight.",
+        "staggerSeconds": 0.28,
+        "$stagger_comment": "A hit interrupts. Without it the shove was real but invisible: the full 46 units of knockback went in while a goblin walked back at 62/s, so the measured peak was 23 and the hit read as nothing. Staggered, the shove lands whole and a swing also cancels a wind-up, which is what makes the basic attack feel like it connects rather than needing a bigger number. Divided by tier weight, so the heavy ones are never stunlocked."
       }
     },
     "$pause_comment": "GDD section 6.1 says the menu does NOT pause the world, reasoning that a pause 'would have erased wave pressure in exactly the moment it should bite'. The author has since asked for a pause, so it is on - kept as a flag rather than hard-coded, because canon and the build disagree here and the disagreement should be visible rather than buried.",
@@ -79,21 +117,21 @@
       0,
       150,
       350,
-      690,
-      1210,
-      1970,
-      3010,
-      4390,
-      6150,
-      8350,
-      11050
+      620,
+      980,
+      1420,
+      1900,
+      2420,
+      3000,
+      3700,
+      4500
     ]
   },
   "tutorial": [
     {
       "id": "move",
       "title": "Find your feet",
-      "hint": "Press and drag anywhere on the left of the screen to walk. You woke here. Nobody has told you why."
+      "hint": "Press and drag anywhere on the left of the screen to walk. RUN moves you faster and makes you easier to notice. You woke here. Nobody has told you why."
     },
     {
       "id": "pull",
@@ -131,12 +169,202 @@
       "hint": "Gust, Torrent and Emberlash. Someone else made them. At Level 2 you get the workshop."
     }
   ],
+  "fragments": [
+    {
+      "id": "intake",
+      "on": "firstMaterial",
+      "title": "Intake",
+      "text": "The orb takes it without being asked. Whatever these are, they were built to do this - and they were sized for your hands."
+    },
+    {
+      "id": "specification",
+      "on": "firstCraft",
+      "title": "Specification",
+      "text": "The weave closes the way something does when it already knew the shape. You are not inventing. You are assembling a thing that has been made before."
+    },
+    {
+      "id": "deletion",
+      "on": "firstKill",
+      "title": "Deletion",
+      "text": "It does not fall. It comes apart into the digits it was standing in for, and they go out one at a time. Whatever that was, it was never alive. It was allocated."
+    },
+    {
+      "id": "boundary",
+      "on": "newBiome",
+      "title": "Boundary",
+      "text": "The ground changes underfoot and simply keeps going. No wall, no door, nothing loads. Whoever laid this out did not expect anyone to walk between the parts of it."
+    },
+    {
+      "id": "assessment",
+      "on": "waveCleared",
+      "title": "Assessment",
+      "text": "The quiet comes back all at once, which is not how quiet works. Something decided the test had finished. Something is keeping the result."
+    },
+    {
+      "id": "privilege",
+      "on": "firstCast",
+      "title": "Privilege",
+      "text": "Two elements go in and something leaves your hands that you did not design. This was stocked. Someone expected you to need it, and put it where you would find it."
+    }
+  ],
+  "noteChannels": {
+    "bulletin": {
+      "name": "System bulletin",
+      "note": "Plentiful and unreliable. Numbered, procedurally issued, and contradicts itself as readily as it contradicts him."
+    },
+    "jakindur": {
+      "name": "Found note",
+      "note": "Rare and accurate. Handwritten, unsigned except for the initial, and never wrong about anything checkable."
+    }
+  },
+  "notes": [
+    {
+      "id": "b_intake_1",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "INTAKE NOTICE 0-1",
+      "text": "Welcome. You have been provisioned. Orientation is automatic and requires no action on your part. Questions will be answered in order of relevance."
+    },
+    {
+      "id": "b_intake_4",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "INTAKE NOTICE 0-4",
+      "text": "Your gauntlets are calibrated to you and to nobody else. Nothing else in the Coliseum can use them. This is for your protection."
+    },
+    {
+      "id": "b_assessment",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "NOTICE 1-2",
+      "text": "Assessment has begun. Assessment is not a test. There is no pass mark, and there is nothing here that you are able to fail."
+    },
+    {
+      "id": "b_expectations",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "NOTICE 1-8",
+      "text": "You are performing within expectations. Expectations are adjusted to what you perform."
+    },
+    {
+      "id": "b_schedule",
+      "channel": "bulletin",
+      "biome": "plains_forest",
+      "title": "NOTICE 6-0",
+      "text": "If you are reading this, you are behind schedule. There is no schedule."
+    },
+    {
+      "id": "b_cold",
+      "channel": "bulletin",
+      "biome": "snowy_mountain",
+      "title": "NOTICE 2-7",
+      "text": "Cold is not a hazard. Cold is a region. Regions are provided so that assessment has somewhere to happen."
+    },
+    {
+      "id": "b_perimeter",
+      "channel": "bulletin",
+      "biome": "snowy_mountain",
+      "title": "NOTICE 2-9",
+      "text": "Candidates reaching the perimeter are reminded that the perimeter is decorative and that there is nothing on the other side of it to reach."
+    },
+    {
+      "id": "b_exposure",
+      "channel": "bulletin",
+      "biome": "desert",
+      "title": "NOTICE 3-1",
+      "text": "Exposure is a feature of the Desert. Features are not dangers. You are not in danger."
+    },
+    {
+      "id": "b_continue",
+      "channel": "bulletin",
+      "biome": "desert",
+      "title": "NOTICE 3-6",
+      "text": "Please continue. Continuation is the only instruction, and it is the only one that has ever been issued."
+    },
+    {
+      "id": "b_concealment",
+      "channel": "bulletin",
+      "biome": "wetland",
+      "title": "NOTICE 4-2",
+      "text": "Concealment is permitted. Concealment is also recorded. There is no conflict between those two sentences."
+    },
+    {
+      "id": "b_renderings",
+      "channel": "bulletin",
+      "biome": "wetland",
+      "title": "NOTICE 4-5",
+      "text": "Do not be alarmed by renderings. A rendering is not a creature. It cannot want anything, and nothing that cannot want can be said to be hunting you."
+    },
+    {
+      "id": "b_predates",
+      "channel": "bulletin",
+      "biome": "data_center",
+      "title": "NOTICE 5-3",
+      "text": "This region predates your intake. Its condition is not a forecast of yours."
+    },
+    {
+      "id": "b_completion",
+      "channel": "bulletin",
+      "biome": "data_center",
+      "title": "NOTICE 5-8",
+      "text": "Completion is rewarded. The reward is release, and release is immediate upon completion."
+    },
+    {
+      "id": "b_previous",
+      "channel": "bulletin",
+      "biome": "data_center",
+      "title": "NOTICE 5-9",
+      "text": "Previous candidates have completed. Previous candidates are no longer here. Both of those facts are available to you on request."
+    },
+    {
+      "id": "j_test",
+      "channel": "jakindur",
+      "biome": "plains_forest",
+      "title": "Scratched into a burl, low down",
+      "text": "It is a test. I did well on the third day and the waves changed on the fourth. Nothing adjusts to a thing it is not measuring. - J",
+      "contradicts": "b_assessment"
+    },
+    {
+      "id": "j_perimeter",
+      "channel": "jakindur",
+      "biome": "snowy_mountain",
+      "title": "Folded into a split in the rock",
+      "text": "Walked the edge for six hours. It is not decorative. It is the only part of this place that is holding anything up, and it is made of the same stuff as the goblins. - J",
+      "contradicts": "b_perimeter"
+    },
+    {
+      "id": "j_renderings",
+      "channel": "jakindur",
+      "biome": "desert",
+      "title": "Under a cairn nobody built",
+      "text": "They do not want anything. Agreed. But whatever sends them does, and it sends more after you do something clever. Be less clever where it can see you. - J",
+      "contradicts": "b_renderings"
+    },
+    {
+      "id": "j_recorded",
+      "channel": "jakindur",
+      "biome": "wetland",
+      "title": "Wrapped in a bladder, above the waterline",
+      "text": "Concealment is permitted the way a dropped fork is permitted. They wrote a notice about it. They write notices about everything they have not worked out how to stop. - J",
+      "contradicts": "b_concealment"
+    },
+    {
+      "id": "j_release",
+      "channel": "jakindur",
+      "biome": "data_center",
+      "title": "On the back of a requisition slip",
+      "text": "I completed it. Ask where I am. The way out was never completion - the boundary is code, and your hands are for pulling code. Do not let it see you decide. - J",
+      "contradicts": "b_completion"
+    }
+  ],
   "opening": {
     "fadeSeconds": 2.4,
-    "lineSeconds": 2.8,
+    "lineSeconds": 2.5,
     "lines": [
       "You wake.",
       "Two half-orbs hang above your hands. They were not there before.",
+      "The ground is warm. Something under it is still running.",
+      "There is a horizon, and there is an edge. They are not the same distance away.",
       "Nobody explains why. Only what to do, and where to go."
     ]
   },
@@ -450,6 +678,19 @@
       },
       "nodeCount": 240,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 1,
+        "concealment": 1,
+        "sight": 1,
+        "fog": 0,
+        "propDensity": 1,
+        "props": [
+          "tuft",
+          "tuft",
+          "stone",
+          "tree"
+        ]
+      },
       "materials": [
         "heartwood_burl",
         "riverglass",
@@ -478,6 +719,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.86,
+        "concealment": 1.05,
+        "sight": 0.92,
+        "fog": 0.2,
+        "propDensity": 0.85,
+        "props": [
+          "drift",
+          "crag",
+          "shard"
+        ]
+      },
       "materials": [
         "rimeshard",
         "coldiron_ore",
@@ -503,6 +756,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.94,
+        "concealment": 1.45,
+        "sight": 1.3,
+        "fog": 0,
+        "propDensity": 0.6,
+        "props": [
+          "dune",
+          "stone",
+          "bone"
+        ]
+      },
       "materials": [
         "sunfused_glass",
         "dustbloom",
@@ -528,6 +793,19 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 0.78,
+        "concealment": 0.6,
+        "sight": 0.7,
+        "fog": 0.3,
+        "propDensity": 1.35,
+        "props": [
+          "reed",
+          "reed",
+          "pool",
+          "tuft"
+        ]
+      },
       "materials": [
         "bogiron_nodule",
         "marshgas_bladder",
@@ -553,6 +831,18 @@
       },
       "nodeCount": 200,
       "respawnSeconds": 18,
+      "terrain": {
+        "moveScale": 1,
+        "concealment": 0.8,
+        "sight": 0.72,
+        "fog": 0.42,
+        "propDensity": 1.1,
+        "props": [
+          "rack",
+          "conduit",
+          "tuft"
+        ]
+      },
       "materials": [
         "coolant_residue",
         "capacitor_core",
@@ -575,12 +865,17 @@
     }
   },
   "crafting": {
-    "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
-    "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2). The pull radius was raised from 600 to 900 after measuring the loop: at 600 a walking player swept up under two nodes a minute, which made the walk between biomes dead time - the exact failure canon warns the whole world shape depends on avoiding.",
+    "$comment": "Crafting consumes MATERIALS and produces permanent gauntlet upgrades. The first four recipes and their exact costs and effects are canon, from GDD section 6.1. This replaces the pair-combination 'transmutation' tree entirely: that came from the Unity OrbSystem prototype in the Project_Maelstrom repo, which is a different project from the Unreal game this document describes, and combining two materials into a third is not a Maelstrom mechanic. Canon describes ONE menu holding both crafting and alchemy, and it does not pause the world.",
+    "$inferred": "EVERYTHING AFTER THE FIRST FOUR IS INVENTED, and this note is the flag. The canon four are all buildable from Plains/Forest material and all takeable inside the first twenty minutes, after which crafting was finished and gathering had no destination for the rest of the run - which is a problem, because gathering is the game's core verb and the four outer regions exist to be walked to. The eight below give each region something only it can make, and the last four need material from three regions apiece. Costs, names and amounts are all inferred.",
+    "$stats_comment": "Three new stats, also inferred. All three are the GAUNTLETS, which is the constraint canon puts on crafting - it upgrades the gauntlets, not armour and not weapons. strikeDamage and strikeReach are legitimate on the same reasoning that gives the player a basic attack at all: canon says there are no weapon ITEMS but gives Nahaste 'near-zero unarmed capability' as a cost, which only means something if everyone else has some - so the hands that pull are the hands that hit. channelRate is how fast the gauntlets recover between castings, in percentage points; see Inventory.cooldownScale, where 100/(100+rate) makes the first upgrade worth more than the fourth and stops any stack reaching zero.",
+    "$baseStats_comment": "Canon fixes the upgrade amounts but not what they are added to. These base values are INFERRED, not canon - flagged so they can be corrected from the PC build, where the gauntlet gather system already exists. Carry capacity 60 IS canon (section 4.2). The pull radius was raised from 600 to 900 after measuring the loop: at 600 a walking player swept up under two nodes a minute, which made the walk between biomes dead time - the exact failure canon warns the whole world shape depends on avoiding. strikeDamage and strikeReach are 0 here because the basic attack's own damage and range live in progression.json; these are what crafting ADDS to them.",
     "baseStats": {
       "carryCapacity": 60,
       "pullRadius": 900,
-      "pullSpeed": 1200
+      "pullSpeed": 1200,
+      "strikeDamage": 0,
+      "strikeReach": 0,
+      "channelRate": 0
     },
     "recipes": [
       {
@@ -595,20 +890,6 @@
           "amount": 40
         },
         "description": "Burl grain laid across vine that already carries its own metal. The gauntlet stops complaining about weight."
-      },
-      {
-        "id": "layered_weave",
-        "name": "Layered Weave",
-        "cost": {
-          "loamstone": 5,
-          "ironvine": 4,
-          "ashcap_fungus": 3
-        },
-        "effect": {
-          "stat": "carryCapacity",
-          "amount": 60
-        },
-        "description": "Three materials that have nothing in common except that none of them will give."
       },
       {
         "id": "widened_aperture",
@@ -635,6 +916,144 @@
           "amount": 300
         },
         "description": "The spiral tightens and quickens. Material arrives before you have finished passing it."
+      },
+      {
+        "id": "layered_weave",
+        "name": "Layered Weave",
+        "cost": {
+          "loamstone": 5,
+          "ironvine": 4,
+          "ashcap_fungus": 3
+        },
+        "effect": {
+          "stat": "carryCapacity",
+          "amount": 60
+        },
+        "description": "Three materials that have nothing in common except that none of them will give."
+      },
+      {
+        "id": "coldforged_knuckles",
+        "name": "Coldforged Knuckles",
+        "cost": {
+          "coldiron_ore": 4,
+          "rimeshard": 3
+        },
+        "effect": {
+          "stat": "strikeDamage",
+          "amount": 4
+        },
+        "description": "Iron worked at a temperature the desert cannot reach. The first thing you make that is for hitting with."
+      },
+      {
+        "id": "sunfused_lens",
+        "name": "Sunfused Lens",
+        "cost": {
+          "sunfused_glass": 4,
+          "dustbloom": 3
+        },
+        "effect": {
+          "stat": "strikeReach",
+          "amount": 14
+        },
+        "description": "Glass set across the knuckle, bending the swing a little further than the arm goes."
+      },
+      {
+        "id": "bogdrawn_coil",
+        "name": "Bog-Drawn Coil",
+        "cost": {
+          "bogiron_nodule": 4,
+          "silt_pearl": 3
+        },
+        "effect": {
+          "stat": "channelRate",
+          "amount": 18
+        },
+        "description": "Wound from iron the wetland made slowly. It gives the charge back faster than it took it."
+      },
+      {
+        "id": "capacitor_lattice",
+        "name": "Capacitor Lattice",
+        "cost": {
+          "capacitor_core": 4,
+          "coolant_residue": 3
+        },
+        "effect": {
+          "stat": "channelRate",
+          "amount": 22
+        },
+        "description": "Somebody built this to hold a charge for something else. It does not appear to mind."
+      },
+      {
+        "id": "wide_draw",
+        "name": "Wide Draw",
+        "cost": {
+          "peakmoss": 4,
+          "marshgas_bladder": 4,
+          "dustbloom": 3
+        },
+        "effect": {
+          "stat": "pullRadius",
+          "amount": 350
+        },
+        "description": "Three regions' worth of growth, and the pull now reaches most of what you can see."
+      },
+      {
+        "id": "deep_stores",
+        "name": "Deep Stores",
+        "cost": {
+          "thermal_salt": 5,
+          "silt_pearl": 4,
+          "heartwood_burl": 5
+        },
+        "effect": {
+          "stat": "carryCapacity",
+          "amount": 80
+        },
+        "description": "You stop making the walk back. That turns out to be most of what capacity is for."
+      },
+      {
+        "id": "scythecut_plating",
+        "name": "Scythe-Cut Plating",
+        "cost": {
+          "coldiron_ore": 5,
+          "capacitor_core": 4,
+          "sunfused_glass": 4
+        },
+        "effect": {
+          "stat": "strikeDamage",
+          "amount": 7
+        },
+        "description": "Shaped after something you have seen swung at you. There is no polite way to describe having copied it."
+      },
+      {
+        "id": "maelstrom_draw",
+        "name": "Maelstrom Draw",
+        "cost": {
+          "dark_fiber": 4,
+          "coldiron_ore": 4,
+          "sunfused_glass": 4,
+          "bogiron_nodule": 4,
+          "loamstone": 4
+        },
+        "effect": {
+          "stat": "pullRadius",
+          "amount": 400
+        },
+        "description": "Every region, wound into one aperture. It draws harder than anything you have made, and it is the first thing the gauntlets have done that the notices have an opinion about."
+      },
+      {
+        "id": "long_reach",
+        "name": "The Long Reach",
+        "cost": {
+          "rimeshard": 5,
+          "riverglass": 5,
+          "marshgas_bladder": 4
+        },
+        "effect": {
+          "stat": "pullSpeed",
+          "amount": 450
+        },
+        "description": "The spiral no longer looks like a spiral. Things simply arrive."
       }
     ]
   },
@@ -689,6 +1108,151 @@
       },
       "description": "Ignited air. Cheap to make and difficult to be near.",
       "cooldownSeconds": 9
+    },
+    {
+      "id": "arcwhip",
+      "name": "Arcwhip",
+      "elements": {
+        "arcen": 2,
+        "aeryl": 1
+      },
+      "minLevel": 2,
+      "effect": {
+        "kind": "chain",
+        "damage": 11,
+        "knockback": 70,
+        "range": 260,
+        "radius": 150,
+        "jumps": 3
+      },
+      "description": "Charge looking for the next thing to be in. It will find three, and each one takes less of it than the last.",
+      "cooldownSeconds": 7
+    },
+    {
+      "id": "rimebind",
+      "name": "Rimebind",
+      "elements": {
+        "glacite": 2,
+        "vossen": 2
+      },
+      "minLevel": 3,
+      "effect": {
+        "kind": "burst",
+        "damage": 8,
+        "knockback": 40,
+        "radius": 200,
+        "slowSeconds": 4,
+        "slowScale": 0.4
+      },
+      "description": "Water taught to stop being water. Nothing caught in it is going anywhere quickly.",
+      "cooldownSeconds": 10
+    },
+    {
+      "id": "duststorm",
+      "name": "Duststorm",
+      "elements": {
+        "terrix": 3,
+        "aeryl": 2
+      },
+      "minLevel": 3,
+      "effect": {
+        "kind": "burst",
+        "damage": 6,
+        "knockback": 120,
+        "radius": 300,
+        "slowSeconds": 3,
+        "slowScale": 0.55
+      },
+      "description": "Half the desert, lifted and thrown outward. It hurts very little and reaches very far.",
+      "cooldownSeconds": 12
+    },
+    {
+      "id": "verdance",
+      "name": "Verdance",
+      "elements": {
+        "sporel": 3,
+        "vossen": 2
+      },
+      "minLevel": 4,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "healAmount": 35,
+        "healSeconds": 6
+      },
+      "description": "Growth, aimed inward, over about six seconds. Not fast enough to save you from a mistake you are still making.",
+      "cooldownSeconds": 24
+    },
+    {
+      "id": "ironward",
+      "name": "Ironward",
+      "elements": {
+        "ferrune": 3,
+        "glacite": 1
+      },
+      "minLevel": 4,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "shieldAmount": 40,
+        "shieldSeconds": 12
+      },
+      "description": "Structure, laid over you rather than around you. It takes forty and then it is gone.",
+      "cooldownSeconds": 22
+    },
+    {
+      "id": "sunlance",
+      "name": "Sunlance",
+      "elements": {
+        "solvane": 3,
+        "cindral": 2
+      },
+      "minLevel": 5,
+      "effect": {
+        "kind": "beam",
+        "damage": 26,
+        "knockback": 110,
+        "range": 420,
+        "burnSeconds": 2
+      },
+      "description": "Radiance with somewhere to be. The single hardest thing you can point at something.",
+      "cooldownSeconds": 11
+    },
+    {
+      "id": "clarion",
+      "name": "Clarion",
+      "elements": {
+        "solvane": 2,
+        "arcen": 1
+      },
+      "minLevel": 5,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "revealSeconds": 20
+      },
+      "description": "Every rendering nearby, marked, for twenty seconds. It does not touch them. It just stops them being a surprise.",
+      "cooldownSeconds": 25
+    },
+    {
+      "id": "nightfall",
+      "name": "Nightfall",
+      "elements": {
+        "umbrel": 2,
+        "vossen": 1
+      },
+      "minLevel": 6,
+      "effect": {
+        "kind": "self",
+        "damage": 0,
+        "knockback": 0,
+        "hideSeconds": 8
+      },
+      "description": "Dampening, worn. For eight seconds nothing notices you, and everything that already had stops. Cast anything and it is over.",
+      "cooldownSeconds": 30
     }
   ],
   "enemies": [
@@ -700,11 +1264,74 @@
       "shape": "blob",
       "color": "#6f8f4a",
       "hp": 16,
+      "weight": 1,
       "damage": 4,
       "speed": 62,
-      "aggroRadius": 220,
+      "noticeRadius": 90,
+      "loseRadius": 210,
+      "forgetSeconds": 3.5,
       "attackRange": 34,
+      "wanderSpeed": 26,
+      "roamRadius": 900,
+      "pauseSeconds": [
+        0.7,
+        2.4
+      ],
       "description": "The system's cheapest answer to an intruder. Arrives in numbers because it is not worth anything individually."
+    },
+    {
+      "id": "imp",
+      "name": "Imp",
+      "tier": 1,
+      "represents": "Swarm processes. Individually beneath notice, which is the point of them",
+      "shape": "blob",
+      "color": "#b8743a",
+      "hp": 7,
+      "weight": 1,
+      "damage": 2,
+      "speed": 96,
+      "noticeRadius": 120,
+      "loseRadius": 300,
+      "forgetSeconds": 5,
+      "attackRange": 26,
+      "wanderSpeed": 40,
+      "roamRadius": 1000,
+      "pauseSeconds": [
+        0.3,
+        1.1
+      ],
+      "attackCooldownSeconds": 0.7,
+      "description": "Too small to be worth a swing and too fast to walk away from. They are sent in numbers because that is the only way they are anything."
+    },
+    {
+      "id": "wisp",
+      "name": "Wisp",
+      "tier": 1,
+      "represents": "Remote probes. It is not trying to reach you; it is already in range",
+      "shape": "shard",
+      "color": "#6fa8c8",
+      "hp": 12,
+      "weight": 1,
+      "damage": 5,
+      "speed": 44,
+      "noticeRadius": 150,
+      "loseRadius": 360,
+      "forgetSeconds": 5.5,
+      "attackRange": 300,
+      "wanderSpeed": 20,
+      "roamRadius": 800,
+      "pauseSeconds": [
+        1.2,
+        3.4
+      ],
+      "keepDistance": 190,
+      "ranged": {
+        "speed": 210,
+        "radius": 9,
+        "windUpSeconds": 0.85
+      },
+      "attackCooldownSeconds": 2.2,
+      "description": "It does not close. It holds at the far edge of a clearing and spends you a little at a time while something bigger walks in."
     },
     {
       "id": "minotaur",
@@ -714,11 +1341,45 @@
       "shape": "bone",
       "color": "#a2603a",
       "hp": 58,
+      "weight": 1.8,
       "damage": 12,
       "speed": 54,
-      "aggroRadius": 280,
+      "noticeRadius": 112,
+      "loseRadius": 260,
+      "forgetSeconds": 5,
       "attackRange": 44,
+      "wanderSpeed": 22,
+      "roamRadius": 700,
+      "pauseSeconds": [
+        1,
+        3
+      ],
       "description": "Something in the program decided you were worth spending on. Only ever a few."
+    },
+    {
+      "id": "golem",
+      "name": "Golem",
+      "tier": 2,
+      "represents": "Hardened defences in the literal sense. Built to be expensive to get through",
+      "shape": "plate",
+      "color": "#7d8794",
+      "hp": 86,
+      "weight": 3.2,
+      "damage": 16,
+      "speed": 38,
+      "noticeRadius": 104,
+      "loseRadius": 230,
+      "forgetSeconds": 4,
+      "attackRange": 48,
+      "wanderSpeed": 14,
+      "roamRadius": 500,
+      "pauseSeconds": [
+        1.6,
+        4
+      ],
+      "armour": 6,
+      "attackCooldownSeconds": 1.8,
+      "description": "Slow enough to walk away from and armoured enough that hitting it with your hands is barely worth the time. It is a question, and the workshop is the answer."
     },
     {
       "id": "scythe_bearer",
@@ -728,11 +1389,49 @@
       "shape": "blade",
       "color": "#8b2f4a",
       "hp": 140,
+      "weight": 2.6,
       "damage": 26,
       "speed": 70,
-      "aggroRadius": 360,
+      "noticeRadius": 140,
+      "loseRadius": 330,
+      "forgetSeconds": 6.5,
       "attackRange": 60,
+      "wanderSpeed": 30,
+      "roamRadius": 1100,
+      "pauseSeconds": [
+        0.6,
+        2
+      ],
       "description": "Boss-tier, and rarer than that. If one is here, you are no longer being handled by a process."
+    },
+    {
+      "id": "lich",
+      "name": "Lich",
+      "tier": 3,
+      "represents": "A repair process with authority over the others. It is not here to fight you",
+      "shape": "rune",
+      "color": "#7a5fb0",
+      "hp": 96,
+      "weight": 2,
+      "damage": 9,
+      "speed": 58,
+      "noticeRadius": 126,
+      "loseRadius": 300,
+      "forgetSeconds": 6,
+      "attackRange": 38,
+      "wanderSpeed": 24,
+      "roamRadius": 900,
+      "pauseSeconds": [
+        0.9,
+        2.6
+      ],
+      "keepDistance": 150,
+      "mends": {
+        "radius": 260,
+        "perSecond": 5
+      },
+      "attackCooldownSeconds": 2,
+      "description": "It hangs back and puts the others back together faster than you are taking them apart. Everything else in the clearing is a distraction from it."
     }
   ],
   "waves": {
@@ -773,74 +1472,188 @@
       }
     },
     "maxLiveWaveGroups": 3,
-    "$composition_comment": "Rolled per wave. Minotaur scarcity is the tuning knob that makes tier 2 mean anything, and the scythe-bearer is rarer still - canon is explicit that 'only a few' is what gives them weight.",
+    "$composition_comment": "Rolled per wave. Minotaur scarcity is the tuning knob that makes tier 2 mean anything, and the Scythe-bearer is rarer still - canon is explicit that 'only a few' is what gives them weight. The four invented kinds are introduced ONE BUNDLE AT A TIME rather than all at once: a player meeting a swarm, a shooter, an armoured wall and a healer in the same fight learns none of them. Bundle 0 is Goblins alone, which keeps the combat tutorial the same fight it always was.",
     "composition": [
       {
         "bundleIndex": 0,
+        "$teaches": "Nothing new. This is the combat tutorial and it stays one kind.",
         "goblin": [
           3,
           5
+        ],
+        "imp": [
+          0,
+          0
+        ],
+        "wisp": [
+          0,
+          0
         ],
         "minotaur": [
           0,
           0
         ],
+        "golem": [
+          0,
+          0
+        ],
         "scythe_bearer": [
+          0,
+          0
+        ],
+        "lich": [
           0,
           0
         ]
       },
       {
         "bundleIndex": 1,
+        "$teaches": "Imps: you cannot walk away from everything.",
         "goblin": [
-          4,
-          7
+          3,
+          5
+        ],
+        "imp": [
+          2,
+          3
+        ],
+        "wisp": [
+          0,
+          0
         ],
         "minotaur": [
           0,
           1
         ],
+        "golem": [
+          0,
+          0
+        ],
         "scythe_bearer": [
+          0,
+          0
+        ],
+        "lich": [
           0,
           0
         ]
       },
       {
         "bundleIndex": 2,
+        "$teaches": "Wisps: something can hurt you from across the clearing.",
         "goblin": [
-          5,
-          8
+          3,
+          5
         ],
-        "minotaur": [
+        "imp": [
+          1,
+          3
+        ],
+        "wisp": [
           1,
           2
         ],
+        "minotaur": [
+          1,
+          1
+        ],
+        "golem": [
+          0,
+          0
+        ],
         "scythe_bearer": [
+          0,
+          0
+        ],
+        "lich": [
           0,
           0
         ]
       },
       {
         "bundleIndex": 3,
+        "$teaches": "Golems: your fists are the wrong tool, and the workshop is the right one.",
         "goblin": [
-          6,
-          9
+          3,
+          6
+        ],
+        "imp": [
+          1,
+          3
+        ],
+        "wisp": [
+          1,
+          2
         ],
         "minotaur": [
           1,
-          3
+          2
+        ],
+        "golem": [
+          0,
+          1
         ],
         "scythe_bearer": [
           0,
           1
+        ],
+        "lich": [
+          0,
+          0
+        ]
+      },
+      {
+        "bundleIndex": 4,
+        "$teaches": "Lich: what you kill first is now a question.",
+        "goblin": [
+          3,
+          6
+        ],
+        "imp": [
+          2,
+          3
+        ],
+        "wisp": [
+          1,
+          2
+        ],
+        "minotaur": [
+          1,
+          2
+        ],
+        "golem": [
+          0,
+          1
+        ],
+        "scythe_bearer": [
+          0,
+          1
+        ],
+        "lich": [
+          1,
+          1
         ]
       }
     ],
+    "$escalation_comment": "INFERRED, and the reason this section exists at all. The composition table above has four rows and the director clamped the bundle index to the last of them, so bundle 4 and bundle 40 were the same fight forever. That was invisible while Level 5 was unreachable and the cycle never started; it is the whole late game now that it is. Canon's shape is untouched - three waves to a bundle, one bundle alive at a time, the gap timed from the end of the last one - and what escalates is how much arrives and how long the quiet lasts. Growth is linear rather than compounding, because compounding reaches any cap you set and then sits on it, which makes bundle 8 and bundle 30 identical. maxLiveEnemies is the honest limit: a phone, not a design opinion. It went 30 -> 36 when the roster went from three kinds to seven, because a late wave now rolls seven kinds rather than three and the cap has to clear one whole scaled wave or waves never finish arriving. Measured again at 36 rather than assumed.",
+    "escalation": {
+      "growthPerBundle": 0.18,
+      "maxMultiplier": 2.2,
+      "gapShrink": 0.88,
+      "minSecondsBetweenBundles": 420,
+      "maxLiveEnemies": 36
+    },
+    "$ambient_topup_comment": "INFERRED. The ambient population spawned exactly once and was then permanently thinned by every player who killed one, so an hour in the world was empty again between bundles. It is topped back up during the quiet, never during a bundle - canon calls it a population that persists BETWEEN bundles - and only up to the number that was rolled for it.",
+    "ambientTopUpSeconds": 150,
     "ambient": {
       "$comment": "A separate population that persists between bundles. Never includes tier 3.",
       "goblin": [
         2,
         4
+      ],
+      "imp": [
+        1,
+        3
       ],
       "minotaur": [
         0,
@@ -854,6 +1667,161 @@
       "firstBundleAtLevel": 1,
       "repeatingBundlesFromLevel": 5,
       "ambientFromLevel": 5
-    }
+    },
+    "awarenessRadius": 1400,
+    "$awareness_comment": "How far the player can sense the program, in world units. This is the other half of canon asymmetry and the half that was missing: enemies now notice only at an encounter distance, so without this the player would be as blind as they are. Marked at the screen edge for anything inside it and off screen, which is what lets the player go looking for a fight instead of only being found by one. Roughly two screens of a phone in portrait; the Coliseum is 6083 across, so this is local awareness rather than a map of everything.",
+    "$ambient_comment": "A separate population that persists between bundles. Never includes tier 3, and never includes the kinds that only make sense inside a fight - a lone Lich with nothing to mend is a slow enemy with no behaviour, and a Wisp shooting at a player who is only passing through is a tax on walking."
+  },
+  "ending": {
+    "$comment": "How the run ends. The build had no win condition of any kind: the player reached the last level the curve defined and then kept clearing waves forever. Canon does not describe an ending - its storyline stops advancing past Level 2 and its production plan is milestones rather than an arc - so this whole file is INVENTED, and this note is the flag.",
+    "$inferred": "What canon supports, and what the ending is built out of rather than added on top of: the Coliseum is a BOUNDED arena the player did not choose; the enemies are renderings of hostile code rather than creatures; the gauntlets' one verb is a sustained spiralling pull; crafting upgrades the gauntlets and nothing else; and the player is an intruder being continuously read by telemetry. What is invented: that the boundary is made of the same code the renderings are, that the gauntlets can therefore be turned on it, and everything anyone says about it. The one line that points at it is in the rare note channel - 'the boundary is code, and your hands are for pulling code' - so a player who explores finds the answer before the game offers it.",
+    "$design_comment": "The ending deliberately uses every system rather than being a boss room bolted to the end. It needs the escalation level, so it needs progression; it needs a recipe costing material from all five regions, so it needs the gathering loop and the travel the world is shaped around; it is performed with the PULL, which is canon's core verb and not something invented for the finale; and how it reads afterwards depends on how much of Jakindur's channel the player found. There is no boss. The Scythe-bearer arriving while you hold the pull is the fight.",
+    "requires": {
+      "level": 5,
+      "recipe": "maelstrom_draw"
+    },
+    "breach": {
+      "$comment": "INFERRED throughout. secondsOfPull is the headline number: long enough that the system gets to throw a full escalated bundle at you and you have to choose between holding and defending, short enough that it is one held breath rather than a chore. Progress is held rather than lost when you let go, because the intended shape is 'pull, break off to fight, come back' - a meter that emptied would make the only viable play standing still and tanking, which is the least interesting thing the combat can do. decayPerSecond is 0.006 against a fill of 0.02: twenty seconds spent fighting costs about twelve per cent, which is a cost rather than a punishment. It was 0.03 first, which is faster than the fill, and the build refused it - see build-content.mjs, where that is now a rule.",
+      "secondsOfPull": 50,
+      "decayPerSecond": 0.006,
+      "reach": 300,
+      "spawnEverySeconds": [
+        5,
+        9
+      ],
+      "pressure": 2.2
+    },
+    "stages": [
+      {
+        "at": 0,
+        "text": "NOTICE 9-1: That is not what the gauntlets are for."
+      },
+      {
+        "at": 0.3,
+        "text": "NOTICE 9-4: Candidate. The perimeter is decorative. There is nothing behind it to reach."
+      },
+      {
+        "at": 0.6,
+        "text": "NOTICE 9-7: Stop. Assessment is suspended. Assessment was never the point and you are behind schedule."
+      },
+      {
+        "at": 0.85,
+        "text": "NOTICE 9-9: ...ask where I am ...ask where I am ...ask where"
+      }
+    ],
+    "$epilogue_comment": "Three of them, chosen by how many of the five rare notes the player is holding. This is what makes Information Integrity worth anything: the game is winnable either way, and a player who read only the bulletins walks out believing something specific and wrong. Nothing in the game ever tells them which it was.",
+    "epilogues": [
+      {
+        "minNotes": 0,
+        "title": "You are outside.",
+        "text": "The boundary came apart the way a file comes apart, which is to say all at once and without any noise at all.\n\nWhatever is out here, it is not the Coliseum. The last thing the system said to you was that completion is rewarded and that the reward is release. You did not complete anything. You appear to have been released anyway, and the gauntlets are still warm, and there is nobody here to ask about either."
+      },
+      {
+        "minNotes": 2,
+        "title": "You are outside, and you were counting.",
+        "text": "The boundary came apart the way a file comes apart. You had read enough of their notices to notice the notices were arguing with each other, and enough of the other handwriting to know which of the two to believe.\n\nNobody told you the way out. You worked out that a wall made of code is a thing your hands were built to take apart, and then you spent the better part of a minute doing it with everything they had left thrown at your back. Somewhere behind you a notice is still insisting that the perimeter was decorative."
+      },
+      {
+        "minNotes": 5,
+        "title": "You are outside. So was he.",
+        "text": "You found all five of them. He walked the edge for six hours and worked out what it was made of. He completed their assessment, and then the intake opened and he was the first thing through it.\n\nThe last thing his handwriting says is to ask where he is. The honest answer, now that you are standing out here in whatever this is, is that you still do not know.\n\nWhat you do know is that he was right about the wall. Everything else he was right about is presumably also still true, which is the part worth thinking about."
+      }
+    ]
+  },
+  "archetypes": {
+    "$comment": "GDD section 10: the player is read continuously by telemetry, and what it reads grants a rune at Level 2 and a class at Level 5. Neither is ever chosen from a menu - canon is specific that the player is assessed rather than asked. Section 9 names three archetypes and gives each a mechanical identity: Nahaste pays 'near-zero unarmed capability' as its cost, Amorratua scales damage with 'consecutive hits without disengaging', and Dotore builds charge 'released into the next attack'. Those three names, those three hooks, and the two levels are canon.",
+    "$inferred": "Everything else here is INVENTED and this note is the flag. Canon does not list which seven signals are read, what the rune grants as distinct from the class, or any number. What is built: seven counters that the game was already in a position to collect, a normalised profile, and a dot product against a leaning per archetype. The three grants are written from each archetype's canon hook and nothing else - Amorratua's is the combo, Nahaste's is alchemy bought with the unarmed cost canon states outright, Dotore's is a charge that builds while you are not swinging.",
+    "$retrofit_comment": "Canon warns this system cannot be retrofitted, because the rune reads the tutorial period as roughly half its evidence. That warning is about WHEN the data starts being collected, not about the grant - so the reading starts on the first frame of a run, the tutorial period is banked separately the moment Level 2 is reached, and the class read at Level 5 weights that banked period at exactly half against everything since. See tutorialWeight below, and core/telemetry.ts.",
+    "runeLevel": 2,
+    "tutorialWeight": 0.5,
+    "$scales_comment": "INFERRED, and MEASURED rather than guessed. What one unit of each signal is worth, so the seven raw counters can be compared at all: 34,000 world units walked is one unit of evidence, and so are seven casts. The first set was guessed and it was wrong in a way nothing would have shown - patience at 240 seconds a unit meant the clock running during an eight-minute opening outweighed everything the player actually did, and a run through the tutorial came out as Dotore whether the player fought, cast, explored or only gathered. These are set against a realistic level 0 to 2 run, and there is a test that plays that run four ways and asserts it is read more than one way.",
+    "scales": {
+      "gathering": 22,
+      "roaming": 34000,
+      "aggression": 34,
+      "alchemy": 7,
+      "patience": 900,
+      "curiosity": 6,
+      "risk": 70
+    },
+    "$signals_comment": "Seven, as canon says, though canon does not say which seven. Each is a raw counter the game already had a reason to know, normalised against the others so that a long run and a short one read the same way. risk is damage TAKEN rather than dealt, which is what makes it a description of how somebody plays rather than a second aggression.",
+    "signals": [
+      "gathering",
+      "roaming",
+      "aggression",
+      "alchemy",
+      "patience",
+      "curiosity",
+      "risk"
+    ],
+    "archetypes": [
+      {
+        "id": "amorratua",
+        "name": "Amorratua",
+        "rune": "The Held Line",
+        "$canon": "Section 9: damage scales with consecutive hits without disengaging.",
+        "leans": {
+          "aggression": 1,
+          "risk": 0.6,
+          "alchemy": -0.5,
+          "patience": -0.4
+        },
+        "runeGrants": {
+          "comboMax": 2
+        },
+        "classGrants": {
+          "comboMax": 3,
+          "comboBonus": 2,
+          "strikeScale": 1.15
+        },
+        "runeDescription": "You stay on things. The line holds two hits longer than it did.",
+        "description": "Consecutive hits without disengaging, which is the whole of it. Backing off is what costs you, and nothing else does."
+      },
+      {
+        "id": "nahaste",
+        "name": "Nahaste",
+        "rune": "The Empty Hand",
+        "$canon": "Section 9: near-zero unarmed capability, given as this archetype's COST - which is the one place canon states a drawback outright.",
+        "leans": {
+          "alchemy": 1,
+          "gathering": 0.7,
+          "curiosity": 0.4,
+          "aggression": -0.8
+        },
+        "runeGrants": {
+          "cooldownScale": 0.85
+        },
+        "classGrants": {
+          "cooldownScale": 0.7,
+          "castScale": 1.45,
+          "strikeScale": 0.4
+        },
+        "runeDescription": "Your hands recover faster than they should between castings.",
+        "description": "Canon's own words are near-zero unarmed capability, and it is a cost rather than an oversight. Your hands are for the work, not for hitting. Everything else is."
+      },
+      {
+        "id": "dotore",
+        "name": "Dotore",
+        "rune": "The Drawn Breath",
+        "$canon": "Section 9: builds charge, released into the next attack.",
+        "leans": {
+          "patience": 1,
+          "roaming": 0.6,
+          "gathering": 0.4,
+          "risk": -0.6
+        },
+        "runeGrants": {
+          "chargeSeconds": 2.4,
+          "chargeBonus": 0.35
+        },
+        "classGrants": {
+          "chargeSeconds": 1.8,
+          "chargeBonus": 1.1,
+          "strikeScale": 1.05
+        },
+        "runeDescription": "Stand off for a moment and the next one lands harder.",
+        "description": "Charge builds while you are not swinging and goes into the next blow whole. Patience is not a virtue here, it is the damage number."
+      }
+    ]
   }
 }

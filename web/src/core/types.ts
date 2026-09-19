@@ -10,6 +10,10 @@
  *
  * - and they are deliberately separate, because they consume different things.
  */
+import type { EscalationRules } from './escalation';
+import type { NoteDef } from './notes';
+import type { EndingDef } from './ending';
+import type { ArchetypeConfig } from './telemetry';
 
 export type ElementId = string;
 export type MaterialId = string;
@@ -47,6 +51,28 @@ export interface MaterialDef {
 }
 
 /** A region of the Coliseum. Not a level: there is one continuous world. */
+/**
+ * What a region does to the player standing in it.
+ *
+ * Every biome already claimed a mechanical identity in its mood line and none
+ * of it existed, so the Wetland's "cover in every direction" played exactly
+ * like the Desert's "nowhere to hide". These make the lines true.
+ */
+export interface TerrainDef {
+  /** Multiplies walking speed. */
+  moveScale: number;
+  /** Multiplies how far enemies notice the player here: under 1 is cover. */
+  concealment: number;
+  /** Multiplies how far the player senses enemies. */
+  sight: number;
+  /** 0..1 haze, drawn in the palette's fog colour. */
+  fog: number;
+  /** Relative scatter density for props. */
+  propDensity: number;
+  /** Which prop kinds grow here. Repeats weight a kind more heavily. */
+  props: readonly string[];
+}
+
 export interface BiomeDef {
   id: BiomeId;
   name: string;
@@ -62,6 +88,7 @@ export interface BiomeDef {
   respawnSeconds: number;
   /** Derived at build time from every material that belongs here. */
   materials: readonly MaterialId[];
+  terrain: TerrainDef;
 }
 
 export interface ColiseumDef {
@@ -69,8 +96,30 @@ export interface ColiseumDef {
   travelSeconds: { walk: readonly number[]; sprint: readonly number[] };
 }
 
-/** Which gauntlet stat a crafting recipe permanently raises. */
-export type GauntletStat = 'carryCapacity' | 'pullRadius' | 'pullSpeed';
+/**
+ * Which gauntlet stat a crafting recipe permanently raises.
+ *
+ * All six are the gauntlets themselves, which is the constraint canon puts on
+ * crafting - it produces "permanent gauntlet upgrades", not armour and not
+ * weapons. The strike pair is legitimate on the same reasoning that gives the
+ * player a basic attack at all: canon has no weapon ITEMS, so the hands that
+ * pull are also the hands that hit, and making them hit harder is a gauntlet
+ * upgrade rather than a new sword.
+ *
+ * A list rather than a bare union, because the runtime needs to iterate it -
+ * and iterating a hand-maintained copy of a type is how a stat gets added in
+ * three places and reset in two.
+ */
+export const GAUNTLET_STATS = [
+  'carryCapacity',
+  'pullRadius',
+  'pullSpeed',
+  'strikeDamage',
+  'strikeReach',
+  'channelRate',
+] as const;
+
+export type GauntletStat = (typeof GAUNTLET_STATS)[number];
 
 export interface CraftingRecipe {
   id: RecipeId;
@@ -85,7 +134,50 @@ export interface CraftingDef {
   recipes: readonly CraftingRecipe[];
 }
 
-export type AbilityKind = 'shove' | 'beam' | 'burst';
+/**
+ * The SHAPE an ability resolves in. Statuses are separate, below, so that any
+ * shape can carry any of them rather than every combination of the two needing
+ * its own kind.
+ *
+ *   shove / burst - a radius around the caster, no aiming
+ *   beam          - a forward cone, out to `range`
+ *   chain         - one target inside `range`, then leaps of `radius`
+ *   self          - nobody. The whole effect lands on the caster.
+ */
+export type AbilityKind = 'shove' | 'beam' | 'burst' | 'chain' | 'self';
+
+/**
+ * What a combination does when it lands.
+ *
+ * Split into a shape, damage, and a set of optional statuses. Seven of canon's
+ * ten elements had no combination at all, and giving them one meant either five
+ * more damage numbers - which is not what Umbrel's "absorption, dampening,
+ * concealment" or Solvane's "revealing" describe - or a vocabulary wide enough
+ * to say what those domains actually do. This is that vocabulary.
+ */
+export interface AbilityEffect {
+  kind: AbilityKind;
+  damage: number;
+  knockback: number;
+  radius?: number;
+  range?: number;
+  burnSeconds?: number;
+  /** chain: how many further targets the charge leaps to after the first. */
+  jumps?: number;
+  /** How long a caught enemy moves at `slowScale` of its own pace. */
+  slowSeconds?: number;
+  slowScale?: number;
+  /** Damage soaked before health is touched. Expires with shieldSeconds. */
+  shieldAmount?: number;
+  shieldSeconds?: number;
+  /** Health returned, spread evenly over healSeconds rather than all at once. */
+  healAmount?: number;
+  healSeconds?: number;
+  /** Seconds during which nothing notices the player. Canon's Umbrel. */
+  hideSeconds?: number;
+  /** Seconds during which everything nearby is marked. Canon's Solvane. */
+  revealSeconds?: number;
+}
 
 export interface AlchemyCombination {
   id: CombinationId;
@@ -95,15 +187,17 @@ export interface AlchemyCombination {
   elements: Quantities;
   /** One of the two or three someone else made, handed over at Level 1. */
   tutorial?: boolean;
+  /**
+   * The level this opens at, when the workshop opening is not enough.
+   *
+   * Element cost already gates whatever needs travel - Nightfall cannot be
+   * cast without walking to the Data-Center, because Dark Fiber is the only
+   * Umbrel there is. This paces the rest, so Level 2 opens a workshop with a
+   * few things in it rather than eleven rows to scroll past once.
+   */
+  minLevel?: number;
   cooldownSeconds: number;
-  effect: {
-    kind: AbilityKind;
-    damage: number;
-    knockback: number;
-    radius?: number;
-    range?: number;
-    burnSeconds?: number;
-  };
+  effect: AbilityEffect;
 }
 
 /** A rendering of hostile code, in one of exactly three tiers. */
@@ -116,10 +210,58 @@ export interface EnemyDef {
   shape: string;
   color: string;
   hp: number;
+  /** How much of a shove it absorbs: knockback is divided by this. */
+  weight: number;
   damage: number;
+  /** Pursuit speed, once the player has actually been noticed. */
   speed: number;
-  aggroRadius: number;
+  /**
+   * An encounter distance, not a detection sweep. Canon gives the player the
+   * informational advantage, so this is a body length or two - the old
+   * aggroRadius covered most of a screen, which is what made them read as
+   * locked on from across the world.
+   */
+  noticeRadius: number;
+  /** Past this the enemy starts losing the player, and forgets after forgetSeconds. */
+  loseRadius: number;
+  forgetSeconds: number;
   attackRange: number;
+  /** The amble between roam targets: slower than pursuit, so a chase reads as one. */
+  wanderSpeed: number;
+  /** How far from where it entered the world an enemy will drift. */
+  roamRadius: number;
+  /** Min and max seconds spent standing still before choosing the next target. */
+  pauseSeconds: readonly number[];
+
+  /*
+   * What this kind does that the others do not.
+   *
+   * All optional, so canon's three are untouched by any of it. The tier is the
+   * threat scale and answers "how bad is this"; these answer "what does it do",
+   * which is the axis seven kinds needed and three did not have.
+   */
+
+  /** Seconds between blows. Was a hard-coded 1.2 for everything. */
+  attackCooldownSeconds?: number;
+  /**
+   * Closes to here and no further.
+   *
+   * Without it a kind that fights at range walks into the player's fists
+   * anyway, which deletes the whole reason it fights at range.
+   */
+  keepDistance?: number;
+  /** Fires from attackRange instead of swinging at it. */
+  ranged?: {
+    /** World units per second. Slow enough to walk out of, which is the point. */
+    speed: number;
+    radius: number;
+    /** The tell, before it fires. A shot with no wind-up cannot be read. */
+    windUpSeconds: number;
+  };
+  /** Flat damage subtracted from every hit it takes. */
+  armour?: number;
+  /** Repairs other living enemies inside `radius`, at `perSecond`. */
+  mends?: { radius: number; perSecond: number };
 }
 
 export interface WavePacing {
@@ -140,10 +282,20 @@ export interface WavesDef {
   activePacing: string;
   pacing: Readonly<Record<string, WavePacing>>;
   gates: WaveGates;
+  /** What happens once the authored composition rows run out. */
+  escalation: EscalationRules;
+  /** How often the ambient population is put back to the size it was rolled at. */
+  ambientTopUpSeconds: number;
   maxLiveWaveGroups: number;
   composition: readonly Readonly<Record<string, number | readonly number[]>>[];
   ambient: Readonly<Record<string, readonly number[]>>;
   showEnemiesDuringFirstBundle: boolean;
+  /**
+   * How far the player senses the program, in world units. The other half of
+   * canon's asymmetry: enemies notice only at an encounter distance, so without
+   * this the player would be exactly as blind as they are.
+   */
+  awarenessRadius: number;
 }
 
 export interface ProgressionConfig {
@@ -153,6 +305,7 @@ export interface ProgressionConfig {
   pauseWithMenu: boolean;
   /** Novelty only. There is deliberately no per-unit gather award. */
   xp: {
+    firstNote: number;
     firstMaterial: number;
     firstCraft: number;
     firstAlchemy: number;
@@ -163,7 +316,10 @@ export interface ProgressionConfig {
   levels: readonly { level: number; trigger: string; grants: string }[];
   player: {
     moveSpeed: number;
+    /** What RUN moves you at. Dead data until the toggle existed to ask for it. */
     sprintSpeed: number;
+    /** How much further creatures notice you while you are running. Above 1. */
+    runNoticeScale: number;
     radius: number;
     /** How long the spiral takes to bring a node in. */
     pullSeconds: number;
@@ -184,6 +340,8 @@ export interface ProgressionConfig {
       comboBonus: number;
       comboMax: number;
       knockback: number;
+      /** How long a hit interrupts for, before tier weight divides it. */
+      staggerSeconds: number;
     };
   };
   /** Cumulative XP needed to reach each level; index 0 is level 0. */
@@ -213,6 +371,11 @@ export interface ContentBundle {
   progression: ProgressionConfig;
   tutorial: readonly TutorialStep[];
   opening: OpeningScript;
+  /** What the world says about itself, and on which first-time action. */
+  fragments: readonly { id: string; on: string; title: string; text: string }[];
+  /** The two channels of Information Integrity, and everything written on them. */
+  noteChannels: Readonly<Record<string, { name: string; note: string }>>;
+  notes: readonly NoteDef[];
   elements: readonly ElementDef[];
   materials: readonly MaterialDef[];
   biomes: readonly BiomeDef[];
@@ -221,6 +384,10 @@ export interface ContentBundle {
   alchemy: readonly AlchemyCombination[];
   enemies: readonly EnemyDef[];
   waves: WavesDef;
+  /** How a run is finished. See core/ending.ts. */
+  ending: EndingDef;
+  /** What the telemetry reads, and what it grants. See core/telemetry.ts. */
+  archetypes: ArchetypeConfig & { scales: Readonly<Record<string, number>> };
   unitsPerPixel?: number;
 }
 

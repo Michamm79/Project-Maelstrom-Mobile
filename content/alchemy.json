@@ -1,59 +1,109 @@
 {
-  "$comment": "Alchemy consumes ELEMENTS extracted from materials and produces combat abilities - not items, and not more materials. Visible but non-interactive before Level 2, so the player knows something is being withheld; at Level 2 the full menu opens, populated with whatever elements are held, everything else visibly locked. The three combinations below are canon (GDD section 6.2) and are the ones taught in the tutorial, all craftable from Plains/Forest material alone so the tutorial requires no travel.",
-  "$gap_comment": "Canon's Corporate economy table implies four combinations available at Level 2, and Milestone 1B lists 'the wider element table' as still to come - so the full combination list does not exist in canon yet. Only the three canon combinations ship here. Inventing more would repeat the mistake this rebuild is correcting.",
-  "$effects_comment": "Effect names and shapes are canon; the numbers are INFERRED and flagged as such. Gust is deliberately the cheapest at a single Aeryl: at the spawn only Stormpetal carries Aeryl, so anything dearer could leave a player arriving at the first wave bundle with nothing they can cast.",
+  "$comment": "Alchemy consumes ELEMENTS extracted from materials and produces combat abilities - not items, and not more materials. Visible but non-interactive before Level 2, so the player knows something is being withheld; at Level 2 the full menu opens, populated with whatever elements are held, everything else visibly locked. The first three combinations below are canon (GDD section 6.2) and are the ones taught in the tutorial, all craftable from Plains/Forest material alone so the tutorial requires no travel.",
+  "$inferred": "EVERYTHING AFTER THE FIRST THREE IS INVENTED, and this note is the flag. Canon's Corporate economy table implies four combinations at Level 2 and Milestone 1B lists 'the wider element table' as still to come, so the full list does not exist in canon yet. An earlier pass shipped only the canon three on exactly that reasoning - and the result was that seven of canon's ten elements had no combination at all. Glacite, Ferrune, Arcen, Terrix, Umbrel, Solvane and Sporel appeared in eleven materials, in four regions the player is sent to specifically to collect them, and then did nothing whatsoever. Canon's own gating rule - Glacite and Umbrel withheld from the spawn, 'the world's only reason to leave the centre' - was buying travel that paid out in nothing. So these eight exist to make the element table real, they are written from each element's stated DOMAIN rather than invented from nothing, and every number in them is inferred. Replace them the moment canon has its own.",
+  "$domains_comment": "Which element does what is the one thing canon IS explicit about, so each new combination is built from the domain line in elements.json and nothing else. Umbrel is 'absorption, dampening, concealment', so Nightfall stops things noticing you rather than dealing damage. Solvane is 'radiance, revealing', so Clarion shows you the field. Ferrune is 'metal, structure', so Ironward is a shield. Sporel is 'organic growth, decay', so Verdance closes wounds over time. Arcen is 'charge, conduction', so Arcwhip is the one thing that travels between targets. Writing five more damage numbers instead would have used the element ids while ignoring everything canon actually says they are.",
+  "$effects_comment": "Effect names and shapes are canon for the first three; the numbers are INFERRED throughout and flagged as such. Gust is deliberately the cheapest at a single Aeryl: at the spawn only Stormpetal carries Aeryl, so anything dearer could leave a player arriving at the first wave bundle with nothing they can cast.",
+  "$minLevel_comment": "INFERRED. Element cost already gates the ones that need travel - Nightfall cannot be cast without walking to the Data-Center, because Dark Fiber is the only Umbrel there is. minLevel paces the rest, so Level 2 opens a workshop with a few things in it rather than eleven rows the player scrolls past once and never reads. Anything without a minLevel opens with the workshop itself.",
   "combinations": [
     {
       "id": "gust",
       "name": "Gust",
-      "elements": {
-        "aeryl": 1
-      },
+      "elements": { "aeryl": 1 },
       "tutorial": true,
-      "effect": {
-        "kind": "shove",
-        "damage": 2,
-        "knockback": 260,
-        "radius": 180
-      },
+      "effect": { "kind": "shove", "damage": 2, "knockback": 260, "radius": 180 },
       "description": "A hard shove pulled straight out of the air.",
       "cooldownSeconds": 2.5
     },
     {
       "id": "torrent",
       "name": "Torrent",
-      "elements": {
-        "aeryl": 2,
-        "vossen": 3
-      },
+      "elements": { "aeryl": 2, "vossen": 3 },
       "tutorial": true,
-      "effect": {
-        "kind": "beam",
-        "damage": 9,
-        "knockback": 90,
-        "range": 320
-      },
+      "effect": { "kind": "beam", "damage": 9, "knockback": 90, "range": 320 },
       "description": "Pressurised water, aimed. The wetland taught this one to everyone who got that far.",
       "cooldownSeconds": 6
     },
     {
       "id": "emberlash",
       "name": "Emberlash",
-      "elements": {
-        "cindral": 3,
-        "aeryl": 2
-      },
+      "elements": { "cindral": 3, "aeryl": 2 },
       "tutorial": true,
-      "effect": {
-        "kind": "burst",
-        "damage": 14,
-        "knockback": 140,
-        "radius": 210,
-        "burnSeconds": 3
-      },
+      "effect": { "kind": "burst", "damage": 14, "knockback": 140, "radius": 210, "burnSeconds": 3 },
       "description": "Ignited air. Cheap to make and difficult to be near.",
       "cooldownSeconds": 9
+    },
+    {
+      "id": "arcwhip",
+      "name": "Arcwhip",
+      "elements": { "arcen": 2, "aeryl": 1 },
+      "minLevel": 2,
+      "effect": { "kind": "chain", "damage": 11, "knockback": 70, "range": 260, "radius": 150, "jumps": 3 },
+      "description": "Charge looking for the next thing to be in. It will find three, and each one takes less of it than the last.",
+      "cooldownSeconds": 7
+    },
+    {
+      "id": "rimebind",
+      "name": "Rimebind",
+      "elements": { "glacite": 2, "vossen": 2 },
+      "minLevel": 3,
+      "effect": { "kind": "burst", "damage": 8, "knockback": 40, "radius": 200, "slowSeconds": 4, "slowScale": 0.4 },
+      "description": "Water taught to stop being water. Nothing caught in it is going anywhere quickly.",
+      "cooldownSeconds": 10
+    },
+    {
+      "id": "duststorm",
+      "name": "Duststorm",
+      "elements": { "terrix": 3, "aeryl": 2 },
+      "minLevel": 3,
+      "effect": { "kind": "burst", "damage": 6, "knockback": 120, "radius": 300, "slowSeconds": 3, "slowScale": 0.55 },
+      "description": "Half the desert, lifted and thrown outward. It hurts very little and reaches very far.",
+      "cooldownSeconds": 12
+    },
+    {
+      "id": "verdance",
+      "name": "Verdance",
+      "elements": { "sporel": 3, "vossen": 2 },
+      "minLevel": 4,
+      "effect": { "kind": "self", "damage": 0, "knockback": 0, "healAmount": 35, "healSeconds": 6 },
+      "description": "Growth, aimed inward, over about six seconds. Not fast enough to save you from a mistake you are still making.",
+      "cooldownSeconds": 24
+    },
+    {
+      "id": "ironward",
+      "name": "Ironward",
+      "elements": { "ferrune": 3, "glacite": 1 },
+      "minLevel": 4,
+      "effect": { "kind": "self", "damage": 0, "knockback": 0, "shieldAmount": 40, "shieldSeconds": 12 },
+      "description": "Structure, laid over you rather than around you. It takes forty and then it is gone.",
+      "cooldownSeconds": 22
+    },
+    {
+      "id": "sunlance",
+      "name": "Sunlance",
+      "elements": { "solvane": 3, "cindral": 2 },
+      "minLevel": 5,
+      "effect": { "kind": "beam", "damage": 26, "knockback": 110, "range": 420, "burnSeconds": 2 },
+      "description": "Radiance with somewhere to be. The single hardest thing you can point at something.",
+      "cooldownSeconds": 11
+    },
+    {
+      "id": "clarion",
+      "name": "Clarion",
+      "elements": { "solvane": 2, "arcen": 1 },
+      "minLevel": 5,
+      "effect": { "kind": "self", "damage": 0, "knockback": 0, "revealSeconds": 20 },
+      "description": "Every rendering nearby, marked, for twenty seconds. It does not touch them. It just stops them being a surprise.",
+      "cooldownSeconds": 25
+    },
+    {
+      "id": "nightfall",
+      "name": "Nightfall",
+      "elements": { "umbrel": 2, "vossen": 1 },
+      "minLevel": 6,
+      "effect": { "kind": "self", "damage": 0, "knockback": 0, "hideSeconds": 8 },
+      "description": "Dampening, worn. For eight seconds nothing notices you, and everything that already had stops. Cast anything and it is over.",
+      "cooldownSeconds": 30
     }
   ],
-  "$cooldown_comment": "Cooldowns are INFERRED - canon does not give them. They exist so the combinations can sit as skill buttons beside the basic attack rather than being spammed the moment the elements allow it."
+  "$cooldown_comment": "Cooldowns are INFERRED - canon does not give them. They exist so the combinations can sit as skill buttons beside the basic attack rather than being spammed the moment the elements allow it. The four that land on the caster rather than on a target carry the longest ones, because an ability with no aiming and no counterplay has to be a decision rather than a habit."
 }
