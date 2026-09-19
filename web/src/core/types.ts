@@ -316,7 +316,10 @@ export interface ProgressionConfig {
   levels: readonly { level: number; trigger: string; grants: string }[];
   player: {
     moveSpeed: number;
+    /** What RUN moves you at. Dead data until the toggle existed to ask for it. */
     sprintSpeed: number;
+    /** How much further creatures notice you while you are running. Above 1. */
+    runNoticeScale: number;
     radius: number;
     /** How long the spiral takes to bring a node in. */
     pullSeconds: number;

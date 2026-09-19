@@ -601,6 +601,29 @@ if (progression.xp?.gather !== undefined) {
 }
 
 /*
+ * The run has to be faster than the walk, and it has to cost something.
+ *
+ * Both of these are invisible failures of exactly the kind this file exists
+ * for. A sprintSpeed at or below moveSpeed leaves a button that lights up and
+ * changes nothing - the player presses it, nothing happens, and there is no
+ * error anywhere. A runNoticeScale at or below 1 is worse, because it works:
+ * running is then strictly better than walking in every situation, the player
+ * turns it on in the first minute and never touches it again, and a toggle
+ * nobody toggles is a speed buff wearing a button.
+ */
+const walk = progression.player?.moveSpeed ?? 0;
+const run = progression.player?.sprintSpeed ?? 0;
+if (run <= walk) {
+  fail(`sprintSpeed is ${run} against a moveSpeed of ${walk}; the RUN toggle would light up and do nothing`);
+}
+const noticeScale = progression.player?.runNoticeScale;
+if (typeof noticeScale !== 'number' || noticeScale <= 1) {
+  fail(
+    `player.runNoticeScale is ${noticeScale}; running has to cost something or there is no reason to ever turn it off, and the toggle is a speed buff with extra steps`,
+  );
+}
+
+/*
  * The one that would have caught the hole.
  *
  * XP is novelty, so the total a run can earn is FINITE and computable: one

@@ -53,6 +53,9 @@ import {
 import { admit, toggleCarried, LOADOUT_SLOTS, type LoadoutState } from '../core/loadout';
 import type { CombinationId, RecipeId } from '../core/types';
 
+/** Where the run toggle remembers itself, beside the mute and quest keys. */
+const RUN_KEY = 'maelstrom.run.v1';
+
 export class Game {
   private readonly world: World;
   private readonly screen: Screen;
@@ -77,6 +80,15 @@ export class Game {
   private loadout: LoadoutState = { carried: [], known: [] };
   /** Gathering is on unless the player turns it off. */
   private pulling = true;
+  /**
+   * Running is off unless the player turns it on, and it is remembered.
+   *
+   * Off by default because the opening asks the player to find their feet and
+   * a first walk at a run is a worse first walk. Remembered because it is a
+   * preference about how you like to move rather than a fact about this run -
+   * somebody who runs everywhere should not have to say so again tomorrow.
+   */
+  private running = false;
   /** Seconds left on each combination, ticked every frame. */
   private readonly cooldowns = new Map<CombinationId, number>();
 
@@ -140,6 +152,7 @@ export class Game {
       onAttack: () => this.attack(),
       onSkill: (id) => this.useSkill(id),
       onTogglePull: () => this.togglePull(),
+      onToggleRun: () => this.toggleRun(),
       onToggleMute: () => {
         // Unlock first: the very first thing a player touches may be the mute
         // button, and unmuting a context that was never created does nothing.
@@ -167,7 +180,27 @@ export class Game {
       this.ui.closeSheet();
       this.pause.open();
     });
+    /*
+     * Shift runs, which is where a keyboard player already looks for it.
+     *
+     * An event rather than a held key, to match the button: RUN is a toggle on
+     * a phone, and a keyboard that worked the other way would be a second set
+     * of rules for the same control. InputController drops auto-repeat before
+     * it gets here, or holding Shift would flicker the toggle sixty times a
+     * second and land on whichever state the key-up happened to leave.
+     */
+    this.input.onKey('shift', () => {
+      if (!this.started || this.opening.active || this.title.visible || this.pause.visible) return;
+      this.toggleRun();
+    });
     this.ui.setPullActive(this.pulling);
+    try {
+      this.running = localStorage.getItem(RUN_KEY) === 'on';
+    } catch {
+      // A browser that refuses storage (private mode, a policy) still plays.
+      this.running = false;
+    }
+    this.ui.setRunActive(this.running);
 
     this.opening = new OpeningScene(uiRoot);
     this.ending = new EndingScene(uiRoot);
@@ -283,6 +316,26 @@ export class Game {
     this.pulling = !this.pulling;
     this.ui.setPullActive(this.pulling);
     this.ui.toast(this.pulling ? 'Gathering' : 'Gathering off', 'info');
+  }
+
+  /**
+   * Running is a toggle too, and for the same reason the pull is: a hold-to-run
+   * button is a thumb committed for the length of an expedition, on a screen
+   * where that thumb is also the one that swings.
+   *
+   * It is not free. Creatures notice a running player from runNoticeScale
+   * further away - see World.update - which is the entire reason this is a
+   * button and not just a higher moveSpeed.
+   */
+  private toggleRun(): void {
+    this.running = !this.running;
+    this.ui.setRunActive(this.running);
+    this.ui.toast(this.running ? 'Running - easier to notice' : 'Walking', 'info');
+    try {
+      localStorage.setItem(RUN_KEY, this.running ? 'on' : 'off');
+    } catch {
+      // Not remembering the preference is a smaller problem than not running.
+    }
   }
 
   private attack(): void {
@@ -829,13 +882,30 @@ export class Game {
     const wasMoving = Math.hypot(move.x, move.y) > 0.01;
 
     const before = { x: this.world.player.x, y: this.world.player.y };
-    this.world.movePlayer(dt, move.x, move.y, player.moveSpeed);
+    this.world.movePlayer(
+      dt,
+      move.x,
+      move.y,
+      this.running ? player.sprintSpeed : player.moveSpeed,
+      this.running,
+    );
     const walked = Math.hypot(this.world.player.x - before.x, this.world.player.y - before.y);
     this.tutorialProgress.travelled += walked;
-    // Footfalls come off distance rather than time, so slow ground - the
-    // Wetland, the Mountain - sounds heavy rather than just being slow.
+    /*
+     * Footfalls come off distance rather than time, so slow ground - the
+     * Wetland, the Mountain - sounds heavy rather than just being slow.
+     *
+     * That was the intent from the start and it was not what the code did.
+     * The cue was played on every frame the player moved and thinned back out
+     * by a 0.26s wall-clock throttle in Sound, so the rhythm belonged to the
+     * throttle: the Wetland at moveScale 0.86 and the Desert at 1.0 produced
+     * the identical tread, and a stride at walking pace is 0.19s, which means
+     * roughly a third of the footfalls were being dropped even then. Now it
+     * fires on the frame the walk cycle actually advances, which is a stride -
+     * slower through deep going, faster at a run, and audibly both.
+     */
+    if (this.world.player.stepped) this.sound.play('step');
     if (walked > 0.1) {
-      this.sound.play('step');
       this.funnel.mark('walked');
       this.signal('roaming', walked);
     }

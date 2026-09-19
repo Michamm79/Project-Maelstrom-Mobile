@@ -187,6 +187,25 @@ export interface Player {
   mirrored: boolean;
   frame: number;
   travelled: number;
+  /**
+   * True while RUN is on AND the player is actually moving.
+   *
+   * Not "the toggle is on": a player standing still with RUN lit is not making
+   * any more noise than one standing still without it, and charging the
+   * stationary player the run's whole visibility cost would make the toggle
+   * something you have to remember to switch off every time you stop.
+   */
+  running: boolean;
+  /**
+   * Set for the one frame the walk cycle advances, which is a footfall.
+   *
+   * The sound used to be played every frame the player moved and thinned out
+   * by a wall-clock throttle, so the rhythm was the throttle's and the
+   * Wetland's deep going sounded exactly like the Desert's hard flat. This is
+   * the actual stride, so it is slower on slow ground and faster when running,
+   * which is what the comment in game.ts always claimed it was.
+   */
+  stepped: boolean;
   /** Seconds since the last swing, which is what Dotore's charge is made of. */
   sinceSwing: number;
   /** 0..1 of a full charge. Held here so the renderer can draw it. */
@@ -256,6 +275,8 @@ function freshPlayer(combat: Content['progression']['combat']): Player {
     mirrored: false,
     frame: 0,
     travelled: 0,
+    running: false,
+    stepped: false,
     sinceSwing: 99,
     charge: 0,
     status: freshStatus(),
@@ -797,12 +818,23 @@ export class World {
 
   // ---------------------------------------------------------------- movement
 
-  movePlayer(dt: number, dirX: number, dirY: number, speed: number): void {
+  /**
+   * @param speed the pace asked for - walk or run. Which one is the Game's
+   *   call, because the toggle is a control and controls live up there.
+   * @param running whether that pace is the run, kept apart from the speed so
+   *   the world can charge for it without having to compare two numbers it was
+   *   not given.
+   */
+  movePlayer(dt: number, dirX: number, dirY: number, speed: number, running = false): void {
     // The Wetland is "slow going" and the Snowy Mountain is deep: the mood
     // lines said so long before anything made them true.
     speed *= this.terrainAt(this.player.x, this.player.y).moveScale;
     const length = Math.hypot(dirX, dirY);
     this.player.moving = length > 0.01;
+    // Consumed by whoever looks this frame; never left set for the next one.
+    this.player.stepped = false;
+    // Standing still is quiet whatever the button says - see Player.running.
+    this.player.running = running && this.player.moving;
 
     if (!this.player.moving) {
       this.player.frame = 0;
@@ -832,6 +864,7 @@ export class World {
     if (this.player.travelled >= STEP_DISTANCE) {
       this.player.travelled -= STEP_DISTANCE;
       this.player.frame = (this.player.frame + 1) % WALK_FRAMES;
+      this.player.stepped = true;
     }
   }
 
@@ -1139,7 +1172,14 @@ export class World {
       // exposure are properties of where you chose to stand.
       // A veil is dampening, not invisibility: it is the noticing that stops,
       // and this is the one place canon's asymmetry is decided.
-      const notice = player.status.hidden > 0 ? 0 : def.noticeRadius * cover;
+      //
+      // Running is the player spending that asymmetry. It multiplies the
+      // noticing and NOT loseRadius below, on purpose: running away from
+      // something has to work, or the control a panicking player grabs is the
+      // one that makes the chase longer. A veil still beats it outright -
+      // Umbrel dampens, and nothing you do with your feet is louder than that.
+      const loud = player.running ? this.content.progression.player.runNoticeScale : 1;
+      const notice = player.status.hidden > 0 ? 0 : def.noticeRadius * cover * loud;
       if (distance <= notice) {
         enemy.aggro = true;
         enemy.alertFor = def.forgetSeconds;

@@ -358,6 +358,156 @@ check('and the attack button works under a second thumb', moving.struck > 0, `${
 
 await page.screenshot({ path: join(SHOTS, '02-pulling.png') });
 
+// ---------------------------------------------------------------- running
+
+/*
+ * The run toggle, driven rather than inspected.
+ *
+ * `sprintSpeed` had been in the content from the beginning and was read by
+ * nothing, which is the shape of failure this file exists for: a number that
+ * looks used. So the check that matters is not "the button has the class" but
+ * "the player covered more ground", measured the same way twice.
+ *
+ * The rest are the invisible ones. A third button in a cluster of two is a
+ * chance to overlap something under a thumb, and an overlap is only a wrong
+ * button being pressed - never an error. And a toggle bound to a key has to
+ * survive the key being HELD, because auto-repeat fires keydown dozens of
+ * times for one press and a toggle would land wherever the key-up left it.
+ */
+{
+  /** Walk due east for a fixed stretch of real time, and report the ground covered. */
+  const dash = async (seconds) => {
+    await peek(() => {
+      const g = window.maelstrom;
+      g.world.player.x = 0;
+      g.world.player.y = 0;
+      g.world.enemies.length = 0;
+    });
+    await touch('touchStart', [{ x: stick.x, y: stick.y, id: 1 }]);
+    await touch('touchMove', [{ x: stick.x + 90, y: stick.y, id: 1 }]);
+    await page.waitForTimeout(seconds * 1000);
+    // Sampled while the thumb is still down: dust only exists while the feet
+    // are moving, and it is all gone within a second of stopping.
+    const out = await peek(() => ({
+      moved: Math.abs(window.maelstrom.world.player.x),
+      dust: window.maelstrom.renderer.dust.length,
+    }));
+    await touch('touchEnd', []);
+    return out;
+  };
+
+  const state = () =>
+    peek(() => ({
+      on: document.querySelector('.action.run')?.classList.contains('on') ?? false,
+      sub: document.querySelector('.action.run .sub')?.textContent ?? '',
+      running: window.maelstrom.world.player.running,
+    }));
+
+  check('there is a RUN button', (await page.locator('.action.run').count()) === 1);
+
+  const off = await state();
+  check('it starts off', !off.on && off.sub === 'off', JSON.stringify(off));
+
+  const walked = await dash(1.2);
+
+  await page.locator('.action.run').click();
+  const on = await state();
+  check('tapping it turns running on', on.on && on.sub === 'on', JSON.stringify(on));
+
+  const ran = await dash(1.2);
+  check(
+    'and the player actually covers more ground - sprintSpeed is finally read',
+    ran.moved > walked.moved * 1.1,
+    `${Math.round(walked.moved)} walking vs ${Math.round(ran.moved)} running`,
+  );
+  // The whole point of the dust is that it says which pace you are at without
+  // the player having to look away from the character. A trail under a walk
+  // says nothing; no trail under a run is an effect that silently does not run.
+  check('walking kicks up nothing', walked.dust === 0, `${walked.dust} puffs`);
+  check('running kicks up a trail', ran.dust > 0, `${ran.dust} puffs`);
+
+  /*
+   * The lit face, measured.
+   *
+   * `#ui .action` sets `background: none !important` and moves the face onto a
+   * ::before, which had silently killed every colour set on the buttons
+   * themselves - PULL's lit teal included. Nothing looked broken: the buttons
+   * were all still there, all the same grey, and the only surviving signal was
+   * a nine-pixel word. So this compares the actual painted face.
+   */
+  const faces = await peek(() => {
+    const face = (sel) => getComputedStyle(document.querySelector(sel), '::before').backgroundColor;
+    return { run: face('.action.run'), pull: face('.action.pull'), attack: face('.action.attack') };
+  });
+  await page.locator('.action.pull').click();
+  const pullOff = await peek(() =>
+    getComputedStyle(document.querySelector('.action.pull'), '::before').backgroundColor,
+  );
+  await page.locator('.action.pull').click();
+  check('a lit RUN does not look like an unlit one', faces.run !== pullOff, `${faces.run} vs ${pullOff}`);
+  check('and a lit PULL does not either', faces.pull !== pullOff, `${faces.pull} vs ${pullOff}`);
+  check(
+    'and the three of them are three different buttons',
+    faces.run !== faces.pull && faces.pull !== faces.attack && faces.run !== faces.attack,
+    JSON.stringify(faces),
+  );
+
+  // One frame after the thumb lifts, not zero: `running` is recomputed inside
+  // movePlayer, so reading it in the same tick as the touchEnd reads the last
+  // moving frame and the check passes or fails on scheduling.
+  await page.waitForTimeout(120);
+  check(
+    'standing still with it on is not running - noise is a thing you do',
+    await peek(() => window.maelstrom.world.player.running === false),
+  );
+
+  // Three round buttons in one thumb cluster. An overlap here is a mis-press,
+  // which is indistinguishable from the player having meant it.
+  const cluster = await peek(() => {
+    const rect = (sel) => {
+      const node = document.querySelector(sel);
+      if (!node) return null;
+      const r = node.getBoundingClientRect();
+      return { sel, left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width };
+    };
+    return ['.action.run', '.action.pull', '.action.attack'].map(rect);
+  });
+  const overlap = (a, b) =>
+    a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  check(
+    'RUN, PULL and ATTACK do not overlap each other',
+    cluster.every(Boolean) &&
+      !overlap(cluster[0], cluster[1]) &&
+      !overlap(cluster[1], cluster[2]) &&
+      !overlap(cluster[0], cluster[2]),
+    JSON.stringify(cluster),
+  );
+  const view = page.viewportSize();
+  check(
+    'and all three are fully on the screen',
+    cluster.every((c) => c.left >= 0 && c.right <= view.width && c.bottom <= view.height),
+    `viewport ${view.width}x${view.height}`,
+  );
+
+  // Shift, and then Shift held down. The held case is the one that used to be
+  // wrong: every auto-repeat was a fresh press.
+  await page.keyboard.press('Shift');
+  check('Shift toggles it too', !(await state()).on);
+
+  await page.keyboard.down('Shift');
+  await page.waitForTimeout(600);
+  await page.keyboard.up('Shift');
+  const held = await state();
+  check(
+    'and holding Shift flips it exactly once, not once per auto-repeat',
+    held.on,
+    JSON.stringify(held),
+  );
+
+  await page.locator('.action.run').click();
+  check('left off for the rest of the run', !(await state()).on);
+}
+
 // ---------------------------------------------------------------- the orbs
 
 const orbs = await peek(() => {
@@ -894,6 +1044,10 @@ await page.locator('.sheet header .close').click();
 
 // ---------------------------------------------------------------- persistence
 
+// Turned on across the reload: the run toggle is a PREFERENCE rather than part
+// of the run, so it is written to its own key and restored by the Game's
+// constructor - a path nothing else here walks.
+await page.locator('.action.run').click();
 const beforeReload = await peek(() => {
   const g = window.maelstrom;
   g.persist();
@@ -901,6 +1055,25 @@ const beforeReload = await peek(() => {
 });
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
+
+const runAfterReload = await peek(() => ({
+  on: document.querySelector('.action.run')?.classList.contains('on') ?? false,
+  sub: document.querySelector('.action.run .sub')?.textContent ?? '',
+  stored: localStorage.getItem('maelstrom.run.v1'),
+}));
+check(
+  'the run preference survives a reload',
+  runAfterReload.on && runAfterReload.sub === 'on' && runAfterReload.stored === 'on',
+  JSON.stringify(runAfterReload),
+);
+// Put it back so the rest of the suite walks at the pace it was written for.
+// Dispatched straight at the button rather than clicked: the reload lands on
+// the title screen, whose overlay would take a real click at those coordinates.
+await page.locator('.action.run').dispatchEvent('pointerdown');
+check(
+  'and can be turned off again after the reload',
+  await peek(() => !document.querySelector('.action.run')?.classList.contains('on')),
+);
 
 const afterReload = await peek(() => {
   const g = window.maelstrom;

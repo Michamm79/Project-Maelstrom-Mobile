@@ -79,6 +79,8 @@
     "$comment": "Speeds in screen units per second, chosen so that spawn to biome edge lands inside canon's measured 30-35 seconds walking and 25-30 sprinting.",
     "moveSpeed": 70,
     "sprintSpeed": 84,
+    "$run_comment": "sprintSpeed was authored here from the first content pass and then read by nothing: the game moved the player at moveSpeed and had no way to ask for the other number. The RUN toggle is what makes it live. runNoticeScale is INFERRED and is the whole reason it is a toggle rather than a speed buff - a run that costs nothing is one the player leaves on forever, and then the button is a lie. Running multiplies how far a creature notices you (noticeRadius) and deliberately NOT how far it loses you (loseRadius): running away from something should work, or the control the player reaches for in a panic is the one that punishes them. 1.35 puts the goblin's 90 at 122 and the wisp's 150 at 203, so a run across open ground is an announcement and the Wetland's cover still undoes most of it.",
+    "runNoticeScale": 1.35,
     "radius": 11,
     "pullSeconds": 0.45
   },

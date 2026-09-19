@@ -51,6 +51,8 @@ export interface UiHooks {
   onAttack(): void;
   onSkill(id: CombinationId): void;
   onTogglePull(): void;
+  /** Walk or run. The Game owns the state; this just asks for the other one. */
+  onToggleRun(): void;
   /** Returns the new muted state, so the button can label itself from truth. */
   onToggleMute(): boolean;
   /** Stop the world and open the pause menu. */
@@ -150,6 +152,7 @@ export class Ui {
   private readonly tabs = el('div', 'tabs');
   private readonly skillArc = el('div', 'skillarc');
   private readonly pullBtn = el('button');
+  private readonly runBtn = el('button');
   private readonly attackBtn = el('button');
   private readonly comboTag = el('i');
   private readonly skillNodes = new Map<CombinationId, HTMLElement>();
@@ -258,6 +261,25 @@ export class Ui {
     this.pullBtn.append(el('b', undefined, 'PULL'), el('span', 'sub', 'auto'));
     onPress(this.pullBtn, () => this.hooks.onTogglePull());
 
+    /*
+     * RUN, in the right-hand cluster rather than under the steering thumb.
+     *
+     * It is a movement control, so the left thumb is where it belongs by
+     * rights - but the stick is FLOATING, placed wherever the first touch
+     * lands, and the bottom-left corner it would sit in is exactly where that
+     * touch goes. A button there would carve a dead patch out of the one part
+     * of the screen the stick most wants. A toggle does not need to be under
+     * the thumb that steers: it is pressed once and then forgotten, which is
+     * the difference between this and a hold-to-run button.
+     *
+     * Same size and same idiom as PULL - a word and an on/off line - because
+     * they are the same kind of control and the player should not have to
+     * learn two.
+     */
+    this.runBtn.className = 'action run';
+    this.runBtn.append(el('b', undefined, 'RUN'), el('span', 'sub', 'off'));
+    onPress(this.runBtn, () => this.hooks.onToggleRun());
+
     this.attackBtn.className = 'action attack';
     this.attackBtn.append(el('b', undefined, 'ATTACK'), this.comboTag);
     this.comboTag.className = 'combo';
@@ -274,7 +296,7 @@ export class Ui {
       });
     }
 
-    wrap.append(this.skillArc, this.pullBtn, this.attackBtn);
+    wrap.append(this.skillArc, this.runBtn, this.pullBtn, this.attackBtn);
     this.root.append(wrap);
   }
 
@@ -294,6 +316,19 @@ export class Ui {
     this.pullBtn.classList.toggle('on', active);
     const sub = this.pullBtn.querySelector('.sub');
     if (sub) sub.textContent = active ? 'on' : 'off';
+  }
+
+  /**
+   * Draw RUN from the real state rather than a local guess, the same way the
+   * mute button does - the toggle is restored from storage at startup and
+   * flipped by a key as well as by the button, and a label keeping its own
+   * count of that would drift.
+   */
+  setRunActive(active: boolean): void {
+    this.runBtn.classList.toggle('on', active);
+    const sub = this.runBtn.querySelector('.sub');
+    if (sub) sub.textContent = active ? 'on' : 'off';
+    this.runBtn.setAttribute('aria-label', active ? 'Running. Tap to walk' : 'Walking. Tap to run');
   }
 
   setCombo(combo: number): void {

@@ -34,7 +34,18 @@ export type Cue =
 
 /** Minimum seconds between two of the same cue, so nothing machine-guns. */
 const THROTTLE: Record<Cue, number> = {
-  step: 0.26,
+  /*
+   * A floor, not a rhythm.
+   *
+   * This used to be 0.26 and it WAS the rhythm: the Game played the cue on
+   * every frame the player was moving and let the throttle thin it out, so the
+   * tread was a metronome that knew nothing about the ground or the pace. The
+   * Game now fires it once per stride instead, and a stride is 13uu: 0.19s
+   * walking, 0.155s running, 0.22s through the Wetland. 0.26 would have
+   * swallowed all three differences. 0.1 is under the fastest of them and
+   * still well short of anything that could machine-gun.
+   */
+  step: 0.1,
   pull: 0.1,
   absorb: 0.05,
   craft: 0.2,

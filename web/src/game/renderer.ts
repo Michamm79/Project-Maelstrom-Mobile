@@ -73,6 +73,58 @@ interface Floater {
   life: number;
 }
 
+/**
+ * A kick of ground thrown up by a running foot.
+ *
+ * World space, not screen space, so a puff stays on the patch of ground it
+ * came off while the camera keeps moving - which is the whole reason it reads
+ * as something the player did to the floor rather than an overlay on the lens.
+ */
+interface Dust {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  age: number;
+  life: number;
+  color: string;
+}
+
+/**
+ * Three per footfall, and a footfall is a stride, so the rate is the pace.
+ *
+ * Two was the first guess and the trail came out as one or two lonely pixels:
+ * a stride at a run is 0.155s and a puff lives about 0.42s, so only two or
+ * three strides are ever on screen at once and two pixels each is not a trail,
+ * it is a speck. Three, held a little longer, reads as something the running
+ * is throwing up behind it.
+ */
+const DUST_PER_STEP = 3;
+/**
+ * How long a puff hangs about, which is really how LONG the trail is.
+ *
+ * A puff barely travels - it is kicked ground settling, and the drag has it
+ * stopped inside about seven units. So the separation between the runner and
+ * their own dust is made entirely by the runner moving away from it, at
+ * sprintSpeed. At 0.5s that is 42 units of trail against a sprite 32 units
+ * wide: almost all of it came out underneath the character and behind the
+ * shadow, and what reached open ground was a speck. 0.9s puts roughly 75 units
+ * of it in the clear, which is the difference between a speck and a trail.
+ */
+const DUST_SECONDS = 0.9;
+/** Cap for the same reason the floaters have one: a stuck tab must not grow. */
+const MAX_DUST = 48;
+/**
+ * One art pixel, in world units.
+ *
+ * The art buffer is a quarter of the canvas and the canvas is drawn at device
+ * pixel ratio, so on the 2x screens this is built for one art pixel covers two
+ * world units. Everything drawn on this layer rounds to it - a puff at a
+ * fractional coordinate gets anti-aliased by the buffer and comes out as a
+ * grey smudge, which is precisely the thing the pixel pass exists to remove.
+ */
+const ART_UNIT = 2;
+
 export interface RenderState {
   /** Current gauntlet reach, in screen units. */
   pullRadius: number;
@@ -156,6 +208,7 @@ export class Renderer {
   private bufferW = 1;
   private bufferH = 1;
   private readonly floaters: Floater[] = [];
+  private readonly dust: Dust[] = [];
   private readonly deletions: Deletion[] = [];
   private width = 0;
   private height = 0;
@@ -310,6 +363,61 @@ export class Renderer {
       effect.age += dt;
       if (effect.age >= DELETION_SECONDS) this.deletions.splice(i, 1);
     }
+
+    for (let i = this.dust.length - 1; i >= 0; i--) {
+      const puff = this.dust[i];
+      if (!puff) continue;
+      puff.age += dt;
+      if (puff.age >= puff.life) {
+        this.dust.splice(i, 1);
+        continue;
+      }
+      puff.x += puff.vx * dt;
+      puff.y += puff.vy * dt;
+      // Drags to a stop rather than sailing off: it is kicked ground settling,
+      // not a spark. Frame-rate independent, so a 30fps phone sees the same arc.
+      const drag = Math.max(0, 1 - dt * 5.5);
+      puff.vx *= drag;
+      puff.vy *= drag;
+    }
+  }
+
+  /**
+   * Kick some ground up behind a running foot.
+   *
+   * Called once per footfall - which is once per stride, off distance - so the
+   * puffs come faster when the player is running and slow down in deep going,
+   * with nothing here having to know either of those things.
+   *
+   * `color` comes from the ground actually underfoot, so the Desert throws
+   * sand and the Snowy Mountain throws snow. A single grey would read as a
+   * smudge following the character everywhere.
+   */
+  addDust(x: number, y: number, dirX: number, dirY: number, color: string): void {
+    for (let i = 0; i < DUST_PER_STEP; i++) {
+      // Thrown BACKWARDS from the direction of travel, with a spread across
+      // it. Dust leaving ahead of the runner is the one arrangement that makes
+      // them look like they are being blown along rather than doing the work.
+      const spread = (Math.random() - 0.5) * 1.3;
+      const cos = Math.cos(spread);
+      const sin = Math.sin(spread);
+      const bx = -dirX * cos + dirY * sin;
+      const by = -dirX * sin - dirY * cos;
+      const push = 26 + Math.random() * 30;
+      this.dust.push({
+        // At the heels and already a little way back, so the first frame of a
+        // puff is not drawn under the boot that made it. The sprite's feet sit
+        // about 18 units below its origin, where the shadow ellipse is.
+        x: x + bx * 9,
+        y: y + 16 + by * 4,
+        vx: bx * push,
+        vy: by * push * 0.45 - 12,
+        age: 0,
+        life: DUST_SECONDS * (0.75 + Math.random() * 0.5),
+        color,
+      });
+    }
+    if (this.dust.length > MAX_DUST) this.dust.splice(0, this.dust.length - MAX_DUST);
   }
 
   /**
@@ -330,6 +438,38 @@ export class Renderer {
   draw(world: World, state: RenderState, input?: InputController): void {
     const ctx = this.ctx;
     const pctx = this.pctx;
+
+    /*
+     * A footfall at a run throws ground up. Read here rather than pushed from
+     * the Game because the colour has to be the ground the foot is actually
+     * on, and this is the side of the wall that already knows how to ask.
+     *
+     * `stepped` is set for the single frame the walk cycle advances and the
+     * loop runs exactly one step per draw, so no footfall is seen twice or
+     * missed. Between the regions there is no disc and the connective forest
+     * is what is underfoot - which is most of the map, so it is not a fallback.
+     */
+    if (world.player.stepped && world.player.running) {
+      const disc = world.biomeAt(world.player.x, world.player.y);
+      /*
+       * Lifted well clear of the floor it came off.
+       *
+       * The first version passed `groundAlt` straight through, on the reading
+       * that kicked ground is the colour of the ground - and it was completely
+       * invisible. groundAlt is one step off `ground` by design, because the
+       * two are a floor's own two-tone grain: #2b3a24 against #334227 in the
+       * spawn. Half-transparent over its own near-twin is nothing at all.
+       * Airborne material catches light the floor does not, so it goes up two
+       * thirds of the way to white and keeps only the hue.
+       */
+      this.addDust(
+        world.player.x,
+        world.player.y,
+        Math.cos(world.player.facing),
+        Math.sin(world.player.facing),
+        shade(disc ? disc.palette.groundAlt : BETWEEN.groundAlt, 0.62),
+      );
+    }
 
     const camera = {
       x: clamp(world.player.x, -world.boundaryRadius, world.boundaryRadius),
@@ -365,6 +505,7 @@ export class Renderer {
     this.drawProjectiles(world);
     this.drawDeletions();
     this.drawPullRing(world, state);
+    this.drawDust();
     this.drawSwing(world);
     this.drawPlayer(world);
     this.drawFog(world, camera);
@@ -1182,6 +1323,34 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------- overlays
+
+  /**
+   * The puffs, as squares on the art grid.
+   *
+   * Squares rather than circles, and rounded onto ART_UNIT rather than left
+   * where the physics put them: an arc drawn at this size comes out as four
+   * grey pixels, and a rect at a fractional coordinate comes out as a smudge.
+   * Both are the buffer anti-aliasing something, which is the one thing
+   * nothing on this layer is allowed to do.
+   *
+   * Each puff shrinks from two art pixels to one and fades as it goes, so it
+   * settles rather than vanishing.
+   */
+  private drawDust(): void {
+    const ctx = this.pctx;
+    const snap = (v: number) => Math.round(v / ART_UNIT) * ART_UNIT;
+    for (const puff of this.dust) {
+      const t = puff.age / puff.life;
+      // Full-strength for the first third and then away, rather than fading
+      // from the instant it appears: a puff that starts at half and falls off
+      // immediately never has a frame where it is actually visible.
+      ctx.globalAlpha = t < 0.35 ? 0.8 : 0.8 * (1 - (t - 0.35) / 0.65);
+      ctx.fillStyle = puff.color;
+      const size = t < 0.55 ? ART_UNIT * 2 : ART_UNIT;
+      ctx.fillRect(snap(puff.x), snap(puff.y), size, size);
+    }
+    ctx.globalAlpha = 1;
+  }
 
   private drawFloaters(): void {
     const ctx = this.ctx;

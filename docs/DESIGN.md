@@ -28,6 +28,35 @@ verb:
 The orbs **display**; they do not store. Inventory stores, capped at 60 units and
 raised permanently by crafting. Nothing is ever loaded into an orb.
 
+**RUN is a toggle, and it costs something.** `sprintSpeed` had been sitting in
+`content/progression.json` since the first content pass and was read by nothing:
+the game moved the player at `moveSpeed` and had no control that could ask for
+the other number. The notes below say "you sprint at 84" in two places — the
+design assumed a capability the build did not have.
+
+It is a toggle rather than a hold because on this screen the thumb that would
+hold it is the thumb that swings, and it is off by default because the opening
+asks the player to find their feet. The preference is remembered across runs;
+Shift does the same thing on a keyboard.
+
+The cost is what makes it a control rather than a higher `moveSpeed`: creatures
+notice a running player from `runNoticeScale` — currently 1.35 — further away,
+which puts the goblin's 90 units at 122 and the wisp's 150 at 203. It scales
+`noticeRadius` and deliberately **not** `loseRadius`, because running away from
+something has to work; the control someone grabs in a panic must not be the one
+that lengthens the chase. A veil beats it outright, since Umbrel is dampening
+and nothing done with the feet is louder than that. The build refuses a
+`sprintSpeed` at or below the walk (a button that lights up and does nothing)
+and a `runNoticeScale` at or below 1 (a toggle nobody would ever toggle).
+
+Footfalls now come off the **stride** rather than a wall clock, which is what
+the code had always claimed. The cue used to be played on every frame the player
+moved and thinned back out by a 0.26s throttle in `Sound`, so the rhythm was the
+throttle's: the Wetland at `moveScale` 0.86 and the Desert at 1.0 produced the
+identical tread. A running foot also throws up a trail of ground-coloured
+pixels, which is the only feedback that says which pace you are at without
+looking away from the character.
+
 ## The world
 
 One continuous bounded Coliseum, roughly 1.5km across. Plains/Forest is the

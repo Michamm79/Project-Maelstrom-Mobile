@@ -195,8 +195,18 @@ export class InputController {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const key = event.key.toLowerCase();
     this.keys.add(key);
+    /*
+     * Auto-repeat is a held key, not a second press.
+     *
+     * A key held down fires keydown again every few tens of milliseconds, and
+     * a one-shot handler bound to it would run dozens of times for one press.
+     * On a toggle that is not a near-miss: holding Shift would flip run on and
+     * off continuously and settle on whichever side the key-up happened to
+     * land, which reads as the button being broken. The held-key set above
+     * still wants every one of these, so the guard is on the dispatch only.
+     */
     const handler = this.taps.get(key);
-    if (handler) {
+    if (handler && !event.repeat) {
       event.preventDefault();
       handler();
     }
