@@ -220,6 +220,43 @@ check(
   );
 }
 
+/*
+ * The objective button's icon, which is a PRIVATE USE character.
+ *
+ * U+E000 has no agreed meaning: every font may put whatever it likes there,
+ * and icon fonts and legacy phone emoji sets both map that range. So while our
+ * own typeface is drawing it, it is the game's own icon on the game's own
+ * grid; the instant it is not, the button shows some other font's glyph. That
+ * failure renders a WRONG symbol rather than a missing one, looks perfect on
+ * any machine where the font works, and differs by device - so a screenshot
+ * can never catch it and only a measurement can.
+ *
+ * Our font advances every glyph by 600 of 1000 units. A fallback almost
+ * certainly will not, and a missing glyph is drawn as tofu at a different
+ * width again.
+ */
+{
+  const glyph = await peek(() => {
+    const size = 32;
+    const c = document.createElement('canvas').getContext('2d');
+    c.font = `${size}px "Maelstrom Pixel"`;
+    const icon = c.measureText('\ue000').width;
+    const m = c.measureText('M').width;
+    return { icon, m, expected: size * 0.6, label: document.querySelector('.quest-btn')?.textContent };
+  });
+  check(
+    'the objective icon is drawn by our own typeface, not a fallback',
+    Math.abs(glyph.icon - glyph.expected) < 0.5,
+    `${glyph.icon.toFixed(2)}px against this font's ${glyph.expected}px advance`,
+  );
+  check(
+    'and it is the same advance as a letter, so it sits on the same grid',
+    Math.abs(glyph.icon - glyph.m) < 0.5,
+    `icon ${glyph.icon.toFixed(2)} vs M ${glyph.m.toFixed(2)}`,
+  );
+  check('and the button is still showing it', glyph.label === '\ue000', JSON.stringify(glyph.label));
+}
+
 // ---------------------------------------------------------------- the world
 
 const world = await peek(() => {
@@ -2327,6 +2364,41 @@ await page.waitForTimeout(300);
 
   check('no uncaught errors in the rotated layout', rotErrors.length === 0, rotErrors.slice(0, 3).join(' | '));
   await rotatedContext.close();
+}
+
+// ------------------------------------------------------- the font not arriving
+
+/*
+ * The one case the measurement above cannot reach: the typeface never loads.
+ *
+ * Blocked at the network rather than simulated, because the point is what a
+ * real browser does when the file is not there. `font-display: block` means it
+ * is waited for and then given up on, and from that moment every '\ue000' in
+ * the HUD is drawn by whatever font the fallback chain lands on - a wrong
+ * symbol, not a missing one, and a different wrong symbol per device.
+ *
+ * So the button is supposed to stop asking for a private-use character at all
+ * and say what it does in ASCII instead.
+ */
+{
+  const bareCtx = await browser.newContext({ ...devices['Pixel 7'] });
+  const bare = await bareCtx.newPage();
+  await bare.route('**/*.ttf', (route) => route.abort());
+  await bare.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await bare.waitForTimeout(1200);
+
+  const fallback = await bare.evaluate(() => ({
+    loaded: document.fonts.check('16px "Maelstrom Pixel"', '\ue000'),
+    label: document.querySelector('.quest-btn')?.textContent ?? '',
+  }));
+  check('with the typeface blocked, it really is missing', !fallback.loaded, JSON.stringify(fallback));
+  check(
+    'and the objective button drops the private-use character rather than showing a stranger',
+    fallback.label === '!' && !fallback.label.includes('\ue000'),
+    JSON.stringify(fallback.label),
+  );
+  await bare.screenshot({ path: join(SHOTS, '12-no-typeface.png') });
+  await bareCtx.close();
 }
 
 // ---------------------------------------------------------------- the end

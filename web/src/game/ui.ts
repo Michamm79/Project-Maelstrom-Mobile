@@ -62,6 +62,16 @@ export interface UiHooks {
 /** Where the objective toggle remembers itself. */
 const QUEST_KEY = 'maelstrom.quest.v1';
 
+/**
+ * The objective icon, in the typeface this repository generates.
+ *
+ * Named rather than written inline at both use sites, because a bare
+ * '\ue000' in the middle of a DOM call is unreadable and impossible to grep
+ * for - and this one needs grepping for, since it is the only character in
+ * the game whose meaning depends on our font being the one that draws it.
+ */
+const ICON_OBJECTIVE = '\ue000';
+
 type Tone = 'info' | 'good' | 'bad' | 'big';
 type Tab = 'craft' | 'alchemy' | 'log' | 'screen';
 
@@ -140,7 +150,7 @@ export class Ui {
    * \ue000 is the quest-log glyph in the game's own typeface rather than an
    * emoji, so it is the one chrome button that is actually on the pixel grid.
    */
-  private readonly questBtn = el('button', 'quest-btn', '\ue000');
+  private readonly questBtn = el('button', 'quest-btn', ICON_OBJECTIVE);
   /** The step currently being shown, kept so the banner can be put back. */
   private step: TutorialStep | null = null;
   private questOpen = true;
@@ -173,6 +183,7 @@ export class Ui {
     private readonly hooks: UiHooks,
   ) {
     this.buildTopBar();
+    this.guardGlyph();
     this.buildOrbs();
     this.buildCluster();
     this.buildSheet();
@@ -298,6 +309,37 @@ export class Ui {
 
     wrap.append(this.skillArc, this.runBtn, this.pullBtn, this.attackBtn);
     this.root.append(wrap);
+  }
+
+  /**
+   * If the typeface did not arrive, do not show a private-use character.
+   *
+   * U+E000 is in the Private Use Area, which is exactly what it sounds like:
+   * no agreed meaning, and every font is free to put whatever it likes there.
+   * While our own font is loaded that is a feature - it is how the game ships
+   * an icon with no image to load. The moment it is NOT loaded, the browser
+   * walks the fallback chain and renders some other font's idea of U+E000,
+   * and icon fonts and legacy phone emoji sets both map that range. The
+   * failure is a wrong symbol rather than a missing one, it is invisible on
+   * any machine where the font works, and it differs by device - which is the
+   * worst combination of properties a bug can have.
+   *
+   * `font-display: block` means a slow font is waited for rather than swapped,
+   * so this only fires when the file genuinely did not arrive: blocked, 404,
+   * a storage policy. Then the button says what it does in ASCII instead.
+   */
+  private guardGlyph(): void {
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (!fonts?.load) return;
+    fonts
+      .load('16px "Maelstrom Pixel"', ICON_OBJECTIVE)
+      .then(() => {
+        if (fonts.check('16px "Maelstrom Pixel"', ICON_OBJECTIVE)) return;
+        this.questBtn.textContent = '!';
+      })
+      .catch(() => {
+        this.questBtn.textContent = '!';
+      });
   }
 
   /** Draws the speaker from the real muted state rather than a local guess. */

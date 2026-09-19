@@ -126,10 +126,21 @@ const G = {
    * just a character: it inherits the button's colour, its size, and its
    * pixel snapping, with no image to load and nothing to keep in sync.
    *
-   * U+E000 is the quest log - a page with lines of writing on it, and a
-   * folded corner so it reads as paper rather than as a window.
+   * U+E000 is the objective: three lines of writing, each with its own
+   * bullet.
+   *
+   * The first attempt was a page with a folded corner, and it did not
+   * survive the cell. Rendered at the size it is actually used, a five-wide
+   * outline with marks inside it is a blob with a notch: it read as a
+   * capital B, and the author looked at it and asked whether it was a ball.
+   * An outline needs two of its five columns for the border alone, which
+   * leaves three for the thing the border is around.
+   *
+   * So: no border. A bullet and a line, three times, which is what the panel
+   * the button hides actually looks like - and the bullet column is what
+   * keeps it from reading as a hamburger menu, since this is not one.
    */
-  '\ue000': '####./#...#/#.##./#...#/#.###/#..../#####',
+  '\ue000': '...../#.###/...../#.###/...../#.###/.....',
   // The five beyond ASCII that the game's own copy actually uses.
   '—': '...../...../...../#####/...../...../.....',
   '·': '...../...../...../..#../...../...../.....',
